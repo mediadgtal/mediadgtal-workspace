@@ -319,6 +319,10 @@ var postySubtab = "kanban";
 var statPeriod = "miesiac"; // tylko "miesiac" lub "rok" — bez dziennego
 var statCats = {Wszystko:true};
 var calMonth, calYear;
+var gcalCalendars = null; // null = niepołączony; po połączeniu: [{id,name,color}]
+var gcalLoading = false;
+var gcalEventsCache = {}; // klucz "rok-miesiac" -> [{title,date,time,calendarName,calendarColor}]
+var gcalConnectError = null;
 var igActiveId = null, fbActiveId = null;
 
 var state = null;
@@ -1171,17 +1175,75 @@ function deleteTask(id){
 }
 
 /* ================= KALENDARZ ================= */
+function gcalMonthKey(){ return calYear+"-"+calMonth; }
+function ensureGCalCalendars(){
+  if(!window.__gcalToken || gcalCalendars || gcalLoading) return;
+  gcalLoading = true;
+  gcalConnectError = null;
+  fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(r.status===401){ window.__gcalToken=null; throw new Error("401"); } return r.json(); })
+    .then(function(j){
+      gcalCalendars = (j.items||[]).map(function(it){ return {id:it.id, name:it.summary, color:it.backgroundColor||"#8a8390"}; });
+      gcalLoading = false;
+      renderAll();
+      fetchGCalEventsForVisibleMonth();
+    }).catch(function(){
+      gcalLoading = false;
+      gcalConnectError = "Nie udało się pobrać listy kalendarzy Google.";
+      renderAll();
+    });
+}
+function fetchGCalEventsForVisibleMonth(){
+  if(!gcalCalendars || !window.__gcalToken) return;
+  var key = gcalMonthKey();
+  if(gcalEventsCache[key]){ renderAll(); return; }
+  var first = new Date(calYear, calMonth, 1);
+  var startOffset = (first.getDay()+6)%7;
+  var gridStart = new Date(calYear, calMonth, 1-startOffset);
+  var gridEnd = new Date(gridStart); gridEnd.setDate(gridStart.getDate()+42);
+  var timeMin = gridStart.toISOString(), timeMax = gridEnd.toISOString();
+  Promise.all(gcalCalendars.map(function(cal){
+    return fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(cal.id)+"/events?timeMin="+encodeURIComponent(timeMin)+"&timeMax="+encodeURIComponent(timeMax)+"&singleEvents=true&orderBy=startTime", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+      .then(function(r){ if(r.status===401){ window.__gcalToken=null; gcalCalendars=null; throw new Error("401"); } return r.json(); })
+      .then(function(j){
+        return (j.items||[]).map(function(it){
+          var d = (it.start && (it.start.date || (it.start.dateTime||"").slice(0,10))) || "";
+          var t = it.start && it.start.dateTime ? it.start.dateTime.slice(11,16) : null;
+          return {title: it.summary||"(bez tytułu)", date:d, time:t, calendarName:cal.name, calendarColor:cal.color};
+        });
+      }).catch(function(){ return []; });
+  })).then(function(results){
+    gcalEventsCache[key] = [].concat.apply([], results);
+    renderAll();
+  });
+}
+window.onGCalTokenReady = function(){
+  gcalCalendars = null; gcalEventsCache = {}; gcalConnectError = null;
+  ensureGCalCalendars();
+};
 function renderKalendarz(el){
   var now = new Date();
   if(calMonth===undefined){ calMonth = now.getMonth(); calYear = now.getFullYear(); }
   setTopActions('<button class="btn" onclick="promptAddEvent()">+ Wydarzenie</button>');
 
+  if(window.__gcalToken && !gcalCalendars && !gcalLoading){ ensureGCalCalendars(); }
+
   var html = '<div id="cmdbox"><input type="text" id="nlpInput" placeholder=\'np. dodaj spotkanie z Martą 10.07. godz. 12:00, Plaza Poznań, kalendarz "wspólny"\'>'+
     '<button class="btn" onclick="submitNlp()">Dodaj</button></div>';
-  html += '<div class="stub-note">Kalendarz lokalny — synchronizacja z Google Calendar pojawi się po migracji na hosting.</div>';
 
+  if(!window.__gcalToken){
+    html += '<div class="stub-note">Kalendarz lokalny (dane offline). <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google Calendar</a>, żeby zobaczyć i dodawać prawdziwe wydarzenia.</div>';
+  } else if(gcalLoading || (!gcalCalendars && !gcalConnectError)){
+    html += '<div class="stub-note">Łączenie z Google Calendar…</div>';
+  } else if(gcalConnectError){
+    html += '<div class="stub-note">'+escapeHtml(gcalConnectError)+' <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Spróbuj ponownie</a></div>';
+  } else {
+    html += '<div class="stub-note">Połączono z Google Calendar ('+gcalCalendars.map(function(c){return escapeHtml(c.name);}).join(", ")+').</div>';
+  }
+
+  var legendSource = gcalCalendars || state.calendars;
   html += '<div class="cal-legend">';
-  state.calendars.forEach(function(c){
+  legendSource.forEach(function(c){
     html += '<span><i style="background:'+c.color+'"></i>'+escapeHtml(c.name)+'</span>';
   });
   html += '</div>';
@@ -1197,16 +1259,19 @@ function renderKalendarz(el){
   var startOffset = (first.getDay()+6)%7; // Monday=0
   var gridStart = new Date(calYear, calMonth, 1-startOffset);
   var today = todayStr();
+  var gcalEvents = gcalCalendars ? (gcalEventsCache[gcalMonthKey()]||null) : null;
   for(var i=0;i<42;i++){
     var d = new Date(gridStart); d.setDate(gridStart.getDate()+i);
     var dstr = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
     var inMonth = d.getMonth()===calMonth;
     var isToday = dstr===today;
-    var dayEvents = state.events.filter(function(e){ return e.date===dstr; });
+    var dayEvents = gcalEvents!==null ? gcalEvents.filter(function(e){ return e.date===dstr; }) : state.events.filter(function(e){ return e.date===dstr; });
     html += '<div class="cal-cell'+(inMonth?"":" out")+(isToday?" today":"")+'"><div class="cal-daynum">'+d.getDate()+'</div>';
     dayEvents.forEach(function(e){
-      var cal = state.calendars.filter(function(c){return c.name===e.calendar;})[0] || {color:"#8a8390"};
-      html += '<div class="cal-ev" style="background:'+cal.color+'" title="'+escapeHtml(e.title)+'">'+escapeHtml(e.title)+'</div>';
+      var color, title;
+      if(gcalEvents!==null){ color = e.calendarColor; title = e.title; }
+      else { var cal = state.calendars.filter(function(c){return c.name===e.calendar;})[0] || {color:"#8a8390"}; color = cal.color; title = e.title; }
+      html += '<div class="cal-ev" style="background:'+color+'" title="'+escapeHtml(title)+'">'+escapeHtml(title)+'</div>';
     });
     html += '</div>';
     if(i===41) break;
@@ -1219,6 +1284,7 @@ function calNav(dir){
   calMonth += dir;
   if(calMonth<0){ calMonth=11; calYear--; }
   if(calMonth>11){ calMonth=0; calYear++; }
+  if(gcalCalendars) fetchGCalEventsForVisibleMonth();
   renderAll();
 }
 function parseEventCommand(text){
@@ -1233,11 +1299,16 @@ function parseEventCommand(text){
   }
   var timeMatch = t.match(/godz\.?\s*(\d{1,2}):(\d{2})/i);
   if(timeMatch){ res.time = String(timeMatch[1]).padStart(2,"0")+":"+timeMatch[2]; }
+  var calSource = gcalCalendars || state.calendars;
+  if(gcalCalendars){
+    var wspolny = gcalCalendars.filter(function(c){ return c.name.toLowerCase().indexOf("wspólny")!==-1 || c.name.toLowerCase().indexOf("wspolny")!==-1; })[0];
+    res.calendar = wspolny ? wspolny.name : gcalCalendars[0].name;
+  }
   var calMatch = t.match(/kalendarz\s+"([^"]+)"/i);
   if(calMatch){
     var name = calMatch[1];
-    var found = state.calendars.filter(function(c){ return c.name.toLowerCase()===name.toLowerCase(); })[0];
-    res.calendar = found ? found.name : (name.charAt(0).toUpperCase()+name.slice(1));
+    var found = calSource.filter(function(c){ return c.name.toLowerCase()===name.toLowerCase() || c.name.toLowerCase().indexOf(name.toLowerCase())!==-1; })[0];
+    res.calendar = found ? found.name : (gcalCalendars ? gcalCalendars[0].name : (name.charAt(0).toUpperCase()+name.slice(1)));
   }
   var withMatch = t.match(/z\s+([A-ZŻŹĆĄŚĘŁÓŃ][a-ząćęłńóśźż]+(?:\s+[A-ZŻŹĆĄŚĘŁÓŃ][a-ząćęłńóśźż]+)?)/);
   var locMatch = t.match(/,\s*([A-ZŻŹĆĄŚĘŁÓŃ][^,]*?)(?:,\s*kalendarz|$)/);
@@ -1248,13 +1319,47 @@ function parseEventCommand(text){
   res.title = titleParts.join(" ");
   return res;
 }
+function insertGCalEvent(parsed){
+  var cal = gcalCalendars.filter(function(c){ return c.name===parsed.calendar; })[0] || gcalCalendars[0];
+  var body;
+  if(parsed.time){
+    var parts = parsed.time.split(":");
+    var endH = (parseInt(parts[0],10)+1)%24;
+    var endTime = String(endH).padStart(2,"0")+":"+parts[1];
+    body = {summary:parsed.title, location:parsed.location||undefined,
+      start:{dateTime:parsed.date+"T"+parsed.time+":00", timeZone:"Europe/Warsaw"},
+      end:{dateTime:parsed.date+"T"+endTime+":00", timeZone:"Europe/Warsaw"}};
+  } else {
+    body = {summary:parsed.title, location:parsed.location||undefined,
+      start:{date:parsed.date}, end:{date:parsed.date}};
+  }
+  fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(cal.id)+"/events", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; gcalCalendars=null; throw new Error("401"); }
+    if(!r.ok) throw new Error("insert failed");
+    return r.json();
+  }).then(function(){
+    delete gcalEventsCache[gcalMonthKey()];
+    fetchGCalEventsForVisibleMonth();
+  }).catch(function(){
+    alert("Nie udało się dodać wydarzenia do Google Calendar — spróbuj połączyć ponownie (przycisk w Kalendarzu).");
+    renderAll();
+  });
+}
 function submitNlp(){
   var val = document.getElementById("nlpInput").value;
   if(!val.trim()) return;
   var parsed = parseEventCommand(val);
   if(!parsed.date){ alert("Nie udało się rozpoznać daty w komendzie."); return; }
-  state.events.push({id:uid("ev"), title:parsed.title, date:parsed.date, time:parsed.time, location:parsed.location, calendar:parsed.calendar});
-  save();
+  if(gcalCalendars && window.__gcalToken){
+    insertGCalEvent(parsed);
+  } else {
+    state.events.push({id:uid("ev"), title:parsed.title, date:parsed.date, time:parsed.time, location:parsed.location, calendar:parsed.calendar});
+    save();
+  }
   document.getElementById("nlpInput").value = "";
   renderAll();
 }
@@ -1262,8 +1367,19 @@ function promptAddEvent(){
   var title = prompt("Tytuł wydarzenia:"); if(!title) return;
   var date = prompt("Data (RRRR-MM-DD):", todayStr()); if(!date) return;
   var time = prompt("Godzina (GG:MM), opcjonalnie:", "");
-  state.events.push({id:uid("ev"), title:title, date:date, time:time||null, location:null, calendar:"Osobiste"});
-  save(); renderAll();
+  var calendarName = gcalCalendars ? gcalCalendars[0].name : "Osobiste";
+  if(gcalCalendars && gcalCalendars.length>1){
+    var pick = prompt("Kalendarz ("+gcalCalendars.map(function(c){return c.name;}).join("/")+"):", calendarName);
+    if(pick){ var m = gcalCalendars.filter(function(c){return c.name.toLowerCase()===pick.toLowerCase();})[0]; if(m) calendarName = m.name; }
+  }
+  var parsed = {title:title, date:date, time:time||null, location:null, calendar:calendarName};
+  if(gcalCalendars && window.__gcalToken){
+    insertGCalEvent(parsed);
+  } else {
+    state.events.push({id:uid("ev"), title:title, date:date, time:time||null, location:null, calendar:"Osobiste"});
+    save();
+  }
+  renderAll();
 }
 
 /* ================= NAWYKI ================= */
@@ -1444,6 +1560,7 @@ var app = initializeApp(firebaseConfig);
 var auth = getAuth(app);
 var db = getFirestore(app);
 var provider = new GoogleAuthProvider();
+provider.addScope('https://www.googleapis.com/auth/calendar');
 
 var gate = document.getElementById("authGate");
 var gateTitle = document.getElementById("gateTitle");
@@ -1480,11 +1597,16 @@ function hideGate(){ gate.classList.add("hidden"); }
 
 function doSignIn(){
   gateText.textContent = "Otwieram okno logowania Google…";
-  signInWithPopup(auth, provider).catch(function(err){
+  signInWithPopup(auth, provider).then(function(result){
+    var credential = GoogleAuthProvider.credentialFromResult(result);
+    window.__gcalToken = credential && credential.accessToken;
+    if(window.onGCalTokenReady) window.onGCalTokenReady();
+  }).catch(function(err){
     gateText.textContent = "Logowanie nie powiodło się (" + err.code + "). Spróbuj ponownie.";
   });
 }
 function doSignOut(){ signOut(auth); }
+window.reconnectGCal = doSignIn;
 
 var unsubscribeSnapshot = null;
 var pushTimer = null;
