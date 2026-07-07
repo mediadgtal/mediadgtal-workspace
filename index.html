@@ -882,6 +882,20 @@ function addPost(){
 }
 
 /* ================= INSTAGRAM / FACEBOOK ================= */
+var socialRange = "miesiac"; // tydzien / miesiac / kwartal / rok
+function setSocialRange(r){ socialRange = r; renderAll(); }
+function accBrand(acc){
+  return ((acc.handle||acc.name||"").toLowerCase().indexOf("tool4arts")!==-1) ? "tool4arts" : "MediaDGtal";
+}
+function milestoneGoal(followers){
+  return (Math.floor(followers/1000)+1)*1000;
+}
+function needsWeeklyUpdate(acc){
+  var lastDate = acc.stats.length ? acc.stats[acc.stats.length-1].date : null;
+  if(!lastDate) return true;
+  var days = Math.floor((new Date(todayStr()) - new Date(lastDate)) / 86400000);
+  return new Date().getDay()===1 || days>=7;
+}
 function renderSocial(el, platform){
   var accounts = platform==="instagram" ? state.igAccounts : state.fbAccounts;
   var activeId = platform==="instagram" ? igActiveId : fbActiveId;
@@ -895,13 +909,15 @@ function renderSocial(el, platform){
   });
   html += '</select>';
   html += '<button class="btn secondary small" onclick="addAccount(\''+platform+'\')">+ Nowe konto</button>';
+  html += '<button class="btn danger small" onclick="removeAccount(\''+platform+'\')">Usuń konto</button>';
   html += '<button class="btn secondary small" onclick="refreshAcc()">⟳ Odśwież</button></div>';
 
-  html += '<div class="stub-note">To dane lokalne (wprowadzane ręcznie). Artifact blokuje realne wywołania do Instagram/Facebook API — automatyczna synchronizacja pojawi się po migracji na docelowy hosting.</div>';
+  html += '<div class="stub-note">To dane wprowadzane ręcznie / co tydzień. Prawdziwa synchronizacja z Instagram/Facebook API wymaga Fazy 4 migracji (konto Meta Developer + weryfikacja) — nie jest jeszcze podpięta.</div>';
 
   var last = acc.stats[acc.stats.length-1].followers;
   var prev = acc.stats.length>1 ? acc.stats[acc.stats.length-2].followers : last;
   var change = last - prev;
+  var goal = milestoneGoal(last);
 
   html += '<div class="prof-row"><div class="avatar">'+acc.initials+'</div><div>'+
     '<div class="prof-name">'+escapeHtml(platform==="instagram"?acc.handle:acc.name)+'</div>'+
@@ -913,25 +929,49 @@ function renderSocial(el, platform){
     '<div><div class="k-value">'+acc.stats.length+'</div><div class="k-label">Zapisanych pomiarów</div></div>'+
     '</div>';
 
-  html += '<div class="measure-row">'+
-    '<input type="date" id="measureDate" value="'+todayStr()+'">'+
-    '<input type="number" id="measureVal" placeholder="Liczba obserw.">'+
-    '<button class="btn" onclick="saveMeasurement(\''+platform+'\')">Zapisz pomiar</button>'+
-    '<span class="goalwrap">Cel: <input type="number" id="goalVal" value="'+acc.goal+'" onchange="updateGoal(\''+platform+'\', this.value)"></span>'+
-    '</div>';
+  if(needsWeeklyUpdate(acc)){
+    html += '<div class="stub-note" style="background:rgba(207,155,74,.14)"><b>Czas zaktualizować obserwujących</b> — ostatni wpis: '+fmtDate(acc.stats[acc.stats.length-1].date)+'. '+
+      '<span class="measure-row" style="display:inline-flex; gap:8px; margin-top:8px">'+
+      '<input type="date" id="measureDate" value="'+todayStr()+'" style="width:auto">'+
+      '<input type="number" id="measureVal" placeholder="Liczba obserw." style="width:120px">'+
+      '<button class="btn small" onclick="saveMeasurement(\''+platform+'\')">Zapisz</button></span></div>';
+  }
 
-  html += '<div class="progress-label"><span>Postęp do celu</span><span>'+last+' / '+acc.goal+' obserwujących</span></div>';
-  html += '<div class="habit-bar"><div style="width:'+Math.min(100,Math.round(last/acc.goal*100))+'%"></div></div>';
+  html += '<div class="progress-label"><span>Postęp do kolejnego kamienia milowego</span><span>'+last+' / '+goal+' obserwujących</span></div>';
+  html += '<div class="habit-bar"><div style="width:'+Math.min(100,Math.round(last/goal*100))+'%"></div></div>';
 
-  html += lineChart(acc.stats);
+  var enriched = acc.stats.map(function(s,i){
+    var prevF = i>0 ? acc.stats[i-1].followers : s.followers;
+    return {date:s.date, followers:s.followers, delta:s.followers-prevF};
+  });
+  html += '<div class="chiprow" style="margin-top:16px">';
+  [["tydzien","Tydzień"],["miesiac","Miesiąc"],["kwartal","Kwartał"],["rok","Rok"]].forEach(function(pair){
+    html += '<span class="chip'+(socialRange===pair[0]?" active":"")+'" onclick="setSocialRange(\''+pair[0]+'\')">'+pair[1]+'</span>';
+  });
+  html += '</div>';
+  html += lineChart(filterStatsByRange(enriched, socialRange));
 
-  html += '<div class="ideas-box"><div class="card"><h3>Pomysły na content</h3>'+
-    '<div class="ideas-input-row"><input type="text" id="ideaInput" placeholder="Nowy pomysł na post..."><button class="btn" onclick="addIdea(\''+platform+'\')">Dodaj</button></div>';
-  if(!acc.ideas.length){ html += '<div class="empty">Brak zapisanych pomysłów.</div>'; }
-  else{ acc.ideas.forEach(function(i){ html += '<div class="idea-item">'+escapeHtml(i)+'</div>'; }); }
-  html += '</div></div>';
+  var brand = accBrand(acc);
+  var weekDates = currentWeekDates();
+  var weekPlan = state.contentCalendar.filter(function(c){ return c.brand===brand && weekDates.indexOf(c.date)!==-1; })
+    .sort(function(a,b){ return a.date<b.date?-1:1; });
+  html += '<div class="card" style="margin-top:16px"><h3>Plan publikacji w tym tygodniu</h3>';
+  if(!weekPlan.length){ html += '<div class="empty">Brak zaplanowanych publikacji w tym tygodniu.</div>'; }
+  else{
+    weekPlan.forEach(function(c){
+      html += '<div class="taskitem"><span class="dot"></span><span class="ttitle"><b>'+fmtDate(c.date)+'</b> ('+escapeHtml(c.day)+') — '+escapeHtml(c.topic)+'</span></div>';
+    });
+  }
+  html += '</div>';
 
   el.innerHTML = html;
+}
+function filterStatsByRange(stats, range){
+  var days = {tydzien:7, miesiac:31, kwartal:93, rok:366}[range] || 366;
+  var cutoff = new Date(); cutoff.setDate(cutoff.getDate()-days);
+  var cutoffStr = cutoff.toISOString().slice(0,10);
+  var filtered = stats.filter(function(s){ return s.date >= cutoffStr; });
+  return filtered.length ? filtered : stats.slice(-1);
 }
 function lineChart(stats){
   var w=1200, h=220, pad=10;
@@ -948,6 +988,11 @@ function lineChart(stats){
   var area = line + " L"+pts[pts.length-1][0].toFixed(1)+","+(h-pad)+" L"+pts[0][0].toFixed(1)+","+(h-pad)+" Z";
   var gid = "grad"+Math.random().toString(36).slice(2,7);
   var last = pts[pts.length-1];
+  var dots = stats.map(function(s,i){
+    var deltaTxt = (s.delta>=0?"+":"")+s.delta;
+    var title = "Tydzień "+fmtDate(s.date)+": "+s.followers+" obserwujących ("+deltaTxt+" vs poprzedni tydzień)";
+    return '<circle cx="'+pts[i][0].toFixed(1)+'" cy="'+pts[i][1].toFixed(1)+'" r="9" fill="transparent" stroke="none"><title>'+escapeHtml(title)+'</title></circle>';
+  }).join("");
   return '<div class="card" style="padding:20px 20px 6px"><svg viewBox="0 0 '+w+' '+h+'" style="width:100%; height:180px; display:block">'+
     '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'+
     '<stop offset="0%" stop-color="#cf9b4a" stop-opacity="0.35"/><stop offset="100%" stop-color="#cf9b4a" stop-opacity="0"/>'+
@@ -955,6 +1000,7 @@ function lineChart(stats){
     '<path d="'+area+'" fill="url(#'+gid+')" stroke="none"/>'+
     '<path d="'+line+'" fill="none" stroke="#cf9b4a" stroke-width="2.5"/>'+
     '<circle cx="'+last[0].toFixed(1)+'" cy="'+last[1].toFixed(1)+'" r="4" fill="#cf9b4a"/>'+
+    dots+
     '</svg></div>';
 }
 function setActiveAcc(platform, id){
@@ -965,12 +1011,26 @@ function addAccount(platform){
   var name = prompt("Nazwa / handle nowego konta:");
   if(!name) return;
   var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
-  var acc = {id:uid("acc"), handle:name, name:name, bio:"", initials:name.slice(0,2).toUpperCase(), goal:100, stats:[{date:todayStr(),followers:0}], ideas:[]};
+  var acc = {id:uid("acc"), handle:name, name:name, bio:"", initials:name.slice(0,2).toUpperCase(), goal:1000, stats:[{date:todayStr(),followers:0}], ideas:[]};
   list.push(acc);
+  if(platform==="instagram") igActiveId = acc.id; else fbActiveId = acc.id;
+  save(); renderAll();
+}
+function removeAccount(platform){
+  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
+  if(list.length<=1){ alert("To ostatnie konto — nie można go usunąć."); return; }
+  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
+  var acc = list.filter(function(a){return a.id===activeId;})[0];
+  var label = platform==="instagram" ? acc.handle : acc.name;
+  if(!confirm('Usunąć konto "'+label+'"? Tej operacji nie da się cofnąć.')) return;
+  var idx = list.indexOf(acc);
+  list.splice(idx,1);
+  var newActive = list[0].id;
+  if(platform==="instagram") igActiveId = newActive; else fbActiveId = newActive;
   save(); renderAll();
 }
 function refreshAcc(){
-  alert("Odświeżanie z realnego API Instagram/Facebook będzie dostępne po migracji poza Artifact (CSP blokuje takie połączenia stąd).");
+  alert("Odświeżanie z realnego API Instagram/Facebook będzie dostępne po Fazie 4 migracji (konto Meta Developer + weryfikacja) — jeszcze nie podpięte.");
 }
 function saveMeasurement(platform){
   var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
@@ -980,22 +1040,6 @@ function saveMeasurement(platform){
   var val = parseInt(document.getElementById("measureVal").value, 10);
   if(!date || isNaN(val)) return;
   acc.stats.push({date:date, followers:val});
-  save(); renderAll();
-}
-function updateGoal(platform, val){
-  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
-  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
-  var acc = list.filter(function(a){return a.id===activeId;})[0];
-  acc.goal = parseInt(val,10) || acc.goal;
-  save();
-}
-function addIdea(platform){
-  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
-  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
-  var acc = list.filter(function(a){return a.id===activeId;})[0];
-  var val = document.getElementById("ideaInput").value.trim();
-  if(!val) return;
-  acc.ideas.unshift(val);
   save(); renderAll();
 }
 
