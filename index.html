@@ -82,6 +82,17 @@
   .hero-greet{font-size:26px; font-style:italic; font-family:Georgia,'Times New Roman',serif; margin:0 0 4px; color:#fff}
   .hero-date{color:var(--muted); font-size:13px}
 
+  .weather-widget{margin-top:16px}
+  .weather-now{display:flex; align-items:center; gap:10px; margin-bottom:12px}
+  .weather-now .w-emoji{font-size:28px}
+  .weather-now .w-temp{font-size:24px; font-weight:700; color:#fff}
+  .weather-now .w-desc{color:var(--muted); font-size:13px}
+  .weather-week{display:flex; gap:8px; flex-wrap:wrap}
+  .weather-day{background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; text-align:center; min-width:64px}
+  .weather-day .wd-name{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px}
+  .weather-day .wd-emoji{font-size:18px; margin-bottom:4px}
+  .weather-day .wd-temp{font-size:12px; color:var(--muted-light)}
+
   .chip{
     display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
     background:transparent; color:var(--muted-light); font-size:12.5px; border:1px solid var(--border); cursor:pointer; user-select:none;
@@ -618,6 +629,7 @@ function renderDashboard(el){
   html += '</div>'; // end grid-2
 
   el.innerHTML = html;
+  loadWeather();
 }
 function currentWeekDates(){
   var d = new Date();
@@ -632,9 +644,78 @@ function currentWeekDates(){
   return out;
 }
 function renderWeatherWidget(){
-  return '<div class="weather-stub">'+
-    '<div class="stub-note" style="margin:14px 0 0">Pogoda live (pogodairadar.pl + Twoja lokalizacja) wymaga połączeń sieciowych, których Artifact nie może wykonywać (CSP blokuje wszystkie żądania zewnętrzne) — to ten sam powód co przy realnym IG/FB API. Damian, daj znać czy wolisz: (a) zostawić tu placeholder do ręcznego wpisania pogody, czy (b) ruszyć z migracją na realny hosting, gdzie to już będzie działać naprawdę.</div>'+
-    '</div>';
+  return '<div id="weatherWidget" class="weather-widget"><div class="empty">Wczytywanie pogody…</div></div>';
+}
+var WEATHER_CODES = {
+  0:["Bezchmurnie","☀️"], 1:["Głównie bezchmurnie","🌤"], 2:["Częściowe zachmurzenie","⛅"], 3:["Pochmurno","☁️"],
+  45:["Mgła","🌫"], 48:["Mgła szadź","🌫"],
+  51:["Mżawka słaba","🌦"], 53:["Mżawka","🌦"], 55:["Mżawka silna","🌦"],
+  56:["Marznąca mżawka","🌧"], 57:["Marznąca mżawka silna","🌧"],
+  61:["Deszcz słaby","🌧"], 63:["Deszcz","🌧"], 65:["Deszcz silny","🌧"],
+  66:["Marznący deszcz","🌧"], 67:["Marznący deszcz silny","🌧"],
+  71:["Śnieg słaby","🌨"], 73:["Śnieg","❄️"], 75:["Śnieg silny","❄️"], 77:["Śnieg ziarnisty","❄️"],
+  80:["Przelotny deszcz słaby","🌦"], 81:["Przelotny deszcz","🌦"], 82:["Przelotny deszcz silny","⛈"],
+  85:["Przelotny śnieg","🌨"], 86:["Przelotny śnieg silny","🌨"],
+  95:["Burza","⛈"], 96:["Burza z gradem","⛈"], 99:["Burza z gradem silna","⛈"]
+};
+function weatherLabel(code){ return WEATHER_CODES[code] || ["Nieznane",""]; }
+var WEATHER_CACHE_KEY = "mdgtal_weather_v1";
+var WEATHER_MAX_AGE_MS = 30*60*1000;
+function renderWeatherFromData(data){
+  var el = document.getElementById("weatherWidget");
+  if(!el) return;
+  var now = weatherLabel(data.current.code);
+  var html = '<div class="weather-now"><span class="w-emoji">'+now[1]+'</span><span class="w-temp">'+Math.round(data.current.temp)+'°C</span><span class="w-desc">'+now[0]+(data.place?" · "+escapeHtml(data.place):"")+'</span></div>';
+  html += '<div class="weather-week">';
+  data.daily.forEach(function(d, i){
+    var lab = weatherLabel(d.code);
+    var dname = i===0 ? "Dziś" : new Date(d.date).toLocaleDateString("pl-PL",{weekday:"short"});
+    html += '<div class="weather-day"><div class="wd-name">'+dname+'</div><div class="wd-emoji">'+lab[1]+'</div><div class="wd-temp">'+Math.round(d.tmax)+'°/'+Math.round(d.tmin)+'°</div></div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+function renderWeatherError(msg, showRetry){
+  var el = document.getElementById("weatherWidget");
+  if(!el) return;
+  el.innerHTML = '<div class="empty">'+escapeHtml(msg)+(showRetry ? ' <a href="#" onclick="loadWeather(true); return false;" style="color:var(--accent)">Spróbuj ponownie</a>' : '')+'</div>';
+}
+function loadWeather(forceRetry){
+  var cacheRaw = localStorage.getItem(WEATHER_CACHE_KEY);
+  var cache = null;
+  try{ cache = cacheRaw ? JSON.parse(cacheRaw) : null; }catch(e){ cache = null; }
+  if(cache && !forceRetry){ renderWeatherFromData(cache); }
+  if(cache && !forceRetry && (Date.now()-cache.ts) < WEATHER_MAX_AGE_MS) return;
+  if(!navigator.geolocation){ if(!cache) renderWeatherError("Twoja przeglądarka nie wspiera geolokalizacji.", false); return; }
+  if(!cache) renderWeatherError("Pobieranie lokalizacji…", false);
+  navigator.geolocation.getCurrentPosition(function(pos){
+    var lat = pos.coords.latitude, lon = pos.coords.longitude;
+    var url = "https://api.open-meteo.com/v1/forecast?latitude="+lat+"&longitude="+lon+
+      "&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7";
+    fetch(url).then(function(r){ return r.json(); }).then(function(j){
+      var place = null;
+      fetch("https://geocoding-api.open-meteo.com/v1/reverse?latitude="+lat+"&longitude="+lon+"&language=pl&count=1")
+        .then(function(r){ return r.json(); }).then(function(g){
+          if(g && g.results && g.results[0]) place = g.results[0].name;
+        }).catch(function(){})
+        .finally(function(){
+          var data = {
+            ts: Date.now(),
+            place: place,
+            current: {temp: j.current.temperature_2m, code: j.current.weather_code},
+            daily: j.daily.time.map(function(date, i){
+              return {date: date, tmax: j.daily.temperature_2m_max[i], tmin: j.daily.temperature_2m_min[i], code: j.daily.weather_code[i]};
+            })
+          };
+          localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data));
+          renderWeatherFromData(data);
+        });
+    }).catch(function(){
+      if(!cache) renderWeatherError("Nie udało się pobrać pogody.", true);
+    });
+  }, function(err){
+    if(!cache) renderWeatherError(err.code===1 ? "Brak zgody na lokalizację — włącz ją w ustawieniach przeglądarki." : "Nie udało się ustalić lokalizacji.", true);
+  }, {timeout:10000, maximumAge:600000});
 }
 function goalBar(label, val, goal){
   var pct = Math.min(100, Math.round((val/goal)*100));
