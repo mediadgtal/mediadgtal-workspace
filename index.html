@@ -224,11 +224,15 @@
   .cal-header h2{font-size:15px; font-weight:700; color:#fff; margin:0}
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden}
   .cal-dow{background:var(--sidebar-bg); color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; text-align:center; padding:8px 0; font-weight:700}
-  .cal-cell{background:var(--bg); min-height:88px; padding:7px; position:relative}
+  .cal-cell{background:var(--bg); min-height:88px; padding:7px; position:relative; cursor:pointer}
   .cal-cell.out{opacity:.35}
   .cal-cell.today{box-shadow:inset 0 0 0 1.5px var(--accent); border-radius:4px}
   .cal-daynum{font-size:12px; color:var(--muted-light); margin-bottom:5px}
-  .cal-ev{font-size:10.5px; padding:2px 5px; border-radius:4px; margin-bottom:3px; color:#161519; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .cal-ev{font-size:10.5px; padding:2px 5px; border-radius:4px; margin-bottom:3px; color:#161519; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer}
+
+  .modal-overlay{position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:20px}
+  .modal-box{width:360px; max-width:100%}
+  .modal-box h3{margin:0 0 16px}
 
   .ideas-box{margin-top:22px}
   .ideas-input-row{display:flex; gap:10px; margin-bottom:10px}
@@ -323,6 +327,7 @@ var gcalCalendars = null; // null = niepołączony; po połączeniu: [{id,name,c
 var gcalLoading = false;
 var gcalEventsCache = {}; // klucz "rok-miesiac" -> [{title,date,time,calendarName,calendarColor}]
 var gcalConnectError = null;
+var calEventRefs = [];
 var igActiveId = null, fbActiveId = null;
 
 var state = null;
@@ -1193,6 +1198,22 @@ function ensureGCalCalendars(){
       renderAll();
     });
 }
+function eventDateRange(it){
+  var startStr = it.start.date || (it.start.dateTime||"").slice(0,10);
+  var endRaw = it.end && (it.end.date || (it.end.dateTime||"").slice(0,10));
+  if(!endRaw) return [startStr];
+  var start = new Date(startStr+"T00:00:00");
+  var end = new Date(endRaw+"T00:00:00");
+  if(it.end.date){ end.setDate(end.getDate()-1); } // all-day end date w Google jest wyłączna
+  if(end < start) end = new Date(start);
+  var dates = [];
+  var cur = new Date(start);
+  while(cur <= end){
+    dates.push(cur.getFullYear()+"-"+String(cur.getMonth()+1).padStart(2,"0")+"-"+String(cur.getDate()).padStart(2,"0"));
+    cur.setDate(cur.getDate()+1);
+  }
+  return dates.length ? dates : [startStr];
+}
 function fetchGCalEventsForVisibleMonth(){
   if(!gcalCalendars || !window.__gcalToken) return;
   var key = gcalMonthKey();
@@ -1206,11 +1227,20 @@ function fetchGCalEventsForVisibleMonth(){
     return fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(cal.id)+"/events?timeMin="+encodeURIComponent(timeMin)+"&timeMax="+encodeURIComponent(timeMax)+"&singleEvents=true&orderBy=startTime", {headers:{Authorization:"Bearer "+window.__gcalToken}})
       .then(function(r){ if(r.status===401){ window.__gcalToken=null; gcalCalendars=null; throw new Error("401"); } return r.json(); })
       .then(function(j){
-        return (j.items||[]).map(function(it){
-          var d = (it.start && (it.start.date || (it.start.dateTime||"").slice(0,10))) || "";
-          var t = it.start && it.start.dateTime ? it.start.dateTime.slice(11,16) : null;
-          return {title: it.summary||"(bez tytułu)", date:d, time:t, calendarName:cal.name, calendarColor:cal.color};
+        var out = [];
+        (j.items||[]).forEach(function(it){
+          if(!it.start) return;
+          var dates = eventDateRange(it);
+          var t = it.start.dateTime ? it.start.dateTime.slice(11,16) : null;
+          var rawStart = it.start.date || (it.start.dateTime||"").slice(0,10);
+          var rawEnd = (it.end && (it.end.date || (it.end.dateTime||"").slice(0,10))) || rawStart;
+          dates.forEach(function(d){
+            out.push({id:it.id, calendarId:cal.id, title: it.summary||"(bez tytułu)", date:d, time:t,
+              calendarName:cal.name, calendarColor:cal.color, allDay: !!it.start.date,
+              rawStartDate: rawStart, rawEndDate: rawEnd, multiDay: dates.length>1});
+          });
         });
+        return out;
       }).catch(function(){ return []; });
   })).then(function(results){
     gcalEventsCache[key] = [].concat.apply([], results);
@@ -1260,18 +1290,28 @@ function renderKalendarz(el){
   var gridStart = new Date(calYear, calMonth, 1-startOffset);
   var today = todayStr();
   var gcalEvents = gcalCalendars ? (gcalEventsCache[gcalMonthKey()]||null) : null;
+  calEventRefs = [];
   for(var i=0;i<42;i++){
     var d = new Date(gridStart); d.setDate(gridStart.getDate()+i);
     var dstr = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
     var inMonth = d.getMonth()===calMonth;
     var isToday = dstr===today;
     var dayEvents = gcalEvents!==null ? gcalEvents.filter(function(e){ return e.date===dstr; }) : state.events.filter(function(e){ return e.date===dstr; });
-    html += '<div class="cal-cell'+(inMonth?"":" out")+(isToday?" today":"")+'"><div class="cal-daynum">'+d.getDate()+'</div>';
+    html += '<div class="cal-cell'+(inMonth?"":" out")+(isToday?" today":"")+'" ondblclick="openEventModal({date:\''+dstr+'\'})"><div class="cal-daynum">'+d.getDate()+'</div>';
     dayEvents.forEach(function(e){
-      var color, title;
-      if(gcalEvents!==null){ color = e.calendarColor; title = e.title; }
-      else { var cal = state.calendars.filter(function(c){return c.name===e.calendar;})[0] || {color:"#8a8390"}; color = cal.color; title = e.title; }
-      html += '<div class="cal-ev" style="background:'+color+'" title="'+escapeHtml(title)+'">'+escapeHtml(title)+'</div>';
+      var color, title, ctx;
+      if(gcalEvents!==null){
+        color = e.calendarColor; title = e.title + (e.multiDay ? " ↔" : "");
+        ctx = {existing:true, source:"gcal", id:e.id, calendarId:e.calendarId, title:e.title, date:dstr, time:e.time,
+          calendar:e.calendarName, allDay:e.allDay, rawStartDate:e.rawStartDate, rawEndDate:e.rawEndDate};
+      } else {
+        var cal = state.calendars.filter(function(c){return c.name===e.calendar;})[0] || {color:"#8a8390"};
+        color = cal.color; title = e.title;
+        ctx = {existing:true, source:"local", id:e.id, title:e.title, date:e.date, time:e.time, calendar:e.calendar};
+      }
+      var idx = calEventRefs.length;
+      calEventRefs.push(ctx);
+      html += '<div class="cal-ev" style="background:'+color+'" title="'+escapeHtml(title)+'" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+escapeHtml(title)+'</div>';
     });
     html += '</div>';
     if(i===41) break;
@@ -1279,6 +1319,117 @@ function renderKalendarz(el){
   html += '</div>';
 
   el.innerHTML = html;
+}
+function closeEventModal(){
+  var m = document.getElementById("eventModal");
+  if(m) m.remove();
+  window.__eventModalCtx = null;
+}
+function openEventModal(opts){
+  closeEventModal();
+  var isEdit = !!opts.existing;
+  var calSource = gcalCalendars || state.calendars;
+  var disableCalSelect = isEdit && opts.source==="gcal";
+  var calOptions = calSource.map(function(c){
+    return '<option value="'+escapeHtml(c.name)+'"'+((opts.calendar||"")===c.name?" selected":"")+'>'+escapeHtml(c.name)+'</option>';
+  }).join("");
+  var dateLabel = "Data" + (isEdit && opts.rawStartDate && opts.rawEndDate && opts.rawStartDate!==opts.rawEndDate ? " początkowa (wydarzenie trwa kilka dni — przesunięcie zachowa długość)" : "");
+  var html = '<div class="modal-overlay" id="eventModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj wydarzenie":"Nowe wydarzenie")+'</h3>'+
+    '<div class="field"><label>Tytuł</label><input type="text" id="evmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
+    '<div class="field"><label>'+dateLabel+'</label><input type="date" id="evmDate" value="'+(opts.date||todayStr())+'"></div>'+
+    '<div class="field"><label>Godzina (opcjonalnie)</label><input type="time" id="evmTime" value="'+(opts.time||"")+'"></div>'+
+    '<div class="field"><label>Kalendarz</label><select id="evmCal"'+(disableCalSelect?" disabled":"")+'>'+calOptions+'</select></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteEventModal()">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeEventModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveEventModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__eventModalCtx = opts;
+}
+function saveEventModal(){
+  var ctx = window.__eventModalCtx || {};
+  var title = document.getElementById("evmTitle").value.trim();
+  var date = document.getElementById("evmDate").value;
+  var time = document.getElementById("evmTime").value;
+  var calName = document.getElementById("evmCal").value;
+  if(!title || !date){ alert("Podaj przynajmniej tytuł i datę."); return; }
+
+  var useGcal = ctx.source==="gcal" || (!ctx.existing && gcalCalendars && window.__gcalToken);
+  if(useGcal){
+    var cal = gcalCalendars.filter(function(c){return c.name===calName;})[0] || gcalCalendars[0];
+    var targetCalendarId = ctx.existing ? ctx.calendarId : cal.id;
+    var body = {summary:title};
+    if(ctx.existing && ctx.allDay){
+      if(date===ctx.rawStartDate){
+        body.start = {date:ctx.rawStartDate};
+        body.end = {date:ctx.rawEndDate};
+      } else {
+        var deltaDays = Math.round((new Date(date+"T00:00:00") - new Date(ctx.rawStartDate+"T00:00:00"))/86400000);
+        var endD = new Date(ctx.rawEndDate+"T00:00:00"); endD.setDate(endD.getDate()+deltaDays);
+        body.start = {date:date};
+        body.end = {date: endD.getFullYear()+"-"+String(endD.getMonth()+1).padStart(2,"0")+"-"+String(endD.getDate()).padStart(2,"0")};
+      }
+    } else if(time){
+      var parts = time.split(":"); var endH = (parseInt(parts[0],10)+1)%24;
+      body.start = {dateTime:date+"T"+time+":00", timeZone:"Europe/Warsaw"};
+      body.end = {dateTime:date+"T"+String(endH).padStart(2,"0")+":"+parts[1]+":00", timeZone:"Europe/Warsaw"};
+    } else {
+      body.start = {date:date};
+      body.end = {date:date};
+    }
+    var url = "https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(targetCalendarId)+"/events"+(ctx.existing?"/"+encodeURIComponent(ctx.id):"");
+    fetch(url, {
+      method: ctx.existing ? "PATCH" : "POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    }).then(function(r){
+      if(r.status===401){ window.__gcalToken=null; gcalCalendars=null; throw new Error("401"); }
+      if(!r.ok) throw new Error("save failed");
+      return r.json();
+    }).then(function(){
+      closeEventModal();
+      delete gcalEventsCache[gcalMonthKey()];
+      fetchGCalEventsForVisibleMonth();
+    }).catch(function(){
+      alert("Nie udało się zapisać wydarzenia w Google Calendar — spróbuj połączyć ponownie.");
+    });
+  } else {
+    if(ctx.existing){
+      var t = state.events.filter(function(x){return x.id===ctx.id;})[0];
+      if(t){ t.title=title; t.date=date; t.time=time||null; t.calendar=calName; save(); }
+    } else {
+      state.events.push({id:uid("ev"), title:title, date:date, time:time||null, location:null, calendar:calName});
+      save();
+    }
+    closeEventModal();
+    renderAll();
+  }
+}
+function deleteEventModal(){
+  var ctx = window.__eventModalCtx || {};
+  if(!confirm('Usunąć wydarzenie "'+ctx.title+'"?')) return;
+  if(ctx.source==="gcal"){
+    fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(ctx.calendarId)+"/events/"+encodeURIComponent(ctx.id), {
+      method:"DELETE",
+      headers:{Authorization:"Bearer "+window.__gcalToken}
+    }).then(function(r){
+      if(r.status===401){ window.__gcalToken=null; gcalCalendars=null; throw new Error("401"); }
+      if(!r.ok && r.status!==410 && r.status!==204) throw new Error("delete failed");
+      closeEventModal();
+      delete gcalEventsCache[gcalMonthKey()];
+      fetchGCalEventsForVisibleMonth();
+    }).catch(function(){
+      alert("Nie udało się usunąć wydarzenia.");
+    });
+  } else {
+    state.events = state.events.filter(function(x){return x.id!==ctx.id;});
+    save();
+    closeEventModal();
+    renderAll();
+  }
 }
 function calNav(dir){
   calMonth += dir;
