@@ -1048,15 +1048,11 @@ function renderZadania(el){
   setTopActions('<button class="btn" onclick="addTask()">+ Nowe zadanie</button>');
   var html = '<div class="tabsw">'+
     '<button class="'+(zadaniaSubview==="zadania"?"active":"")+'" onclick="setZadSub(\'zadania\')">Zadania</button>'+
-    '<button class="'+(zadaniaSubview==="klienci"?"active":"")+'" onclick="setZadSub(\'klienci\')">Klienci</button>'+
+    '<button class="'+(zadaniaSubview==="baza"?"active":"")+'" onclick="setZadSub(\'baza\')">Baza</button>'+
     '</div>';
 
-  if(zadaniaSubview==="klienci"){
-    html += '<div class="card"><table><thead><tr><th>Nazwa</th><th>Status</th><th>Wartość mies.</th><th>Notatki</th></tr></thead><tbody>';
-    state.clients.forEach(function(c){
-      html += '<tr><td>'+escapeHtml(c.name)+'</td><td>'+escapeHtml(c.status)+'</td><td>'+c.value+' zł</td><td>'+escapeHtml(c.notes)+'</td></tr>';
-    });
-    html += '</tbody></table></div>';
+  if(zadaniaSubview==="baza"){
+    html += renderZadaniaBaza();
     el.innerHTML = html;
     return;
   }
@@ -1069,12 +1065,36 @@ function renderZadania(el){
   var catFilterEl = document.getElementById("catFilter");
   var catFilter = catFilterEl ? catFilterEl.value : "";
 
+  var weekDefault = currentWeekDates();
+  var tydzienOdEl = document.getElementById("zadTydzienOd");
+  var tydzienDoEl = document.getElementById("zadTydzienDo");
+  var tydzienOd = tydzienOdEl ? tydzienOdEl.value : weekDefault[0];
+  var tydzienDo = tydzienDoEl ? tydzienDoEl.value : weekDefault[6];
+
+  var miesiacEl = document.getElementById("zadMiesiacInput");
+  var now = new Date();
+  var miesiacVal = miesiacEl ? miesiacEl.value : (now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0"));
+
   html += '<div class="colcols">';
   [["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].forEach(function(pair){
     var scope=pair[0], label=pair[1];
-    var items = state.tasks.filter(function(t){ return t.scope===scope && (!catFilter || t.category===catFilter); });
+    var items = state.tasks.filter(function(t){
+      if(t.scope!==scope) return false;
+      if(catFilter && t.category!==catFilter) return false;
+      var d = t.completedAt || t.createdAt;
+      if(scope==="tydzien"){ if(d < tydzienOd || d > tydzienDo) return false; }
+      if(scope==="miesiac"){ if(!d || d.slice(0,7)!==miesiacVal) return false; }
+      return true;
+    });
     var doneCount = items.filter(function(t){return t.done;}).length;
     html += '<div><div class="col-head"><span>'+label+'</span><b>'+doneCount+'/'+items.length+'</b></div>';
+    if(scope==="tydzien"){
+      html += '<div class="row" style="gap:6px; margin-bottom:10px"><input type="date" id="zadTydzienOd" value="'+tydzienOd+'" onchange="renderAll()" style="font-size:12px">'+
+        '<input type="date" id="zadTydzienDo" value="'+tydzienDo+'" onchange="renderAll()" style="font-size:12px"></div>';
+    }
+    if(scope==="miesiac"){
+      html += '<div style="margin-bottom:10px"><input type="month" id="zadMiesiacInput" value="'+miesiacVal+'" onchange="renderAll()" style="font-size:12px"></div>';
+    }
     if(!items.length){ html += '<div class="empty">Brak zadań.</div><button class="linklike" onclick="addTaskScope(\''+scope+'\')">+ Dodaj do „'+label+'"</button>'; }
     else{
       items.forEach(function(t){
@@ -1091,6 +1111,43 @@ function renderZadania(el){
   html += '</div>';
 
   el.innerHTML = html;
+}
+function renderZadaniaBaza(){
+  var years = {};
+  state.tasks.forEach(function(t){
+    var d = t.completedAt || t.createdAt;
+    if(d) years[d.slice(0,4)] = true;
+  });
+  var yearList = Object.keys(years).sort().reverse();
+  var yearEl = document.getElementById("bazaYearFilter");
+  var yearFilter = yearEl ? yearEl.value : "";
+
+  var html = '<div class="chiprow" style="justify-content:flex-end"><select id="bazaYearFilter" onchange="renderAll()" style="width:auto">'+
+    '<option value="">Wszystkie lata</option>'+
+    yearList.map(function(y){ return '<option value="'+y+'"'+(y===yearFilter?" selected":"")+'>'+y+'</option>'; }).join("")+
+    '</select></div>';
+
+  var items = state.tasks.filter(function(t){
+    if(!yearFilter) return true;
+    var d = t.completedAt || t.createdAt;
+    return d && d.slice(0,4)===yearFilter;
+  }).sort(function(a,b){
+    var da = a.completedAt || a.createdAt || "", db = b.completedAt || b.createdAt || "";
+    return da < db ? 1 : -1;
+  });
+
+  var scopeLabel = {dzien:"Dziś", tydzien:"Tydzień", miesiac:"Miesiąc"};
+  html += '<div class="card"><table><thead><tr><th>Zadanie</th><th>Kategoria</th><th>Zakres</th><th>Status</th><th>Data</th></tr></thead><tbody>';
+  if(!items.length){ html += '<tr><td colspan="5"><div class="empty">Brak zadań dla wybranego okresu.</div></td></tr>'; }
+  items.forEach(function(t){
+    html += '<tr><td>'+escapeHtml(t.title)+'</td>'+
+      '<td><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></td>'+
+      '<td>'+(scopeLabel[t.scope]||t.scope)+'</td>'+
+      '<td>'+(t.done ? "Ukończone" : "Otwarte")+'</td>'+
+      '<td>'+fmtDate(t.completedAt || t.createdAt)+'</td></tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
 }
 function setZadSub(v){ zadaniaSubview = v; renderAll(); }
 function addTask(){ addTaskScope("miesiac"); }
