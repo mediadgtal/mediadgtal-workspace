@@ -1,0 +1,1222 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MediaDGtal — Workspace</title>
+<meta name="description" content="MediaDGtal — prywatny workspace do prowadzenia agencji">
+<style>
+  :root{
+    --sidebar-bg:#16151a; --bg:#1e1c22; --active-bg:#25232c;
+    --accent:#cf9b4a; --accent-2:#d9914e; --accent-dim:#8a6a35;
+    --pink:#c77398; --pink-bg:#33222a;
+    --tool4arts-bg:#342c1f; --tool4arts-text:#cf9b4a;
+    --rozwoj-bg:#322419; --rozwoj-text:#e0954a;
+    --admin-text:#837a82; --admin-bg:#2a2830;
+    --muted:#8a8390; --muted-light:#c5bec3;
+    --danger:#d1636f;
+    --border:#2a2830; --text:#f0eef2;
+    --radius:12px;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); display:flex; min-height:100vh; overflow-x:hidden;
+    font-size:14px;
+  }
+  a{color:inherit}
+  button{font-family:inherit; cursor:pointer}
+  input,select,textarea{font-family:inherit; font-size:13.5px}
+
+  /* ---- Sidebar ---- */
+  #sidebar{
+    width:230px; flex:0 0 230px; background:var(--sidebar-bg); color:var(--muted-light);
+    display:flex; flex-direction:column; padding:20px 14px; gap:4px; border-right:1px solid var(--border);
+  }
+  #sidebar .brand{ padding:2px 4px 22px 4px; }
+  #sidebar .brand img{ width:100%; height:auto; display:block; }
+  .navitem{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    color:var(--muted-light); text-decoration:none; font-size:13.5px; border:none; background:transparent; width:100%; text-align:left;
+  }
+  .navitem:hover{background:rgba(255,255,255,.04); color:#fff}
+  .navitem.active{background:var(--active-bg); color:#fff; font-weight:600}
+  .navitem .ico{width:18px; text-align:center; opacity:.85; font-size:13px}
+  .sidebar-footer{
+    margin-top:auto; padding-top:16px; border-top:1px solid var(--border);
+    display:flex; align-items:center; gap:10px;
+  }
+  .avatar{
+    width:34px; height:34px; border-radius:50%; flex:0 0 34px;
+    background:linear-gradient(135deg,#dc9d6b,#d38b7d);
+    display:flex; align-items:center; justify-content:center; color:#241a14; font-weight:700; font-size:12.5px;
+  }
+  .sidebar-footer .who{font-size:13px; color:#fff; font-weight:600}
+  .sidebar-footer .handle{font-size:11.5px; color:var(--muted)}
+
+  /* ---- Main ---- */
+  #main{flex:1; min-width:0; display:flex; flex-direction:column}
+  #topbar{
+    display:flex; align-items:center; justify-content:space-between; padding:20px 30px 16px;
+  }
+  #topbar .eyebrow{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:4px}
+  #topbar h1{font-size:24px; margin:0; font-weight:700; color:#fff}
+  #content{padding:0 30px 60px; flex:1}
+
+  .grid{display:grid; gap:16px}
+  .grid-2{grid-template-columns:repeat(2,1fr)}
+  .grid-3{grid-template-columns:repeat(3,1fr)}
+  .grid-4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:1100px){.grid-3,.grid-4{grid-template-columns:repeat(2,1fr)}}
+
+  .card{
+    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px 20px; box-shadow:var(--shadow);
+  }
+  .card h3{margin:0 0 12px; font-size:12px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.05em}
+  .stat-value{font-size:30px; font-weight:700; color:#fff}
+  .stat-sub{font-size:11.5px; color:var(--muted); margin-top:3px; text-transform:uppercase; letter-spacing:.03em}
+  .stat-sub.up{color:var(--accent)}
+  .hero-greet{font-size:26px; font-style:italic; font-family:Georgia,'Times New Roman',serif; margin:0 0 4px; color:#fff}
+  .hero-date{color:var(--muted); font-size:13px}
+
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
+    background:transparent; color:var(--muted-light); font-size:12.5px; border:1px solid var(--border); cursor:pointer; user-select:none;
+  }
+  .chip.active{background:var(--accent); color:#241a0a; border-color:var(--accent); font-weight:600}
+  .chiprow{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; align-items:center}
+
+  .btn{
+    background:var(--accent); color:#241a0a; border:none; border-radius:8px; padding:9px 16px;
+    font-size:13px; font-weight:700;
+  }
+  .btn:hover{background:var(--accent-2)}
+  .btn.secondary{background:transparent; color:var(--muted-light); border:1px solid var(--border)}
+  .btn.secondary:hover{border-color:var(--accent); color:#fff}
+  .btn.small{padding:6px 11px; font-size:12px}
+  .btn.danger{background:transparent; color:var(--danger); border:1px solid var(--border)}
+
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  th{text-align:left; color:var(--muted); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:8px 10px; border-bottom:1px solid var(--border)}
+  td{padding:10px 10px; border-bottom:1px solid var(--border); color:var(--muted-light)}
+  tr:last-child td{border-bottom:none}
+
+  .tag{padding:2px 9px; border-radius:999px; font-size:11px; font-weight:600; display:inline-block}
+  .tag-MediaDGtal{background:var(--pink-bg); color:var(--pink)}
+  .tag-tool4arts{background:var(--tool4arts-bg); color:var(--tool4arts-text); border:1px solid rgba(207,155,74,.25)}
+  .tag-Rozwoj{background:var(--rozwoj-bg); color:var(--rozwoj-text)}
+  .tag-Admin{background:var(--admin-bg); color:var(--admin-text)}
+  .tag-Osobiste{background:#20302a; color:#63b58a}
+
+  .stub-note{
+    background:rgba(207,155,74,.08); border:1px solid rgba(207,155,74,.25); color:var(--accent);
+    font-size:12px; padding:9px 13px; border-radius:8px; margin-bottom:16px;
+  }
+
+  input[type=text],input[type=number],input[type=date],input[type=time],input[type=month],select,textarea{
+    padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--sidebar-bg); color:var(--text); width:100%;
+  }
+  input::placeholder{color:var(--muted)}
+  select{appearance:none; -webkit-appearance:none; padding-right:26px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%238a8390'/></svg>");
+    background-repeat:no-repeat; background-position:right 10px center;}
+  .row{display:flex; gap:8px; align-items:center}
+  .field{display:flex; flex-direction:column; gap:4px; margin-bottom:10px}
+  .field label{font-size:12px; color:var(--muted); font-weight:600}
+
+  .kanban{display:grid; grid-template-columns:repeat(4,1fr); gap:14px}
+  @media(max-width:1100px){.kanban{grid-template-columns:repeat(2,1fr)}}
+  .kanban-col{background:rgba(255,255,255,.015); border:1px solid var(--border); border-radius:10px; padding:12px; min-height:120px}
+  .kanban-col h4{margin:2px 4px 12px; font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; display:flex; justify-content:space-between}
+  .kcard{background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 11px; margin-bottom:9px; font-size:12.5px; color:var(--muted-light)}
+  .kcard .kdate{font-size:10.5px; color:var(--muted); margin-top:6px}
+
+  .tabsw{display:flex; gap:22px; margin-bottom:18px; border-bottom:1px solid var(--border)}
+  .tabsw button{
+    background:none; border:none; padding:0 0 10px; font-size:13px; color:var(--muted);
+    border-bottom:2px solid transparent; font-weight:600;
+  }
+  .tabsw button.active{color:#fff; border-color:var(--accent)}
+
+  .colcols{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  @media(max-width:1000px){.colcols{grid-template-columns:1fr}}
+  .col-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700}
+  .col-head b{color:var(--muted-light); font-weight:700}
+  .taskitem{display:flex; align-items:center; gap:9px; padding:8px 4px; border-bottom:1px solid var(--border)}
+  .taskitem:last-child{border-bottom:none}
+  .taskitem.done .ttitle{text-decoration:line-through; color:var(--muted)}
+  .taskitem input[type=checkbox]{width:15px; height:15px; accent-color:var(--accent)}
+  .ttitle{flex:1; font-size:13px; color:var(--muted-light)}
+  .dot{width:6px; height:6px; border-radius:50%; background:var(--accent-2); flex:0 0 6px}
+  .taskmeta{display:flex; align-items:center; gap:8px}
+  .linklike{font-size:11.5px; color:var(--muted-light); text-decoration:none; background:none; border:none; padding:0}
+  .linklike:hover{color:#fff}
+  .linklike.danger{color:var(--danger)}
+
+  .habitrow{display:flex; align-items:center; gap:14px; padding:12px 4px; border-bottom:1px solid var(--border)}
+  .habitrow:last-child{border-bottom:none}
+  .habitname{flex:1; font-size:13.5px; color:var(--muted-light); font-weight:600}
+  .habitpct{font-size:11.5px; color:var(--muted); width:110px; text-align:right}
+  .habitstreak{font-size:11.5px; color:var(--accent); width:100px; text-align:right; font-weight:600}
+  .weekdots{display:flex; gap:5px}
+  .weekdots .wd{width:22px; text-align:center}
+  .weekdots .wd .lbl{font-size:9px; color:var(--muted); margin-bottom:3px}
+  .weekdots .wd input{width:15px; height:15px; accent-color:var(--accent)}
+  .dash-habit{display:flex; align-items:center; gap:9px; padding:6px 0}
+  .dash-habit input{accent-color:var(--accent)}
+  .dash-habit .n{flex:1; font-size:13px; color:var(--muted-light)}
+  .dash-habit .s{font-size:11.5px; color:var(--accent); font-weight:600}
+
+  .notif{display:flex; gap:11px; padding:11px 4px; border-bottom:1px solid var(--border)}
+  .notif:last-child{border-bottom:none}
+  .notif .dot2{width:7px; height:7px; border-radius:50%; background:var(--accent); margin-top:5px; flex:0 0 7px}
+  .notif .dot2.read{background:transparent; border:1px solid var(--border)}
+  .notif .ntext{font-size:13px; color:var(--muted-light)}
+  .notif .ntime{font-size:11px; color:var(--muted); margin-top:2px}
+
+  .acc-switch{display:flex; gap:8px; margin-bottom:22px; align-items:center; flex-wrap:wrap}
+  .acc-switch select{width:auto; min-width:170px}
+
+  .prof-row{display:flex; align-items:center; gap:14px; margin-bottom:22px}
+  .prof-row .avatar{width:52px; height:52px; flex:0 0 52px; font-size:15px}
+  .prof-name{font-size:17px; font-weight:700; color:#fff}
+  .prof-bio{font-size:12.5px; color:var(--muted); margin-top:2px}
+
+  .kpi-row{display:flex; gap:46px; margin-bottom:22px; flex-wrap:wrap}
+  .kpi-row .k-value{font-size:26px; font-weight:700; color:#fff}
+  .kpi-row .k-value.accent{color:var(--accent)}
+  .kpi-row .k-label{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:3px}
+
+  .measure-row{display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap}
+  .measure-row input[type=date]{width:150px}
+  .measure-row input[type=number]{width:130px}
+  .measure-row .goalwrap{display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted)}
+  .measure-row .goalwrap input{width:80px}
+
+  .progress-label{display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-bottom:6px}
+  .habit-bar{height:7px; border-radius:5px; background:var(--sidebar-bg); overflow:hidden; margin-bottom:22px}
+  .habit-bar > div{height:100%; background:var(--accent); border-radius:5px}
+
+  .empty{color:var(--muted); font-size:13px; padding:16px 4px}
+
+  #cmdbox{display:flex; gap:10px; margin-bottom:14px}
+  #cmdbox input{flex:1}
+
+  .cal-legend{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:18px}
+  .cal-legend span{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted)}
+  .cal-legend i{width:8px; height:8px; border-radius:50%; display:inline-block}
+
+  .cal-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
+  .cal-header h2{font-size:15px; font-weight:700; color:#fff; margin:0}
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden}
+  .cal-dow{background:var(--sidebar-bg); color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; text-align:center; padding:8px 0; font-weight:700}
+  .cal-cell{background:var(--bg); min-height:88px; padding:7px; position:relative}
+  .cal-cell.out{opacity:.35}
+  .cal-cell.today{box-shadow:inset 0 0 0 1.5px var(--accent); border-radius:4px}
+  .cal-daynum{font-size:12px; color:var(--muted-light); margin-bottom:5px}
+  .cal-ev{font-size:10.5px; padding:2px 5px; border-radius:4px; margin-bottom:3px; color:#161519; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  .ideas-box{margin-top:22px}
+  .ideas-input-row{display:flex; gap:10px; margin-bottom:10px}
+  .idea-item{padding:9px 4px; border-bottom:1px solid var(--border); font-size:13px; color:var(--muted-light)}
+  .idea-item:last-child{border-bottom:none}
+
+  ::-webkit-scrollbar{width:10px; height:10px}
+  ::-webkit-scrollbar-thumb{background:#333038; border-radius:6px}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div class="brand"><img id="brandLogo" alt="MediaDGtal"></div>
+  <div id="navwrap"></div>
+  <div class="sidebar-footer">
+    <div class="avatar">DG</div>
+    <div>
+      <div class="who">Damian Gogulski</div>
+      <div class="handle">@damian.gogulski</div>
+    </div>
+  </div>
+</div>
+<div id="main">
+  <div id="topbar">
+    <div>
+      <div class="eyebrow">MediaDGtal</div>
+      <h1 id="pageTitle">Dashboard</h1>
+    </div>
+    <div id="topActions"></div>
+  </div>
+  <div id="content"></div>
+</div>
+
+<script>
+var STORAGE_KEY = "mdgtal_workspace_v6";
+var LOGO_B64 = "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";
+
+/* ================= STATE ================= */
+var TABS = [
+  {id:"dashboard", label:"Dashboard", ico:"▦"},
+  {id:"wiadomosci", label:"Wiadomości", ico:"✉"},
+  {id:"posty", label:"Posty", ico:"▥"},
+  {id:"instagram", label:"Instagram", ico:"◎"},
+  {id:"facebook", label:"Facebook", ico:"◉"},
+  {id:"zadania", label:"Zadania", ico:"☑"},
+  {id:"kalendarz", label:"Kalendarz", ico:"▦"},
+  {id:"nawyki", label:"Nawyki", ico:"◈"},
+  {id:"statystyki", label:"Statystyki", ico:"▤"}
+];
+var CATEGORIES = ["MediaDGtal","tool4arts","Rozwoj","Admin"];
+var CATEGORY_LABEL = {MediaDGtal:"MediaDGtal", tool4arts:"tool4arts", Rozwoj:"Rozwój", Admin:"Admin"};
+var WEEKDAYS_FULL = ["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
+var WEEKDAYS_SHORT = ["PON","WT","ŚR","CZW","PT","SOB","ND"];
+var HABIT_WEEK_ORDER = ["ŚR","CZW","PT","SOB","ND","PON","WT"];
+var STRUKTURA_ROTATION = [
+  {day:"Poniedziałek", pillar:"studio edukacja (TOFU – karuzela)", desc:'„bolesna prawda o branży” — content z emocjami pod zapisania, udostępnienia'},
+  {day:"Wtorek", pillar:"story marketing (MOFU – stories)", desc:"storytelling / case / historia"},
+  {day:"Środa", pillar:"instr. edukacja (MOFU – karuzela)", desc:"Strategia / edukacja — DM, BIO, content, reklamy, procesy, sprzedaż, retencja"},
+  {day:"Czwartek", pillar:"studio edukacja (MOFU/BOFU – stories)", desc:"Emocjonalny content dla instruktorek — marka osobista, wypalenie, rozwój, widoczność, pieniądze"},
+  {day:"Piątek", pillar:"memy (TOFU – karuzela)", desc:"Content lekki / mem / branżowy humor"},
+  {day:"Sobota", pillar:"życie", desc:"Mocny hot take / kontrowersja"},
+  {day:"Niedziela", pillar:"życie", desc:"Wizja / przyszłość branży / mindset biznesowy"}
+];
+
+var currentTab = "dashboard";
+var zadaniaSubview = "zadania";
+var postySubtab = "kanban";
+var statPeriod = "miesiac"; // tylko "miesiac" lub "rok" — bez dziennego
+var statCats = {Wszystko:true};
+var calMonth, calYear;
+var igActiveId = null, fbActiveId = null;
+
+var state = null;
+
+function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
+function escapeHtml(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function fmtDate(d){
+  var dt = new Date(d+"T00:00:00");
+  if(isNaN(dt)) return d;
+  var months=["sty","lut","mar","kwi","maj","cze","lip","sie","wrz","paź","lis","gru"];
+  return dt.getDate()+" "+months[dt.getMonth()];
+}
+function todayStr(){
+  var d = new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function monthName(m){
+  var names=["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+  return names[m];
+}
+
+function defaultState(){
+  var s = {};
+
+  s.calendars = [
+    {name:"Praca", color:"#c77398"},
+    {name:"Wspólny", color:"#cf9b4a"},
+    {name:"Osobiste", color:"#63b58a"}
+  ];
+  s.events = [];
+
+  s.tasks = [
+    ["Plan marketingowy. Rozpisać reklamy, budżet.","MediaDGtal"],
+    ["Plan na działanie z Martą Walicką.","Rozwoj"],
+    ["Rozpisać plan prospectingu. Zrobić plan kiedy w jakie dni robić prospecting i do ilu osób.","MediaDGtal"],
+    ["Porządek w komputerku.","Admin"],
+    ["Kupić kalendarz nawyków na 2026 rok i go wypełnić.","Rozwoj"],
+    ["Umówić się do rodzinnego na badania krew, mocz, dermatolog.","Rozwoj"],
+    ["Plan na działanie z Tool4Arts.","tool4arts"],
+    ["Spenetrować rynek pilatesowy i zrobić dla nich ofertę.","MediaDGtal"],
+    ["Temat współpracy z Kacprem — rozpisać w planach na rok, ale nie nastawiać się że to się wydarzy.","Rozwoj"],
+    ["Pogadać z Bartkiem od Jogi i zaproponować spotkanie żeby obgadać możliwości współpracy.","MediaDGtal"],
+    ["Produkty cyfrowe — plan tworzenia, strona www, szablony Canva, PDF-y.","Rozwoj"],
+    ["Zaktualizować ofertę dla szkół tańca — nowy cennik.","MediaDGtal"],
+    ["Nagrać 3 nowe reels na Instagram.","MediaDGtal"],
+    ["Przygotować case study klienta z maja.","MediaDGtal"],
+    ["Rozpisać content plan na sierpień.","MediaDGtal"],
+    ["Zaktualizować stronę tool4arts — sekcja FAQ.","tool4arts"],
+    ["Wysłać follow-up do leadów z czerwca.","MediaDGtal"],
+    ["Przejrzeć i uporządkować fakturownię.","Admin"],
+    ["Zaplanować budżet reklamowy na Q3.","MediaDGtal"],
+    ["Przygotować prezentację ofertową dla nowego studia.","MediaDGtal"],
+    ["Sesja planowania — cele na drugie półrocze.","Rozwoj"]
+  ].map(function(t){
+    return {id:uid("task"), title:t[0], category:t[1], scope:"miesiac", done:false, createdAt: todayStr(), completedAt:null};
+  });
+
+  s.clients = [
+    {id:uid("cl"), name:"Studio Flow Poznań", status:"Rozmowy", value:0, notes:"Czeka na ofertę"},
+    {id:uid("cl"), name:"Aerial Hania", status:"Klient", value:0, notes:"Case study opublikowane"},
+    {id:uid("cl"), name:"Pole Dance Katowice", status:"Lead", value:0, notes:"Kontakt z targów"}
+  ];
+
+  var ideasT4 = [
+    ['"Jak mogę zapisać się na zajęcia. Napisz do nas DM" Koniec z tym!',"Edukacyjne"],
+    ["Za 2-3 lata Studia bez systemów będą miały ogromny problem.","Edukacyjne"],
+    ["Ile godzin tygodniowo tracisz na ogarnianie zapisów ręcznie?","Edukacyjne"],
+    ["Budujemy coś dla Szkół Tańca, Pole Dance.","Edukacyjne"],
+    ["Całe centrum dowodzenia Twojej Szkoły w jednym miejscu.","Edukacyjne"],
+    ["Twoja Szkoła to nie siłownia. Twój system też nie powinien.","Edukacyjne"],
+    ["Lipiec: pierwsze szkoły wchodzą do bety. Wejdź na listę.","Edukacyjne"],
+    ["Zaglądamy za kulisy: jak powstaje tool4arts + zapowiedź!","Edukacyjne"],
+    ["3 rzeczy które Twój obecny system zapisów robi źle.",null],
+    ["Ile kosztuje Cię jedna zapomniana rezerwacja?",null],
+    ["Rodzice pytają o zapisy o 23:00. System odpowiada za Ciebie.",null],
+    ["Dlaczego Excel to za mało dla rosnącej szkoły tańca.",null],
+    ["Case: jak jedna szkoła odzyskała 5h tygodniowo.",null],
+    ["To nie jest kolejna apka. To Twój system nerwowy szkoły.",null],
+    ["Beta zamyka się za tydzień — ostatnie miejsca.",null],
+    ["Automatyczne przypomnienia = mniej nieobecności.",null],
+    ["Zobacz jak wygląda panel instruktora w tool4arts.",null],
+    ["Pytanie do właścicieli szkół: co Was najbardziej wkurza w zapisach?",null],
+    ["Zapowiedź: integracja z płatnościami online.",null]
+  ];
+  var pubMD = [
+    ["Kim jestem i dlaczego w ogóle mówię o marketingu studiów tańca i pole dance?","2026-05-18"],
+    ["Dlaczego klientki nie pytają o Twoje zajęcia choć oglądają Twój profil?","2026-05-20"],
+    ["5-sekundowy test profilu na Instagramie. Zrób to teraz!","2026-05-22"],
+    ["Dlaczego reklamy na Facebooku i Instagramie nie działają tak jak myślisz?","2026-05-25"],
+    ["Jak wygląda współpraca ze mną? Konkretnie, krok po kroku.","2026-05-27"],
+    ["Opinia i case study Hani z LOTOS Aerial.","2026-05-29"],
+    ["3 gotowe skrypty stories","2026-06-02"],
+    ["Plan contentu na cały miesiąc","2026-06-03"],
+    ["5 błędów które popełnia każda druga szkoła tańca na Instagramie.","2026-06-05"],
+    ["Jak wygląda dzień z życia właścicielki studia tańca?","2026-06-08"],
+    ["Ile powinnaś wydawać na reklamę? Prosty wzór.","2026-06-10"],
+    ["Recenzja: co działa a co nie w Twoich Reelsach.","2026-06-12"],
+    ["Checklist przed otwarciem zapisów na nowy semestr.","2026-06-15"],
+    ["Jak zbudować listę oczekujących zamiast pustych sal?","2026-06-17"],
+    ["Case study: +120 obserwujących w miesiąc.","2026-06-19"],
+    ["3 rodzaje treści które sprzedają zajęcia próbne.","2026-06-21"],
+    ["Największy mit o marketingu szkół tańca.","2026-06-23"],
+    ["Jak odpowiadać na komentarze żeby budować zaufanie.","2026-06-25"],
+    ["Za kulisami: jak wygląda audyt social media u klienta.","2026-06-27"],
+    ["Q&A z obserwującymi — najczęstsze pytania.","2026-06-28"],
+    ["Dlaczego warto pokazywać instruktorów, nie tylko sale.","2026-06-29"],
+    ["Plan wakacyjny dla social media Twojego studia.","2026-06-30"],
+    ["Jak przygotować ofertę na sezon jesienny już teraz.","2026-07-01"],
+    ["Podsumowanie czerwca — co zadziałało u klientów.","2026-07-03"],
+    ["Rozpoczynamy współpracę z nowym studiem w Poznaniu!","2026-07-05"]
+  ];
+
+  s.posts = [];
+  ideasT4.forEach(function(t){
+    s.posts.push({id:uid("post"), title:t[0], brand:"tool4arts", stage:"pomysl", category:t[1], date:null});
+  });
+  s.posts.push({id:uid("post"), title:"Grafik, karnety, płatności, frekwencja — bez 5 różnych narzędzi", brand:"tool4arts", stage:"pomysl", category:"Edukacyjne", date:null});
+  s.posts.push({id:uid("post"), title:"Właścicielki studiów często nie prowadzą biznesu. One próbują przetrwać kolejny miesiąc.", brand:"tool4arts", stage:"pomysl", category:"Uderzające w ból", date:null});
+  s.posts.push({id:uid("post"), title:"Jeśli prowadzisz Studio Pole Dance, to musisz to mieć.", brand:"tool4arts", stage:"zaplanowany", category:"Edukacyjne", date:"2026-07-13"});
+  pubMD.forEach(function(p){
+    s.posts.push({id:uid("post"), title:p[0], brand:"MediaDGtal", stage:"opublikowany", category:null, date:p[1]});
+  });
+
+  s.contentCalendar = [
+    {date:"2026-05-18", day:"Poniedziałek", format:"Karuzela", category:"Story Marketing", topic:"Kim jestem i dlaczego w ogóle mówię o marketingu studiów tańca i pole dance?", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-05-20", day:"Środa", format:"Karuzela", category:"Instruktorki", topic:"Dlaczego klientki nie pytają o Twoje zajęcia choć oglądają Twój profil?", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-05-22", day:"Piątek", format:"Karuzela", category:"Instruktorki", topic:"5-sekundowy test profilu na Instagramie. Zrób to teraz!", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-05-25", day:"Poniedziałek", format:"Karuzela", category:"Studio - EDU", topic:"Dlaczego reklamy na Facebooku i Instagramie nie działają tak jak myślisz?", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-05-27", day:"Środa", format:"Karuzela", category:"Story Marketing", topic:"Jak wygląda współpraca ze mną? Konkretnie, krok po kroku.", haslo:"studio", brand:"MediaDGtal"},
+    {date:"2026-05-29", day:"Piątek", format:"Karuzela", category:"mem/branżowy humor", topic:"Opinia i case study Hani z LOTOS Aerial.", haslo:"instrukcja", brand:"MediaDGtal"},
+    {date:"2026-06-02", day:"Wtorek", format:"Karuzela", category:"Studio - EDU", topic:"3 gotowe skrypty stories", haslo:"miejsca", brand:"MediaDGtal"},
+    {date:"2026-06-03", day:"Środa", format:"Karuzela", category:"Studio - EDU", topic:"Plan contentu na cały miesiąc", haslo:"content", brand:"MediaDGtal"},
+    {date:"2026-06-05", day:"Piątek", format:"Rolka", category:"Memy - luźne", topic:"Rolka lot nad morzem w samolocie", haslo:"studio", brand:"MediaDGtal"},
+    {date:"2026-06-08", day:"Poniedziałek", format:"Karuzela", category:"Studio - EDU", topic:"Najczęstszy problem nowych klientów, których obsługuję?", haslo:"rozmowa", brand:"MediaDGtal"},
+    {date:"2026-06-10", day:"Środa", format:"Karuzela", category:"Studio - EDU", topic:"Rotacja kursantek na zajęciach.", haslo:"kasia", brand:"MediaDGtal"},
+    {date:"2026-06-12", day:"Piątek", format:"Karuzela", category:"Studio - EDU", topic:"Powiem Ci coś czego większość marketerów nie powie nigdy.", haslo:"gotowa", brand:"MediaDGtal"},
+    {date:"2026-06-15", day:"Poniedziałek", format:"Karuzela", category:"Story Marketing", topic:"Masz konkurencję w swoim mieście i traktujesz ją jak wroga?", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-06-17", day:"Środa", format:"Karuzela", category:"Story Marketing", topic:"Branża taneczna ma ogromny problem z udawaniem sukcesu.", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-06-19", day:"Piątek", format:"Karuzela", category:"Instruktorki", topic:"Jak prowadzić IG jako instruktor tańca?", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-06-22", day:"Poniedziałek", format:"Karuzela", category:"Studio - EDU", topic:"Co zrobić aby Twoje kursantki nie odchodziły?", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-06-24", day:"Środa", format:"Karuzela", category:"Studio - EDU", topic:"Za kilka lat większość zapisów na zajęcia będzie robił content i system, nie polecenia.", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-06-26", day:"Piątek", format:"Karuzela", category:"Story Marketing", topic:"Co robimy zanim wydamy 1 zł na reklamy", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-06-29", day:"Poniedziałek", format:"Karuzela", category:"Story Marketing", topic:"Ile czasu potrzeba, żeby zobaczyć efekty? Promuj post vs Kampania.", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-07-01", day:"Środa", format:"Karuzela", category:"Story Marketing", topic:"Zintegrowane Centrum Dowodzenia Twoim Studiem", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-07-03", day:"Piątek", format:"Karuzela", category:"Studio - EDU", topic:"Dlaczego większość studiów ma martwe DM?", haslo:"DM", brand:"MediaDGtal"},
+    {date:"2026-07-06", day:"Poniedziałek", format:"Karuzela", category:"Story Marketing", topic:"Ile leadów realnie generujemy miesięcznie dla Studiów Tańca i Pole Dance?", haslo:"AUDYT", brand:"MediaDGtal"},
+    {date:"2026-07-08", day:"Środa", format:"Karuzela", category:"Story Marketing", topic:"Wrzesień wygrywa się w lipcu.", haslo:"-", brand:"MediaDGtal"},
+    {date:"2026-07-10", day:"Piątek", format:"Karuzela", category:"Story Marketing", topic:"Checklista przygotowania do Września.", haslo:"WRZESIEŃ", brand:"MediaDGtal"},
+    {date:"2026-07-01", day:"Środa", format:"Karuzela", category:"Edukacyjne", topic:"Nowy system dla Szkół", haslo:"-", brand:"tool4arts"},
+    {date:"2026-07-03", day:"Piątek", format:"Karuzela", category:"Edukacyjne", topic:"Karnety w zeszycie, zapisy w DM, płatności w głowie. Brzmi znajomo?", haslo:"-", brand:"tool4arts"},
+    {date:"2026-07-06", day:"Poniedziałek", format:"Karuzela", category:"Edukacyjne", topic:"Jeśli prowadzisz Studio Tańca to musisz to mieć.", haslo:"-", brand:"tool4arts"},
+    {date:"2026-07-08", day:"Środa", format:"Karuzela", category:"Edukacyjne", topic:"Twoja Szkoła to nie siłownia. Twój system też nie powinien.", haslo:"-", brand:"tool4arts"},
+    {date:"2026-07-10", day:"Piątek", format:"Karuzela", category:"Edukacyjne", topic:"No-show kosztuje cię więcej niż myślisz. Oto matematyka.", haslo:"-", brand:"tool4arts"},
+    {date:"2026-07-13", day:"Poniedziałek", format:"Karuzela", category:"Edukacyjne", topic:"Jeśli prowadzisz Studio Pole Dance, to musisz to mieć.", haslo:"-", brand:"tool4arts"}
+  ];
+
+  s.habits = [
+    ["Dzień bez alkoholu",19],["Dzień bez palenia fajek",19],["Brzuszki",16],
+    ["Ćwiczenia w domu/siłowni",0],["Suplementy",16],["W łóżku przed północą",0],
+    ["Medytacja",0],["Czytanie książki przed snem",0],["Wstanie rano między 8:00 a 9:00",6],
+    ["Pompki",16],["Przysiady",16],["Bicki",16]
+  ].map(function(h){
+    var week = {}; HABIT_WEEK_ORDER.forEach(function(d){ week[d]=false; });
+    return {id:uid("hab"), name:h[0], historyPercent:h[1], streak:0, week: week};
+  });
+
+  s.igAccounts = [
+    {id:"ig1", handle:"@damian.gogulski", bio:"Marketing dla branży tanecznej — MediaDGtal", initials:"DA",
+     goal:1000, stats:[
+       {date:"2026-05-18",followers:681},{date:"2026-05-25",followers:684},{date:"2026-06-01",followers:682},
+       {date:"2026-06-08",followers:680},{date:"2026-06-15",followers:682},{date:"2026-06-22",followers:683},
+       {date:"2026-06-29",followers:683},{date:"2026-07-06",followers:685}
+     ], ideas:[]},
+    {id:"ig2", handle:"@tool4arts", bio:"tool4arts — konto firmowe", initials:"T4",
+     goal:200, stats:[{date:"2026-07-01",followers:6},{date:"2026-07-06",followers:6}], ideas:[
+       "Krótki reel pokazujący panel rezerwacji na żywo.","Seria 'pytanie do właścicieli szkół'."
+     ]}
+  ];
+  s.fbAccounts = [
+    {id:"fb1", name:"MediaDGtal", bio:"Fanpage agencji MediaDGtal", initials:"ME",
+     goal:500, stats:[
+       {date:"2026-05-18",followers:75},{date:"2026-05-25",followers:75},{date:"2026-06-01",followers:75},
+       {date:"2026-06-08",followers:75},{date:"2026-06-15",followers:75},{date:"2026-06-22",followers:75},
+       {date:"2026-06-29",followers:75},{date:"2026-07-06",followers:75}
+     ], ideas:[]},
+    {id:"fb2", name:"tool4arts", bio:"tool4arts — fanpage", initials:"T4",
+     goal:100, stats:[{date:"2026-07-01",followers:2},{date:"2026-07-06",followers:2}], ideas:[]}
+  ];
+
+  s.finance = [
+    {month:"2026-01", revenue:4200, bizCost:2100, personalCost:2400, target:20000},
+    {month:"2026-02", revenue:3800, bizCost:1900, personalCost:2300, target:20000},
+    {month:"2026-03", revenue:5100, bizCost:2400, personalCost:2500, target:20000},
+    {month:"2026-04", revenue:4600, bizCost:2200, personalCost:2400, target:20000},
+    {month:"2026-05", revenue:3900, bizCost:2000, personalCost:2300, target:20000},
+    {month:"2026-06", revenue:3200, bizCost:1800, personalCost:2200, target:20000},
+    {month:"2026-07", revenue:100, bizCost:493, personalCost:600, target:20000}
+  ];
+
+  s.notifications = [
+    {id:uid("nt"), text:"Dane w zakładce Instagram zaktualizowane.", read:false, date: todayStr()},
+    {id:uid("nt"), text:"Dane w zakładce Facebook zaktualizowane.", read:false, date: todayStr()},
+    {id:uid("nt"), text:"Zaimportowano zadania z Arkusza zadań 2026.", read:false, date: todayStr()},
+    {id:uid("nt"), text:"Zaimportowano dane finansowe z Arkusza Finansów 2026.", read:false, date: todayStr()},
+    {id:uid("nt"), text:"Zaimportowano plan publikacji MediaDGtal.", read:true, date: todayStr()},
+    {id:uid("nt"), text:"Zaimportowano plan publikacji tool4arts.", read:true, date: todayStr()}
+  ];
+
+  return s;
+}
+
+function load(){
+  var raw = localStorage.getItem(STORAGE_KEY);
+  var def = defaultState();
+  if(!raw){ state = def; save(); return; }
+  try{
+    var parsed = JSON.parse(raw);
+    Object.keys(def).forEach(function(k){ if(!(k in parsed)) parsed[k] = def[k]; });
+    state = parsed;
+  }catch(e){ state = def; }
+}
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+/* ================= NAV / SHELL ================= */
+function renderNav(){
+  var html = "";
+  TABS.forEach(function(t){
+    html += '<button class="navitem'+(currentTab===t.id?" active":"")+'" onclick="switchTab(\''+t.id+'\')">'+
+      '<span class="ico">'+t.ico+'</span><span>'+t.label+'</span></button>';
+  });
+  document.getElementById("navwrap").innerHTML = html;
+}
+function switchTab(id){
+  currentTab = id;
+  renderAll();
+}
+function setTopActions(html){ document.getElementById("topActions").innerHTML = html || ""; }
+
+var RENDERERS = {
+  dashboard: renderDashboard,
+  statystyki: renderStatystyki,
+  wiadomosci: renderWiadomosci,
+  posty: renderPosty,
+  instagram: function(el){ renderSocial(el,"instagram"); },
+  facebook: function(el){ renderSocial(el,"facebook"); },
+  zadania: renderZadania,
+  kalendarz: renderKalendarz,
+  nawyki: renderNawyki
+};
+var TITLES = {dashboard:"Dashboard", statystyki:"Statystyki", wiadomosci:"Wiadomości", posty:"Posty",
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki"};
+
+function renderAll(){
+  renderNav();
+  document.getElementById("pageTitle").textContent = TITLES[currentTab];
+  setTopActions("");
+  var el = document.getElementById("content");
+  el.innerHTML = "";
+  RENDERERS[currentTab](el);
+}
+
+/* ================= DASHBOARD ================= */
+function renderDashboard(el){
+  var todayTasks = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.done; });
+  var monthTasks = state.tasks.filter(function(t){ return t.scope==="miesiac" && !t.done; });
+  var today = todayStr();
+  var todayEvents = state.events.filter(function(e){ return e.date === today; });
+  var weekDates = currentWeekDates();
+  var weekEvents = state.events.filter(function(e){ return weekDates.indexOf(e.date) !== -1; });
+
+  var html = '<div class="card"><p class="hero-greet">Cześć, Damian.</p><div class="hero-date">'+
+    new Date().toLocaleDateString("pl-PL",{weekday:"long", day:"numeric", month:"long"})+'</div>'+
+    renderWeatherWidget()+'</div>';
+
+  html += '<div class="grid grid-2" style="margin-top:16px">';
+
+  html += '<div class="card"><h3>Zadania na dziś</h3>';
+  if(!todayTasks.length){ html += '<div class="empty">Brak zadań na dziś — dobra robota.</div>'; }
+  else{
+    todayTasks.slice(0,8).forEach(function(t){
+      html += '<div class="taskitem"><input type="checkbox" onchange="toggleTask(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+escapeHtml(t.title)+'</span></div>';
+    });
+  }
+  html += '</div>';
+
+  html += '<div class="card"><h3>Zadania miesiąca</h3>';
+  if(!monthTasks.length){ html += '<div class="empty">Brak zadań w tym miesiącu.</div>'; }
+  else{
+    monthTasks.slice(0,8).forEach(function(t){
+      html += '<div class="taskitem"><input type="checkbox" onchange="toggleTask(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+escapeHtml(t.title)+'</span></div>';
+    });
+    if(monthTasks.length>8){ html += '<div class="empty">+ '+(monthTasks.length-8)+' więcej w zakładce Zadania</div>'; }
+  }
+  html += '</div>';
+
+  html += '<div class="card"><h3>Dziś w kalendarzu</h3>';
+  html += todayEvents.length ? todayEvents.map(eventRow).join("") : '<div class="empty">Brak wydarzeń na dziś.</div>';
+  html += '</div>';
+
+  html += '<div class="card"><h3>Kalendarz na ten tydzień</h3>';
+  html += weekEvents.length ? weekEvents.map(eventRow).join("") : '<div class="empty">Nic więcej zaplanowane w tym tygodniu.</div>';
+  html += '</div>';
+
+  html += '</div>'; // end grid-2
+
+  el.innerHTML = html;
+}
+function currentWeekDates(){
+  var d = new Date();
+  var day = d.getDay(); // 0=niedziela
+  var mondayOffset = day===0 ? -6 : 1-day;
+  var monday = new Date(d); monday.setDate(d.getDate()+mondayOffset);
+  var out = [];
+  for(var i=0;i<7;i++){
+    var dd = new Date(monday); dd.setDate(monday.getDate()+i);
+    out.push(dd.toISOString().slice(0,10));
+  }
+  return out;
+}
+function renderWeatherWidget(){
+  return '<div class="weather-stub">'+
+    '<div class="stub-note" style="margin:14px 0 0">Pogoda live (pogodairadar.pl + Twoja lokalizacja) wymaga połączeń sieciowych, których Artifact nie może wykonywać (CSP blokuje wszystkie żądania zewnętrzne) — to ten sam powód co przy realnym IG/FB API. Damian, daj znać czy wolisz: (a) zostawić tu placeholder do ręcznego wpisania pogody, czy (b) ruszyć z migracją na realny hosting, gdzie to już będzie działać naprawdę.</div>'+
+    '</div>';
+}
+function goalBar(label, val, goal){
+  var pct = Math.min(100, Math.round((val/goal)*100));
+  return '<div style="margin-bottom:14px"><div class="progress-label"><span>'+escapeHtml(label)+'</span><span>'+val+' / '+goal+'</span></div>'+
+    '<div class="habit-bar" style="margin-bottom:0"><div style="width:'+pct+'%"></div></div></div>';
+}
+function eventRow(e){
+  var cal = state.calendars.filter(function(c){ return c.name===e.calendar; })[0] || {color:"#8a8390"};
+  return '<div class="taskitem"><span class="dot" style="background:'+cal.color+'"></span><span class="ttitle">'+
+    fmtDate(e.date)+(e.time?" · "+e.time:"")+" — "+escapeHtml(e.title)+'</span></div>';
+}
+function toggleTask(id){
+  var t = state.tasks.filter(function(x){return x.id===id;})[0];
+  if(!t) return;
+  t.done = !t.done; t.completedAt = t.done ? todayStr() : null;
+  save(); renderAll();
+}
+
+/* ================= WIADOMOŚCI ================= */
+function renderWiadomosci(el){
+  var html = '<div class="stub-note" style="margin-bottom:14px">Docelowo ta zakładka ma połączyć się z prawdziwą pocztą (nie da się dosłownie "przenieść" tu apki Poczta z Maca — lokalna baza Mail.app nie jest dostępna dla żadnej strony internetowej, to ograniczenie systemowe Apple). Po migracji z Artifactu na realny hosting zbudujemy tu prawdziwego klienta poczty podpiętego np. pod Gmail API. Na razie poniżej został lokalny feed powiadomień systemowych.</div>';
+  html += '<div class="card">';
+  if(!state.notifications.length){ html += '<div class="empty">Brak powiadomień.</div>'; }
+  state.notifications.forEach(function(n){
+    html += '<div class="notif" onclick="markRead(\''+n.id+'\')" style="cursor:pointer">'+
+      '<span class="dot2'+(n.read?" read":"")+'"></span>'+
+      '<div><div class="ntext">'+escapeHtml(n.text)+'</div><div class="ntime">'+fmtDate(n.date)+'</div></div></div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+function markRead(id){
+  var n = state.notifications.filter(function(x){return x.id===id;})[0];
+  if(n){ n.read = true; save(); renderAll(); }
+}
+
+/* ================= POSTY ================= */
+var postyFilter = "Wszystkie";
+function renderPosty(el){
+  setTopActions('<button class="btn" onclick="addPost()">+ Nowy post</button>');
+
+  var html = '<div class="tabsw">'+
+    '<button class="'+(postySubtab==="kanban"?"active":"")+'" onclick="setPostySub(\'kanban\')">Kanban</button>'+
+    '<button class="'+(postySubtab==="kalendarz"?"active":"")+'" onclick="setPostySub(\'kalendarz\')">Kalendarz publikacji</button>'+
+    '<button class="'+(postySubtab==="kategorie"?"active":"")+'" onclick="setPostySub(\'kategorie\')">Pomysły wg kategorii</button>'+
+    '</div>';
+
+  var brands = ["Wszystkie","MediaDGtal","tool4arts"];
+  html += '<div class="chiprow">';
+  brands.forEach(function(b){
+    html += '<span class="chip'+(postyFilter===b?" active":"")+'" onclick="setPostyFilter(\''+b+'\')">'+b+'</span>';
+  });
+  html += '</div>';
+
+  html += '<div class="ideas-input-row" style="margin-bottom:18px">'+
+    '<input type="text" id="postIdeaInput" placeholder="Nowy pomysł na post / rolkę / relację...">'+
+    '<select id="postIdeaBrand" style="width:150px; flex:0 0 auto">'+
+      '<option value="MediaDGtal">MediaDGtal</option>'+
+      '<option value="tool4arts">tool4arts</option>'+
+    '</select>'+
+    '<button class="btn" onclick="addPostIdea()" style="flex:0 0 auto">+ Dodaj pomysł</button>'+
+    '</div>';
+
+  if(postySubtab==="kalendarz"){ html += renderPostyKalendarz(); }
+  else if(postySubtab==="kategorie"){ html += renderPostyKategorie(); }
+  else { html += renderPostyKanban(); }
+
+  el.innerHTML = html;
+}
+function renderPostyKanban(){
+  var stages = [["pomysl","Pomysł"],["szkic","Szkic"],["zaplanowany","Zaplanowany"],["opublikowany","Opublikowany"]];
+  var filtered = state.posts.filter(function(p){ return postyFilter==="Wszystkie" || p.brand===postyFilter; });
+  var html = '<div class="kanban">';
+  stages.forEach(function(s){
+    var items = filtered.filter(function(p){ return p.stage===s[0]; });
+    html += '<div class="kanban-col"><h4><span>'+s[1]+'</span><span>'+items.length+'</span></h4>';
+    if(!items.length){ html += '<div class="empty">Brak.</div>'; }
+    items.forEach(function(p){
+      html += '<div class="kcard">'+escapeHtml(p.title)+
+        '<div><span class="tag tag-'+p.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(p.brand)+'</span></div>'+
+        (p.date ? '<div class="kdate">'+fmtDate(p.date)+'</div>' : '')+
+        '</div>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+function renderPostyKalendarz(){
+  var showMD = postyFilter==="Wszystkie" || postyFilter==="MediaDGtal";
+  var showT4 = postyFilter==="Wszystkie" || postyFilter==="tool4arts";
+  var html = '';
+  if(showMD){
+    html += '<div class="card" style="margin-bottom:16px"><h3>Rotacja tygodniowa (Struktura)</h3>';
+    STRUKTURA_ROTATION.forEach(function(r){
+      html += '<div style="padding:8px 0; border-bottom:1px solid var(--border)">'+
+        '<b>'+escapeHtml(r.day)+'</b> — <span style="color:var(--accent); font-weight:600">'+escapeHtml(r.pillar)+'</span>'+
+        '<div style="color:var(--muted-light); font-size:13px; margin-top:4px">'+escapeHtml(r.desc)+'</div></div>';
+    });
+    html += '</div>';
+    var mdRows = state.contentCalendar.filter(function(c){ return c.brand==="MediaDGtal"; })
+      .slice().sort(function(a,b){ return a.date<b.date?-1:(a.date>b.date?1:0); });
+    html += '<div class="card" style="margin-bottom:16px"><h3>Kalendarz publikacji — MediaDGtal</h3>'+contentCalendarTable(mdRows)+'</div>';
+  }
+  if(showT4){
+    var t4Rows = state.contentCalendar.filter(function(c){ return c.brand==="tool4arts"; })
+      .slice().sort(function(a,b){ return a.date<b.date?-1:(a.date>b.date?1:0); });
+    html += '<div class="card"><h3>Kalendarz publikacji — tool4arts</h3>'+contentCalendarTable(t4Rows)+'</div>';
+  }
+  return html;
+}
+function contentCalendarTable(rows){
+  if(!rows.length){ return '<div class="empty">Brak wpisów.</div>'; }
+  var html = '<table><thead><tr><th>Data</th><th>Dzień</th><th>Format</th><th>Kategoria</th><th>Temat</th><th>Hasło</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    html += '<tr><td>'+fmtDate(r.date)+'</td><td>'+escapeHtml(r.day)+'</td><td>'+escapeHtml(r.format||"—")+'</td>'+
+      '<td>'+escapeHtml(r.category||"—")+'</td><td>'+escapeHtml(r.topic||"—")+'</td><td>'+escapeHtml(r.haslo||"—")+'</td></tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+function renderPostyKategorie(){
+  var showMD = postyFilter==="Wszystkie" || postyFilter==="MediaDGtal";
+  var showT4 = postyFilter==="Wszystkie" || postyFilter==="tool4arts";
+  var html = '';
+  if(showT4){
+    ["Edukacyjne","Uderzające w ból","Do kursantów"].forEach(function(cat){
+      var items = state.posts.filter(function(p){ return p.brand==="tool4arts" && p.stage==="pomysl" && p.category===cat; });
+      html += '<div class="card" style="margin-bottom:16px"><h3>tool4arts — '+escapeHtml(cat)+'</h3>';
+      if(!items.length){ html += '<div class="empty">Brak pomysłów w tej kategorii jeszcze.</div>'; }
+      else{ items.forEach(function(p){ html += '<div class="idea-item">'+escapeHtml(p.title)+'</div>'; }); }
+      html += '</div>';
+    });
+    var restT4 = state.posts.filter(function(p){ return p.brand==="tool4arts" && p.stage==="pomysl" && !p.category; });
+    html += '<div class="card" style="margin-bottom:16px"><h3>tool4arts — pozostałe pomysły</h3>';
+    if(!restT4.length){ html += '<div class="empty">Brak.</div>'; }
+    else{ restT4.forEach(function(p){ html += '<div class="idea-item">'+escapeHtml(p.title)+'</div>'; }); }
+    html += '</div>';
+  }
+  if(showMD){
+    var restMD = state.posts.filter(function(p){ return p.brand==="MediaDGtal" && p.stage==="pomysl"; });
+    html += '<div class="card"><h3>MediaDGtal — pozostałe pomysły</h3>';
+    if(!restMD.length){ html += '<div class="empty">Brak zapisanych pomysłów.</div>'; }
+    else{ restMD.forEach(function(p){ html += '<div class="idea-item">'+escapeHtml(p.title)+'</div>'; }); }
+    html += '</div>';
+  }
+  return html;
+}
+function setPostySub(v){ postySubtab = v; renderAll(); }
+function setPostyFilter(b){ postyFilter = b; renderAll(); }
+function addPostIdea(){
+  var input = document.getElementById("postIdeaInput");
+  var brandSel = document.getElementById("postIdeaBrand");
+  var val = input.value.trim();
+  if(!val) return;
+  state.posts.unshift({id:uid("post"), title:val, brand:brandSel.value, stage:"pomysl", category:null, date:null});
+  save(); renderAll();
+}
+function addPost(){
+  var title = prompt("Tytuł nowego posta:");
+  if(!title) return;
+  state.posts.unshift({id:uid("post"), title:title, brand: postyFilter==="Wszystkie"?"MediaDGtal":postyFilter, stage:"pomysl", category:null, date:null});
+  save(); renderAll();
+}
+
+/* ================= INSTAGRAM / FACEBOOK ================= */
+function renderSocial(el, platform){
+  var accounts = platform==="instagram" ? state.igAccounts : state.fbAccounts;
+  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
+  if(!activeId){ activeId = accounts[0].id; if(platform==="instagram") igActiveId=activeId; else fbActiveId=activeId; }
+  var acc = accounts.filter(function(a){return a.id===activeId;})[0] || accounts[0];
+
+  var html = '<div class="acc-switch"><select onchange="setActiveAcc(\''+platform+'\', this.value)">';
+  accounts.forEach(function(a){
+    var label = platform==="instagram" ? a.handle : a.name;
+    html += '<option value="'+a.id+'"'+(a.id===acc.id?" selected":"")+'>'+escapeHtml(label)+'</option>';
+  });
+  html += '</select>';
+  html += '<button class="btn secondary small" onclick="addAccount(\''+platform+'\')">+ Nowe konto</button>';
+  html += '<button class="btn secondary small" onclick="refreshAcc()">⟳ Odśwież</button></div>';
+
+  html += '<div class="stub-note">To dane lokalne (wprowadzane ręcznie). Artifact blokuje realne wywołania do Instagram/Facebook API — automatyczna synchronizacja pojawi się po migracji na docelowy hosting.</div>';
+
+  var last = acc.stats[acc.stats.length-1].followers;
+  var prev = acc.stats.length>1 ? acc.stats[acc.stats.length-2].followers : last;
+  var change = last - prev;
+
+  html += '<div class="prof-row"><div class="avatar">'+acc.initials+'</div><div>'+
+    '<div class="prof-name">'+escapeHtml(platform==="instagram"?acc.handle:acc.name)+'</div>'+
+    '<div class="prof-bio">'+escapeHtml(acc.bio)+'</div></div></div>';
+
+  html += '<div class="kpi-row">'+
+    '<div><div class="k-value">'+last+'</div><div class="k-label">Obserwujący (ostatni wpis)</div></div>'+
+    '<div><div class="k-value accent">'+(change>=0?"+":"")+change+'</div><div class="k-label">Zmiana od poprzedniego wpisu</div></div>'+
+    '<div><div class="k-value">'+acc.stats.length+'</div><div class="k-label">Zapisanych pomiarów</div></div>'+
+    '</div>';
+
+  html += '<div class="measure-row">'+
+    '<input type="date" id="measureDate" value="'+todayStr()+'">'+
+    '<input type="number" id="measureVal" placeholder="Liczba obserw.">'+
+    '<button class="btn" onclick="saveMeasurement(\''+platform+'\')">Zapisz pomiar</button>'+
+    '<span class="goalwrap">Cel: <input type="number" id="goalVal" value="'+acc.goal+'" onchange="updateGoal(\''+platform+'\', this.value)"></span>'+
+    '</div>';
+
+  html += '<div class="progress-label"><span>Postęp do celu</span><span>'+last+' / '+acc.goal+' obserwujących</span></div>';
+  html += '<div class="habit-bar"><div style="width:'+Math.min(100,Math.round(last/acc.goal*100))+'%"></div></div>';
+
+  html += lineChart(acc.stats);
+
+  html += '<div class="ideas-box"><div class="card"><h3>Pomysły na content</h3>'+
+    '<div class="ideas-input-row"><input type="text" id="ideaInput" placeholder="Nowy pomysł na post..."><button class="btn" onclick="addIdea(\''+platform+'\')">Dodaj</button></div>';
+  if(!acc.ideas.length){ html += '<div class="empty">Brak zapisanych pomysłów.</div>'; }
+  else{ acc.ideas.forEach(function(i){ html += '<div class="idea-item">'+escapeHtml(i)+'</div>'; }); }
+  html += '</div></div>';
+
+  el.innerHTML = html;
+}
+function lineChart(stats){
+  var w=1200, h=220, pad=10;
+  var vals = stats.map(function(s){return s.followers;});
+  var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  if(min===max){ min -= 1; max += 1; }
+  var stepX = (w-pad*2)/(stats.length-1 || 1);
+  var pts = stats.map(function(s,i){
+    var x = pad + i*stepX;
+    var y = h-pad - ((s.followers-min)/(max-min))*(h-pad*2);
+    return [x,y];
+  });
+  var line = pts.map(function(p,i){ return (i===0?"M":"L")+p[0].toFixed(1)+","+p[1].toFixed(1); }).join(" ");
+  var area = line + " L"+pts[pts.length-1][0].toFixed(1)+","+(h-pad)+" L"+pts[0][0].toFixed(1)+","+(h-pad)+" Z";
+  var gid = "grad"+Math.random().toString(36).slice(2,7);
+  var last = pts[pts.length-1];
+  return '<div class="card" style="padding:20px 20px 6px"><svg viewBox="0 0 '+w+' '+h+'" style="width:100%; height:180px; display:block">'+
+    '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'+
+    '<stop offset="0%" stop-color="#cf9b4a" stop-opacity="0.35"/><stop offset="100%" stop-color="#cf9b4a" stop-opacity="0"/>'+
+    '</linearGradient></defs>'+
+    '<path d="'+area+'" fill="url(#'+gid+')" stroke="none"/>'+
+    '<path d="'+line+'" fill="none" stroke="#cf9b4a" stroke-width="2.5"/>'+
+    '<circle cx="'+last[0].toFixed(1)+'" cy="'+last[1].toFixed(1)+'" r="4" fill="#cf9b4a"/>'+
+    '</svg></div>';
+}
+function setActiveAcc(platform, id){
+  if(platform==="instagram") igActiveId = id; else fbActiveId = id;
+  renderAll();
+}
+function addAccount(platform){
+  var name = prompt("Nazwa / handle nowego konta:");
+  if(!name) return;
+  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
+  var acc = {id:uid("acc"), handle:name, name:name, bio:"", initials:name.slice(0,2).toUpperCase(), goal:100, stats:[{date:todayStr(),followers:0}], ideas:[]};
+  list.push(acc);
+  save(); renderAll();
+}
+function refreshAcc(){
+  alert("Odświeżanie z realnego API Instagram/Facebook będzie dostępne po migracji poza Artifact (CSP blokuje takie połączenia stąd).");
+}
+function saveMeasurement(platform){
+  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
+  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
+  var acc = list.filter(function(a){return a.id===activeId;})[0];
+  var date = document.getElementById("measureDate").value;
+  var val = parseInt(document.getElementById("measureVal").value, 10);
+  if(!date || isNaN(val)) return;
+  acc.stats.push({date:date, followers:val});
+  save(); renderAll();
+}
+function updateGoal(platform, val){
+  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
+  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
+  var acc = list.filter(function(a){return a.id===activeId;})[0];
+  acc.goal = parseInt(val,10) || acc.goal;
+  save();
+}
+function addIdea(platform){
+  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
+  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
+  var acc = list.filter(function(a){return a.id===activeId;})[0];
+  var val = document.getElementById("ideaInput").value.trim();
+  if(!val) return;
+  acc.ideas.unshift(val);
+  save(); renderAll();
+}
+
+/* ================= ZADANIA ================= */
+function renderZadania(el){
+  setTopActions('<button class="btn" onclick="addTask()">+ Nowe zadanie</button>');
+  var html = '<div class="tabsw">'+
+    '<button class="'+(zadaniaSubview==="zadania"?"active":"")+'" onclick="setZadSub(\'zadania\')">Zadania</button>'+
+    '<button class="'+(zadaniaSubview==="klienci"?"active":"")+'" onclick="setZadSub(\'klienci\')">Klienci</button>'+
+    '</div>';
+
+  if(zadaniaSubview==="klienci"){
+    html += '<div class="card"><table><thead><tr><th>Nazwa</th><th>Status</th><th>Wartość mies.</th><th>Notatki</th></tr></thead><tbody>';
+    state.clients.forEach(function(c){
+      html += '<tr><td>'+escapeHtml(c.name)+'</td><td>'+escapeHtml(c.status)+'</td><td>'+c.value+' zł</td><td>'+escapeHtml(c.notes)+'</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  html += '<div class="chiprow" style="justify-content:flex-end"><select id="catFilter" onchange="renderAll()" style="width:auto">'+
+    '<option value="">Wszystkie kategorie</option>'+
+    CATEGORIES.map(function(c){return '<option value="'+c+'">'+CATEGORY_LABEL[c]+'</option>';}).join("")+
+    '</select></div>';
+
+  var catFilterEl = document.getElementById("catFilter");
+  var catFilter = catFilterEl ? catFilterEl.value : "";
+
+  html += '<div class="colcols">';
+  [["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].forEach(function(pair){
+    var scope=pair[0], label=pair[1];
+    var items = state.tasks.filter(function(t){ return t.scope===scope && (!catFilter || t.category===catFilter); });
+    var doneCount = items.filter(function(t){return t.done;}).length;
+    html += '<div><div class="col-head"><span>'+label+'</span><b>'+doneCount+'/'+items.length+'</b></div>';
+    if(!items.length){ html += '<div class="empty">Brak zadań.</div><button class="linklike" onclick="addTaskScope(\''+scope+'\')">+ Dodaj do „'+label+'"</button>'; }
+    else{
+      items.forEach(function(t){
+        html += '<div class="taskitem'+(t.done?" done":"")+'">'+
+          '<input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask(\''+t.id+'\')">'+
+          '<span class="dot"></span>'+
+          '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span><br><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></div>'+
+          '<div class="taskmeta"><button class="linklike" onclick="editTask(\''+t.id+'\')">Edytuj</button><button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></div>'+
+          '</div>';
+      });
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+function setZadSub(v){ zadaniaSubview = v; renderAll(); }
+function addTask(){ addTaskScope("miesiac"); }
+function addTaskScope(scope){
+  var title = prompt("Treść zadania:");
+  if(!title) return;
+  state.tasks.unshift({id:uid("task"), title:title, category:"MediaDGtal", scope:scope, done:false, createdAt:todayStr(), completedAt:null});
+  save(); renderAll();
+}
+function editTask(id){
+  var t = state.tasks.filter(function(x){return x.id===id;})[0];
+  if(!t) return;
+  var title = prompt("Edytuj treść zadania:", t.title);
+  if(title===null) return;
+  t.title = title;
+  save(); renderAll();
+}
+function deleteTask(id){
+  state.tasks = state.tasks.filter(function(t){return t.id!==id;});
+  save(); renderAll();
+}
+
+/* ================= KALENDARZ ================= */
+function renderKalendarz(el){
+  var now = new Date();
+  if(calMonth===undefined){ calMonth = now.getMonth(); calYear = now.getFullYear(); }
+  setTopActions('<button class="btn" onclick="promptAddEvent()">+ Wydarzenie</button>');
+
+  var html = '<div id="cmdbox"><input type="text" id="nlpInput" placeholder=\'np. dodaj spotkanie z Martą 10.07. godz. 12:00, Plaza Poznań, kalendarz "wspólny"\'>'+
+    '<button class="btn" onclick="submitNlp()">Dodaj</button></div>';
+  html += '<div class="stub-note">Kalendarz lokalny — synchronizacja z Google Calendar pojawi się po migracji na hosting.</div>';
+
+  html += '<div class="cal-legend">';
+  state.calendars.forEach(function(c){
+    html += '<span><i style="background:'+c.color+'"></i>'+escapeHtml(c.name)+'</span>';
+  });
+  html += '</div>';
+
+  html += '<div class="cal-header"><button class="btn secondary small" onclick="calNav(-1)">← Poprzedni</button>'+
+    '<h2>'+monthName(calMonth)+' '+calYear+'</h2>'+
+    '<button class="btn secondary small" onclick="calNav(1)">Następny →</button></div>';
+
+  html += '<div class="cal-grid">';
+  WEEKDAYS_SHORT.forEach(function(d){ html += '<div class="cal-dow">'+d+'</div>'; });
+
+  var first = new Date(calYear, calMonth, 1);
+  var startOffset = (first.getDay()+6)%7; // Monday=0
+  var gridStart = new Date(calYear, calMonth, 1-startOffset);
+  var today = todayStr();
+  for(var i=0;i<42;i++){
+    var d = new Date(gridStart); d.setDate(gridStart.getDate()+i);
+    var dstr = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    var inMonth = d.getMonth()===calMonth;
+    var isToday = dstr===today;
+    var dayEvents = state.events.filter(function(e){ return e.date===dstr; });
+    html += '<div class="cal-cell'+(inMonth?"":" out")+(isToday?" today":"")+'"><div class="cal-daynum">'+d.getDate()+'</div>';
+    dayEvents.forEach(function(e){
+      var cal = state.calendars.filter(function(c){return c.name===e.calendar;})[0] || {color:"#8a8390"};
+      html += '<div class="cal-ev" style="background:'+cal.color+'" title="'+escapeHtml(e.title)+'">'+escapeHtml(e.title)+'</div>';
+    });
+    html += '</div>';
+    if(i===41) break;
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+function calNav(dir){
+  calMonth += dir;
+  if(calMonth<0){ calMonth=11; calYear--; }
+  if(calMonth>11){ calMonth=0; calYear++; }
+  renderAll();
+}
+function parseEventCommand(text){
+  var res = {title:null, date:null, time:null, location:null, calendar:"Osobiste"};
+  var t = text.trim();
+  t = t.replace(/^dodaj\s+(spotkanie|wydarzenie)\s+z\s+/i, "spotkanie z ");
+  var dateMatch = t.match(/(\d{1,2})\.(\d{1,2})\.?/);
+  if(dateMatch){
+    var day = parseInt(dateMatch[1],10), month = parseInt(dateMatch[2],10);
+    var year = new Date().getFullYear();
+    res.date = year+"-"+String(month).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+  }
+  var timeMatch = t.match(/godz\.?\s*(\d{1,2}):(\d{2})/i);
+  if(timeMatch){ res.time = String(timeMatch[1]).padStart(2,"0")+":"+timeMatch[2]; }
+  var calMatch = t.match(/kalendarz\s+"([^"]+)"/i);
+  if(calMatch){
+    var name = calMatch[1];
+    var found = state.calendars.filter(function(c){ return c.name.toLowerCase()===name.toLowerCase(); })[0];
+    res.calendar = found ? found.name : (name.charAt(0).toUpperCase()+name.slice(1));
+  }
+  var withMatch = t.match(/z\s+([A-ZŻŹĆĄŚĘŁÓŃ][a-ząćęłńóśźż]+(?:\s+[A-ZŻŹĆĄŚĘŁÓŃ][a-ząćęłńóśźż]+)?)/);
+  var locMatch = t.match(/,\s*([A-ZŻŹĆĄŚĘŁÓŃ][^,]*?)(?:,\s*kalendarz|$)/);
+  if(locMatch){ res.location = locMatch[1].trim(); }
+
+  var titleParts = ["Spotkanie"];
+  if(withMatch){ titleParts.push("z "+withMatch[1]); }
+  res.title = titleParts.join(" ");
+  return res;
+}
+function submitNlp(){
+  var val = document.getElementById("nlpInput").value;
+  if(!val.trim()) return;
+  var parsed = parseEventCommand(val);
+  if(!parsed.date){ alert("Nie udało się rozpoznać daty w komendzie."); return; }
+  state.events.push({id:uid("ev"), title:parsed.title, date:parsed.date, time:parsed.time, location:parsed.location, calendar:parsed.calendar});
+  save();
+  document.getElementById("nlpInput").value = "";
+  renderAll();
+}
+function promptAddEvent(){
+  var title = prompt("Tytuł wydarzenia:"); if(!title) return;
+  var date = prompt("Data (RRRR-MM-DD):", todayStr()); if(!date) return;
+  var time = prompt("Godzina (GG:MM), opcjonalnie:", "");
+  state.events.push({id:uid("ev"), title:title, date:date, time:time||null, location:null, calendar:"Osobiste"});
+  save(); renderAll();
+}
+
+/* ================= NAWYKI ================= */
+function renderNawyki(el){
+  setTopActions('<button class="btn" onclick="addHabit()">+ Nawyk</button>');
+  var html = '<div class="card">';
+  state.habits.forEach(function(h){
+    html += '<div class="habitrow"><div class="habitname">'+escapeHtml(h.name)+'</div>'+
+      '<div class="habitpct">'+h.historyPercent+'% w tym mies. (histor.)</div>'+
+      '<div class="habitstreak">🔥 '+h.streak+' dni z rzędu</div>'+
+      '<div class="weekdots">'+HABIT_WEEK_ORDER.map(function(d){
+        return '<div class="wd"><div class="lbl">'+d+'</div><input type="checkbox" '+(h.week[d]?"checked":"")+' onchange="toggleHabitDay(\''+h.id+'\',\''+d+'\')"></div>';
+      }).join("")+'</div>'+
+      '<button class="linklike danger" onclick="deleteHabit(\''+h.id+'\')">Usuń</button>'+
+      '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+function toggleHabitDay(id, day){
+  var h = state.habits.filter(function(x){return x.id===id;})[0];
+  h.week[day] = !h.week[day];
+  if(h.week[day]) h.streak++; else h.streak = Math.max(0,h.streak-1);
+  save(); renderAll();
+}
+function addHabit(){
+  var name = prompt("Nazwa nawyku:");
+  if(!name) return;
+  var week = {}; HABIT_WEEK_ORDER.forEach(function(d){week[d]=false;});
+  state.habits.push({id:uid("hab"), name:name, historyPercent:0, streak:0, week:week});
+  save(); renderAll();
+}
+function deleteHabit(id){
+  state.habits = state.habits.filter(function(h){return h.id!==id;});
+  save(); renderAll();
+}
+
+/* ================= STATYSTYKI ================= */
+function renderStatystyki(el){
+  var now = new Date();
+  var html = '<div class="chiprow">';
+  ["miesiac","rok"].forEach(function(p){
+    var labels = {miesiac:"Miesiąc", rok:"Rok"};
+    html += '<span class="chip'+(statPeriod===p?" active":"")+'" onclick="setStatPeriod(\''+p+'\')">'+labels[p]+'</span>';
+  });
+  if(statPeriod==="miesiac"){
+    html += '<input type="month" id="statMonthInput" value="'+now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,"0")+'" onchange="renderAll()" style="width:auto; margin-left:10px">';
+  } else {
+    html += '<input type="number" id="statYearInput" value="'+now.getFullYear()+'" min="2020" max="2100" onchange="renderAll()" style="width:100px; margin-left:10px">';
+  }
+  html += '</div>';
+
+  var cats = ["Wszystko","Cele","Zadania","Nawyki","Finanse","Posty","Instagram","Facebook"];
+  html += '<div class="chiprow">';
+  cats.forEach(function(c){
+    html += '<span class="chip'+(statCats[c]?" active":"")+'" onclick="toggleStatCat(\''+c+'\')">'+c+'</span>';
+  });
+  html += '</div>';
+
+  var periodKey, rangeLabel, matchesPeriod;
+  if(statPeriod==="miesiac"){
+    var monthInput = document.getElementById("statMonthInput");
+    var ym = monthInput ? monthInput.value : (now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0"));
+    var parts = ym.split("-"); var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
+    var start = y+"-"+String(m).padStart(2,"0")+"-01";
+    var lastDay = new Date(y, m, 0).getDate();
+    var end = y+"-"+String(m).padStart(2,"0")+"-"+lastDay;
+    periodKey = ym;
+    rangeLabel = monthName(m-1)+' '+y+'</b> ('+start+' → '+end+')';
+    matchesPeriod = function(dateStr){ return dateStr && dateStr.slice(0,7)===ym; };
+  } else {
+    var yearInput = document.getElementById("statYearInput");
+    var yr = yearInput ? yearInput.value : String(now.getFullYear());
+    periodKey = yr;
+    rangeLabel = 'Rok '+yr+'</b> ('+yr+'-01-01 → '+yr+'-12-31)';
+    matchesPeriod = function(dateStr){ return dateStr && dateStr.slice(0,4)===yr; };
+  }
+  html += '<div style="color:var(--muted); font-size:12.5px; margin-bottom:16px">Zakres: <b style="color:var(--muted-light)">'+rangeLabel+'</div>';
+
+  var showAll = statCats["Wszystko"];
+  html += '<div class="grid grid-2">';
+
+  if(showAll || statCats["Cele"]){
+    var ig1 = state.igAccounts[0];
+    html += '<div class="card"><h3>Cele</h3>'+goalBar("Instagram "+ig1.handle, ig1.stats[ig1.stats.length-1].followers, ig1.goal)+goalBar("tool4arts — klienci",0,100)+'</div>';
+  }
+  if(showAll || statCats["Zadania"]){
+    var periodTasksCreated = state.tasks.filter(function(t){ return matchesPeriod(t.createdAt); });
+    var doneInPeriod = state.tasks.filter(function(t){ return matchesPeriod(t.completedAt); });
+    html += '<div class="card"><h3>Zadania</h3><table>'+
+      '<tr><td>Ukończone w okresie</td><td style="text-align:right">'+doneInPeriod.length+'</td></tr>'+
+      '<tr><td>Utworzone w okresie</td><td style="text-align:right">'+periodTasksCreated.length+'</td></tr>'+
+      '<tr><td>Aktualnie otwarte (wszystkie)</td><td style="text-align:right">'+state.tasks.filter(function(t){return !t.done;}).length+'</td></tr>'+
+      '</table></div>';
+  }
+  if(showAll || statCats["Nawyki"]){
+    html += '<div class="card"><h3>Nawyki</h3>';
+    state.habits.forEach(function(h){
+      html += '<div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px; color:var(--muted-light)"><span>'+escapeHtml(h.name)+'</span><b>'+h.historyPercent+'%</b></div>';
+    });
+    html += '</div>';
+  }
+  if(showAll || statCats["Finanse"]){
+    var finRows = statPeriod==="miesiac"
+      ? state.finance.filter(function(f){return f.month===periodKey;})
+      : state.finance.filter(function(f){return f.month && f.month.slice(0,4)===periodKey;});
+    var fin = finRows.reduce(function(acc,f){
+      acc.revenue += f.revenue; acc.bizCost += f.bizCost; acc.personalCost += f.personalCost; acc.target = f.target;
+      return acc;
+    }, {revenue:0,bizCost:0,personalCost:0,target:20000});
+    var income = fin.revenue - fin.bizCost - fin.personalCost;
+    html += '<div class="card"><h3>Finanse</h3><table>'+
+      '<tr><td>Przychody</td><td style="text-align:right">'+fin.revenue+' zł</td></tr>'+
+      '<tr><td>Koszty (biznes + osobiste)</td><td style="text-align:right">'+(fin.bizCost+fin.personalCost)+' zł</td></tr>'+
+      '<tr><td>Dochód</td><td style="text-align:right">'+income+' zł</td></tr>'+
+      '<tr><td>Cel finansowy'+(statPeriod==="rok"?" (ost. miesiąc)":"")+'</td><td style="text-align:right">'+fin.target.toLocaleString("pl-PL")+' zł</td></tr>'+
+      '</table></div>';
+  }
+  if(showAll || statCats["Posty"]){
+    var periodPosts = state.posts.filter(function(p){ return matchesPeriod(p.date); });
+    html += '<div class="card"><h3>Posty</h3><table>'+
+      '<tr><td>Opublikowane w okresie</td><td style="text-align:right">'+periodPosts.filter(function(p){return p.stage==="opublikowany";}).length+'</td></tr>'+
+      '<tr><td>Wszystkie pomysły</td><td style="text-align:right">'+state.posts.filter(function(p){return p.stage==="pomysl";}).length+'</td></tr>'+
+      '</table></div>';
+  }
+  if(showAll || statCats["Instagram"]){
+    var ig = state.igAccounts[0];
+    html += '<div class="card"><h3>Instagram</h3>'+lineChart(ig.stats)+'</div>';
+  }
+  if(showAll || statCats["Facebook"]){
+    var fb = state.fbAccounts[0];
+    html += '<div class="card"><h3>Facebook</h3>'+lineChart(fb.stats)+'</div>';
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+function setStatPeriod(p){ statPeriod = p; renderAll(); }
+function toggleStatCat(c){
+  if(c==="Wszystko"){ statCats = {Wszystko:true}; }
+  else{
+    statCats.Wszystko = false;
+    statCats[c] = !statCats[c];
+  }
+  renderAll();
+}
+
+/* ================= INIT ================= */
+function init(){
+  document.getElementById("brandLogo").src = "data:image/png;base64,"+LOGO_B64;
+  load();
+  renderAll();
+}
+init();
+</script>
+
+</body>
+</html>
