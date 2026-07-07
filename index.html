@@ -226,9 +226,28 @@
 
   ::-webkit-scrollbar{width:10px; height:10px}
   ::-webkit-scrollbar-thumb{background:#333038; border-radius:6px}
+
+  #authGate{
+    position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
+    background:var(--sidebar-bg); color:var(--text); flex-direction:column; gap:16px; text-align:center; padding:20px;
+  }
+  #authGate.hidden{display:none}
+  #authGate .gatecard{max-width:360px}
+  #authGate h2{margin:0 0 8px; font-size:20px}
+  #authGate p{color:var(--muted); font-size:14px; line-height:1.5; margin:0 0 18px}
+  #authGate .btn{font-size:14px}
+  .sync-status{font-size:11px; color:var(--muted); margin-top:2px}
 </style>
 </head>
 <body>
+<div id="authGate">
+  <div class="gatecard">
+    <img src="" alt="" id="gateLogo" style="max-width:160px; margin-bottom:18px; display:none">
+    <h2 id="gateTitle">Sprawdzanie logowania…</h2>
+    <p id="gateText">Chwileczkę.</p>
+    <button class="btn" id="gateBtn" style="display:none" onclick="__authAction && __authAction()"></button>
+  </div>
+</div>
 <div id="sidebar">
   <div class="brand"><img id="brandLogo" alt="MediaDGtal"></div>
   <div id="navwrap"></div>
@@ -237,6 +256,7 @@
     <div>
       <div class="who">Damian Gogulski</div>
       <div class="handle">@damian.gogulski</div>
+      <div class="sync-status" id="syncStatus">Łączenie…</div>
     </div>
   </div>
 </div>
@@ -1216,6 +1236,140 @@ function init(){
   renderAll();
 }
 init();
+</script>
+
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  getFirestore, doc, setDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+var firebaseConfig = {
+  apiKey: "AIzaSyD7vHSihsO2MYO-mNycfq5Tt6Zxf92ZbGs",
+  authDomain: "mediadgtal-workspace.firebaseapp.com",
+  projectId: "mediadgtal-workspace",
+  storageBucket: "mediadgtal-workspace.firebasestorage.app",
+  messagingSenderId: "720090374015",
+  appId: "1:720090374015:web:09275e24f63f93980f844a"
+};
+var ALLOWED_EMAIL = "kontakt.mediadgtal@gmail.com";
+
+var app = initializeApp(firebaseConfig);
+var auth = getAuth(app);
+var db = getFirestore(app);
+var provider = new GoogleAuthProvider();
+
+var gate = document.getElementById("authGate");
+var gateTitle = document.getElementById("gateTitle");
+var gateText = document.getElementById("gateText");
+var gateBtn = document.getElementById("gateBtn");
+var gateLogo = document.getElementById("gateLogo");
+var syncStatusEl = document.getElementById("syncStatus");
+
+function setSyncStatus(text){ if(syncStatusEl) syncStatusEl.textContent = text; }
+
+function showGate(mode){
+  gate.classList.remove("hidden");
+  gateLogo.style.display = "";
+  gateLogo.src = "data:image/png;base64," + (window.LOGO_B64 || "");
+  if(mode === "loading"){
+    gateTitle.textContent = "Sprawdzanie logowania…";
+    gateText.textContent = "Chwileczkę.";
+    gateBtn.style.display = "none";
+  } else if(mode === "signin"){
+    gateTitle.textContent = "MediaDGtal — Workspace";
+    gateText.textContent = "To prywatny workspace Damiana. Zaloguj się przez Google, żeby wejść.";
+    gateBtn.textContent = "Zaloguj się przez Google";
+    gateBtn.style.display = "";
+    window.__authAction = doSignIn;
+  } else if(mode === "denied"){
+    gateTitle.textContent = "Ten workspace jest prywatny";
+    gateText.textContent = "To konto nie ma dostępu do tego workspace'u.";
+    gateBtn.textContent = "Wyloguj i spróbuj innym kontem";
+    gateBtn.style.display = "";
+    window.__authAction = doSignOut;
+  }
+}
+function hideGate(){ gate.classList.add("hidden"); }
+
+function doSignIn(){
+  gateText.textContent = "Otwieram okno logowania Google…";
+  signInWithPopup(auth, provider).catch(function(err){
+    gateText.textContent = "Logowanie nie powiodło się (" + err.code + "). Spróbuj ponownie.";
+  });
+}
+function doSignOut(){ signOut(auth); }
+
+var unsubscribeSnapshot = null;
+var pushTimer = null;
+var pendingPush = false;
+
+function scheduleFirestorePush(){
+  pendingPush = true;
+  setSyncStatus("Zapisywanie…");
+  if(pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(flushPush, 500);
+}
+function flushPush(){
+  if(!pendingPush) return;
+  if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+  pendingPush = false;
+  var docRef = doc(db, "workspace", "damian");
+  setDoc(docRef, window.state).then(function(){
+    setSyncStatus("Zsynchronizowano");
+  }).catch(function(){
+    setSyncStatus("Offline (tylko lokalnie)");
+  });
+}
+document.addEventListener("visibilitychange", function(){
+  if(document.visibilityState === "hidden") flushPush();
+});
+window.addEventListener("pagehide", flushPush);
+
+function startSync(){
+  var originalSave = window.save;
+  window.save = function(){
+    originalSave();
+    scheduleFirestorePush();
+  };
+  var docRef = doc(db, "workspace", "damian");
+  unsubscribeSnapshot = onSnapshot(docRef, function(snap){
+    if(snap.exists()){
+      var remote = snap.data();
+      var def = window.defaultState();
+      Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
+      window.state = remote;
+      originalSave();
+      window.renderAll();
+      setSyncStatus("Zsynchronizowano");
+    } else {
+      setDoc(docRef, window.state).then(function(){
+        setSyncStatus("Zsynchronizowano");
+      });
+    }
+  }, function(){
+    setSyncStatus("Offline (tylko lokalnie)");
+  });
+}
+
+showGate("loading");
+onAuthStateChanged(auth, function(user){
+  if(!user){
+    showGate("signin");
+    return;
+  }
+  if(user.email !== ALLOWED_EMAIL){
+    showGate("denied");
+    return;
+  }
+  hideGate();
+  setSyncStatus("Łączenie…");
+  startSync();
+});
 </script>
 
 </body>
