@@ -570,11 +570,21 @@ function setZadCatFilter(v){ zadCatFilter = v; renderAll(); }
 function setZadTydzienOd(v){ zadTydzienOd = v; renderAll(); }
 function setZadTydzienDo(v){ zadTydzienDo = v; renderAll(); }
 function setZadMiesiac(v){ zadMiesiacVal = v; renderAll(); }
-function changeZadMiesiac(delta){
-  var parts = zadMiesiacVal.split("-"), y = +parts[0], m = +parts[1] + delta;
-  if(m<1){ m=12; y--; } else if(m>12){ m=1; y++; }
-  zadMiesiacVal = y+"-"+String(m).padStart(2,"0");
-  renderAll();
+function monthYearPickerHtml(ym, setFnName){
+  var y = +ym.split("-")[0], m = +ym.split("-")[1];
+  var html = '<div style="margin-bottom:10px">';
+  html += '<div class="row" style="gap:6px; margin-bottom:6px; align-items:center">'+
+    '<button class="btn secondary small" onclick="'+setFnName+'(\''+(y-1)+'-'+String(m).padStart(2,"0")+'\')" title="Rok wstecz">« Rok</button>'+
+    '<b style="flex:1; text-align:center; font-size:13px">'+y+'</b>'+
+    '<button class="btn secondary small" onclick="'+setFnName+'(\''+(y+1)+'-'+String(m).padStart(2,"0")+'\')" title="Rok w przód">Rok »</button>'+
+    '</div>';
+  html += '<div class="chiprow" style="margin-bottom:0">';
+  for(var mm=1; mm<=12; mm++){
+    var val = y+"-"+String(mm).padStart(2,"0");
+    html += '<span class="chip'+(mm===m?" active":"")+'" onclick="'+setFnName+'(\''+val+'\')" style="font-size:11px; padding:4px 9px">'+HABIT_MONTH_ABBR[mm-1]+'</span>';
+  }
+  html += '</div></div>';
+  return html;
 }
 function setZadSearch(v){ zadSearchQuery = v; renderAllKeepFocus("zadSearchInput"); }
 function setZadSort(v){ zadSortMode = v; renderAll(); }
@@ -639,14 +649,6 @@ var statMonthVal = null;
 var statYearVal = null;
 function setStatMonth(v){ statMonthVal = v; renderAll(); }
 function setStatYear(v){ statYearVal = v; renderAll(); }
-function changeStatMonth(delta){
-  var now = new Date();
-  if(!statMonthVal) statMonthVal = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
-  var parts = statMonthVal.split("-"), y = +parts[0], m = +parts[1] + delta;
-  if(m<1){ m=12; y--; } else if(m>12){ m=1; y++; }
-  statMonthVal = y+"-"+String(m).padStart(2,"0");
-  renderAll();
-}
 function changeStatYear(delta){
   if(!statYearVal) statYearVal = String(new Date().getFullYear());
   statYearVal = String(+statYearVal + delta);
@@ -1586,11 +1588,7 @@ function renderZadania(el){
         '<input type="date" value="'+tydzienDo+'" onchange="setZadTydzienDo(this.value)" style="font-size:12px"></div>';
     }
     if(scope==="miesiac"){
-      html += '<div class="row" style="gap:6px; margin-bottom:10px; align-items:center">'+
-        '<button class="btn secondary small" onclick="changeZadMiesiac(-1)">◀</button>'+
-        '<b style="font-size:13px; flex:1; text-align:center">'+monthName(+miesiacVal.split("-")[1]-1)+' '+miesiacVal.split("-")[0]+'</b>'+
-        '<button class="btn secondary small" onclick="changeZadMiesiac(1)">▶</button>'+
-        '</div>';
+      html += monthYearPickerHtml(miesiacVal, "setZadMiesiac");
     }
     if(!items.length){ html += '<div class="empty">Brak zadań.</div><button class="linklike" onclick="openTaskModal({scope:\''+scope+'\', category:\'MediaDGtal\', date:\''+defaultDate+'\'})">+ Dodaj do „'+label+'"</button>'; }
     else{
@@ -2739,18 +2737,15 @@ function renderStatystyki(el){
   });
   if(!statMonthVal) statMonthVal = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
   if(!statYearVal) statYearVal = String(now.getFullYear());
-  if(statPeriod==="miesiac"){
-    html += '<span class="row" style="gap:6px; margin-left:10px; display:inline-flex; align-items:center">'+
-      '<button class="btn secondary small" onclick="changeStatMonth(-1)">◀</button>'+
-      '<b style="font-size:13px">'+monthName(+statMonthVal.split("-")[1]-1)+' '+statMonthVal.split("-")[0]+'</b>'+
-      '<button class="btn secondary small" onclick="changeStatMonth(1)">▶</button></span>';
-  } else {
-    html += '<span class="row" style="gap:6px; margin-left:10px; display:inline-flex; align-items:center">'+
-      '<button class="btn secondary small" onclick="changeStatYear(-1)">◀</button>'+
-      '<b style="font-size:13px">'+statYearVal+'</b>'+
-      '<button class="btn secondary small" onclick="changeStatYear(1)">▶</button></span>';
-  }
   html += '</div>';
+  if(statPeriod==="miesiac"){
+    html += monthYearPickerHtml(statMonthVal, "setStatMonth");
+  } else {
+    html += '<div class="row" style="gap:6px; margin-bottom:10px; align-items:center">'+
+      '<button class="btn secondary small" onclick="changeStatYear(-1)">◀</button>'+
+      '<b style="font-size:13px; flex:1; text-align:center">'+statYearVal+'</b>'+
+      '<button class="btn secondary small" onclick="changeStatYear(1)">▶</button></div>';
+  }
 
   var cats = ["Wszystko","Cele","Zadania","Nawyki","Finanse","Posty","Instagram","Facebook"];
   html += '<div class="chiprow">';
