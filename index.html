@@ -98,6 +98,8 @@
     background:transparent; color:var(--muted-light); font-size:12.5px; border:1px solid var(--border); cursor:pointer; user-select:none;
   }
   .chip.active{background:var(--accent); color:#241a0a; border-color:var(--accent); font-weight:600}
+  .chip.chip-current:not(.active){border-color:var(--accent); color:var(--accent); font-weight:700}
+  .chip.chip-past:not(.active){opacity:.4}
   .chiprow{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; align-items:center}
 
   .btn{
@@ -547,6 +549,9 @@ function defaultState(){
     var log = {}; seedHistoricalLog(name, log);
     return {id:uid("hab"), name:name, log:log};
   });
+  s.habitReports = {};
+  s.habitsBackupSheetId = null;
+  s.habitsBackupSheetUrl = null;
 
   s.igAccounts = [
     {id:"ig1", handle:"@damian.gogulski", bio:"Marketing dla branży tanecznej — MediaDGtal", initials:"DA",
@@ -603,7 +608,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -1300,6 +1305,8 @@ function fetchGCalEventsForVisibleMonth(){
 window.onGCalTokenReady = function(){
   gcalCalendars = null; gcalEventsCache = {}; gcalConnectError = null;
   ensureGCalCalendars();
+  ensureHabitsBackupSheet();
+  scheduleHabitsBackupPush();
 };
 function renderKalendarz(el){
   var now = new Date();
@@ -1584,18 +1591,69 @@ function promptAddEvent(){
 }
 
 /* ================= NAWYKI ================= */
-var nawykiTab = null; // "YYYY-MM" wybranego miesiąca albo "TOTAL"
-function renderNawyki(el){
-  setTopActions('<button class="btn" onclick="addHabit()">+ Nawyk</button>');
-  var now = new Date();
-  var yr = String(now.getFullYear());
-  var curYm = yr+"-"+String(now.getMonth()+1).padStart(2,"0");
-  if(!nawykiTab) nawykiTab = curYm;
+var HABIT_DOW_SHORT = ["PN","WT","ŚR","CZW","PT","SO","NDZ"]; // poniedziałek pierwszy, jak w PL
+function dowShort(y,m,d){ return HABIT_DOW_SHORT[(new Date(y,m-1,d).getDay()+6)%7]; }
 
-  var html = '<div class="chiprow">';
+var nawykiTab = null; // "YYYY-MM" wybranego miesiąca albo "TOTAL"
+var nawykiYear = null;
+var nawykiUndoStack = [];
+function pushNawykiUndo(action){
+  nawykiUndoStack.push(action);
+  if(nawykiUndoStack.length>50) nawykiUndoStack.shift();
+}
+function undoNawyki(){
+  var a = nawykiUndoStack.pop();
+  if(!a) return;
+  if(a.type==="toggle"){
+    var h = state.habits.filter(function(x){return x.id===a.habitId;})[0];
+    if(h){ if(a.prev) h.log[a.dateKey] = true; else delete h.log[a.dateKey]; }
+  } else if(a.type==="rename"){
+    var h2 = state.habits.filter(function(x){return x.id===a.habitId;})[0];
+    if(h2) h2.name = a.prevName;
+  } else if(a.type==="report"){
+    state.habitReports[a.ym] = a.prevValue;
+  } else if(a.type==="delete"){
+    state.habits.splice(a.index, 0, a.habit);
+  } else if(a.type==="add"){
+    state.habits = state.habits.filter(function(h){return h.id!==a.habitId;});
+  }
+  save(); renderAll();
+}
+
+function renderNawyki(el){
+  setTopActions('<button class="btn secondary" onclick="undoNawyki()">↺ Cofnij</button> <button class="btn" onclick="addHabit()">+ Nawyk</button>');
+  var now = new Date();
+  var realCurYm = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  if(!nawykiYear) nawykiYear = now.getFullYear();
+  if(!nawykiTab) nawykiTab = realCurYm;
+  var yr = String(nawykiYear);
+
+  var html = '';
+  if(!window.__gcalToken){
+    html += '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup (osobny arkusz, nie dotyka Twojego oryginalnego Arkusza zadań 2026).</div>';
+  } else if(!state.habitsBackupSheetId){
+    html += '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
+    ensureHabitsBackupSheet();
+  } else {
+    html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
+      (habitsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
+      ' — <a href="'+state.habitsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+  }
+
+  html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
+    '<span style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Rok</span>'+
+    '<button class="btn secondary small" onclick="changeNawykiYear(-1)">◀</button>'+
+    '<b style="font-size:14px; min-width:40px; text-align:center">'+yr+'</b>'+
+    '<button class="btn secondary small" onclick="changeNawykiYear(1)">▶</button>'+
+    '</div>';
+
+  html += '<div class="chiprow">';
   for(var m=1;m<=12;m++){
     var ym = yr+"-"+String(m).padStart(2,"0");
-    html += '<span class="chip'+(nawykiTab===ym?" active":"")+'" onclick="setNawykiTab(\''+ym+'\')">'+HABIT_MONTH_ABBR[m-1]+'</span>';
+    var cls = "chip";
+    if(nawykiTab===ym) cls += " active";
+    if(ym===realCurYm) cls += " chip-current"; else if(ym<realCurYm) cls += " chip-past";
+    html += '<span class="'+cls+'" onclick="setNawykiTab(\''+ym+'\')">'+HABIT_MONTH_ABBR[m-1]+'</span>';
   }
   html += '<span class="chip'+(nawykiTab==="TOTAL"?" active":"")+'" onclick="setNawykiTab(\'TOTAL\')" style="font-weight:700; border-color:var(--accent)">TOTAL</span>';
   html += '</div>';
@@ -1604,6 +1662,13 @@ function renderNawyki(el){
   el.innerHTML = html;
 }
 function setNawykiTab(v){ nawykiTab = v; renderAll(); }
+function changeNawykiYear(delta){
+  nawykiYear = (nawykiYear||new Date().getFullYear()) + delta;
+  if(nawykiTab && nawykiTab!=="TOTAL"){
+    nawykiTab = nawykiYear+"-"+nawykiTab.split("-")[1];
+  }
+  renderAll();
+}
 
 function renderNawykiMonth(ym){
   var parts = ym.split("-"), y = +parts[0], m = +parts[1];
@@ -1614,14 +1679,22 @@ function renderNawykiMonth(ym){
   }
   html += '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>';
-  for(var d=1; d<=dim; d++){ html += '<th style="text-align:center; padding:8px 5px">'+d+'</th>'; }
+  for(var d=1; d<=dim; d++){
+    var wd = dowShort(y,m,d);
+    var weekend = (wd==="SO"||wd==="NDZ");
+    html += '<th style="text-align:center; padding:6px 5px'+(weekend?"; background:rgba(207,155,74,.06)":"")+'">'+
+      '<div style="font-size:9px; color:var(--muted); text-transform:uppercase">'+wd+'</div><div>'+d+'</div></th>';
+  }
   html += '<th style="text-align:right">Wyk.</th><th style="text-align:right">Dni</th><th style="text-align:right">%</th><th></th></tr></thead><tbody>';
   state.habits.forEach(function(h){
     var st = habitMonthStats(h, ym);
-    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+escapeHtml(h.name)+'</td>';
+    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
+      escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span></td>';
     for(var d=1; d<=dim; d++){
       var key = ym+"-"+String(d).padStart(2,"0");
-      html += '<td style="text-align:center"><input type="checkbox" '+(h.log[key]?"checked":"")+' onchange="toggleHabitDay(\''+h.id+'\',\''+key+'\')"></td>';
+      var wd2 = dowShort(y,m,d);
+      var weekend2 = (wd2==="SO"||wd2==="NDZ");
+      html += '<td style="text-align:center'+(weekend2?"; background:rgba(207,155,74,.06)":"")+'"><input type="checkbox" '+(h.log[key]?"checked":"")+' onchange="toggleHabitDay(\''+h.id+'\',\''+key+'\')"></td>';
     }
     html += '<td style="text-align:right; font-weight:600">'+st.done+'</td>'+
       '<td style="text-align:right; color:var(--muted)">'+st.days+'</td>'+
@@ -1629,7 +1702,25 @@ function renderNawykiMonth(ym){
       '<td><button class="linklike danger" onclick="deleteHabit(\''+h.id+'\')">Usuń</button></td></tr>';
   });
   html += '</tbody></table></div></div>';
+  html += renderHabitReportBox(ym);
   return html;
+}
+
+function renderHabitReportBox(ym){
+  var val = (state.habitReports && state.habitReports[ym]) || "";
+  return '<div class="card" style="margin-top:16px"><h3>Raport miesiąca — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>'+
+    '<textarea id="habitReport_'+ym+'" rows="4" placeholder="Notatki / podsumowanie miesiąca…" onblur="saveHabitReport(\''+ym+'\')">'+escapeHtml(val)+'</textarea></div>';
+}
+function saveHabitReport(ym){
+  var ta = document.getElementById("habitReport_"+ym);
+  if(!ta) return;
+  if(!state.habitReports) state.habitReports = {};
+  var prev = state.habitReports[ym] || "";
+  var val = ta.value;
+  if(prev===val) return;
+  pushNawykiUndo({type:"report", ym:ym, prevValue:prev});
+  state.habitReports[ym] = val;
+  save();
 }
 
 function renderNawykiTotal(yr){
@@ -1640,7 +1731,8 @@ function renderNawykiTotal(yr){
   html += '<th style="text-align:right">Suma</th><th></th></tr></thead><tbody>';
   state.habits.forEach(function(h){
     var ys = habitYearStats(h, yr);
-    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+escapeHtml(h.name)+'</td>'+
+    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
+      escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span></td>'+
       '<td style="text-align:right; font-weight:600">'+ys.done+'</td>'+
       '<td style="text-align:right; color:var(--muted)">'+ys.days+'</td>'+
       '<td style="text-align:right; color:var(--accent); font-weight:700">'+ys.pct+'%</td>';
@@ -1658,18 +1750,111 @@ function renderNawykiTotal(yr){
 function toggleHabitDay(id, dateKey){
   var h = state.habits.filter(function(x){return x.id===id;})[0];
   if(!h) return;
-  if(h.log[dateKey]) delete h.log[dateKey]; else h.log[dateKey] = true;
+  var prev = !!h.log[dateKey];
+  pushNawykiUndo({type:"toggle", habitId:id, dateKey:dateKey, prev:prev});
+  if(prev) delete h.log[dateKey]; else h.log[dateKey] = true;
+  save(); renderAll();
+}
+function renameHabit(id){
+  var h = state.habits.filter(function(x){return x.id===id;})[0];
+  if(!h) return;
+  var name = prompt("Nowa nazwa nawyku:", h.name);
+  if(!name || name===h.name) return;
+  pushNawykiUndo({type:"rename", habitId:id, prevName:h.name});
+  h.name = name;
   save(); renderAll();
 }
 function addHabit(){
   var name = prompt("Nazwa nawyku:");
   if(!name) return;
-  state.habits.push({id:uid("hab"), name:name, log:{}});
+  var newHabit = {id:uid("hab"), name:name, log:{}};
+  state.habits.push(newHabit);
+  pushNawykiUndo({type:"add", habitId:newHabit.id});
   save(); renderAll();
 }
 function deleteHabit(id){
-  state.habits = state.habits.filter(function(h){return h.id!==id;});
+  if(!confirm("Na pewno usunąć ten nawyk? Możesz to cofnąć przyciskiem \"Cofnij\".")) return;
+  var idx = -1;
+  for(var i=0;i<state.habits.length;i++){ if(state.habits[i].id===id){ idx=i; break; } }
+  if(idx<0) return;
+  var removed = state.habits[idx];
+  state.habits.splice(idx,1);
+  pushNawykiUndo({type:"delete", habit:removed, index:idx});
   save(); renderAll();
+}
+
+/* ---- Kopia zapasowa Nawyków w osobnym arkuszu Google Sheets (nie dotyka arkusza Damiana) ---- */
+var habitsBackupSyncTimer = null;
+var habitsBackupPending = false;
+var habitsBackupCreating = false;
+var habitsBackupStatus = "idle"; // idle|ok|error
+
+function ensureHabitsBackupSheet(){
+  if(!window.__gcalToken || state.habitsBackupSheetId || habitsBackupCreating) return;
+  habitsBackupCreating = true;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      properties:{title:"Nawyki — kopia zapasowa (system)"},
+      sheets:[{properties:{title:"TOTAL"}},{properties:{title:"RAW"}},{properties:{title:"RAPORTY"}}]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    habitsBackupCreating = false;
+    if(data.spreadsheetId){
+      state.habitsBackupSheetId = data.spreadsheetId;
+      state.habitsBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      save();
+      renderAll();
+    }
+  }).catch(function(){ habitsBackupCreating = false; });
+}
+function scheduleHabitsBackupPush(){
+  if(!window.__gcalToken || !state.habitsBackupSheetId) return;
+  habitsBackupPending = true;
+  if(habitsBackupSyncTimer) clearTimeout(habitsBackupSyncTimer);
+  habitsBackupSyncTimer = setTimeout(flushHabitsBackupPush, 1500);
+}
+function flushHabitsBackupPush(){
+  if(!habitsBackupPending) return;
+  habitsBackupPending = false;
+  if(!window.__gcalToken || !state.habitsBackupSheetId) return;
+  var yr = new Date().getFullYear();
+
+  var totalHeader = ["NAWYK","WYKONANIA (ROK)","DNI (ROK)","% ROK"].concat(HABIT_MONTH_ABBR.map(function(mn){return mn.toUpperCase();})).concat(["SUMA"]);
+  var totalRows = [totalHeader];
+  state.habits.forEach(function(h){
+    var ys = habitYearStats(h, String(yr));
+    var row = [h.name, ys.done, ys.days, ys.pct+"%"];
+    for(var m=1;m<=12;m++){ row.push(habitMonthStats(h, yr+"-"+String(m).padStart(2,"0")).pct+"%"); }
+    row.push(ys.done);
+    totalRows.push(row);
+  });
+
+  var rawRows = [["id","name","log_json"]];
+  state.habits.forEach(function(h){ rawRows.push([h.id, h.name, JSON.stringify(h.log||{})]); });
+
+  var reportRows = [["miesiac","raport"]];
+  Object.keys(state.habitReports||{}).sort().forEach(function(ym){ reportRows.push([ym, state.habitReports[ym]]); });
+
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId+"/values:batchUpdate", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      valueInputOption:"RAW",
+      data:[
+        {range:"TOTAL!A1", values: totalRows},
+        {range:"RAW!A1", values: rawRows},
+        {range:"RAPORTY!A1", values: reportRows}
+      ]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    habitsBackupStatus = r.ok ? "ok" : "error";
+  }).catch(function(){ habitsBackupStatus = "error"; });
 }
 
 /* ================= STATYSTYKI ================= */
@@ -1817,6 +2002,7 @@ var auth = getAuth(app);
 var db = getFirestore(app);
 var provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/calendar');
+provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 
 var gate = document.getElementById("authGate");
 var gateTitle = document.getElementById("gateTitle");
