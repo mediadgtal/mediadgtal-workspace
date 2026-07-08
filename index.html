@@ -152,6 +152,10 @@
   .weather-day .wd-name{font-size:11px; color:rgba(255,255,255,.75); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px}
   .weather-day .wd-emoji{font-size:18px; margin-bottom:4px}
   .weather-day .wd-temp{font-size:12px; color:#fff}
+  .w-todayrow{display:flex; gap:10px; align-items:stretch}
+  .w-todaytile{display:flex; flex-direction:column; align-items:flex-start; justify-content:center}
+  .w-tomorrowtile{background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25); border-radius:8px; padding:6px 12px; text-align:center; min-width:60px; backdrop-filter:blur(6px)}
+  .w-expand-link{color:rgba(255,255,255,.85); font-size:12px; text-decoration:underline}
 
   .chip{
     display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
@@ -354,6 +358,7 @@
     table{font-size:12px}
     .nawyki-grid th, .nawyki-grid td{padding:5px 4px}
     .nawyki-grid input[type=checkbox], .nawyki-grid input[type=checkbox]:not(:checked){width:20px; height:20px}
+    .weather-hero{min-height:auto; padding:16px 16px 14px}
   }
   @media(max-width:480px){
     #topbar h1{font-size:17px}
@@ -1133,24 +1138,58 @@ function buildWeatherAnim(code){
   html += '</div>';
   return html;
 }
+var lastWeatherData = null;
+var weatherExpanded = false;
+function toggleWeatherExpanded(){
+  weatherExpanded = !weatherExpanded;
+  if(lastWeatherData) renderWeatherFromData(lastWeatherData);
+}
 function renderWeatherFromData(data){
   var el = document.getElementById("weatherWidget");
   if(!el) return;
+  lastWeatherData = data;
+  var isMobile = window.innerWidth <= 860;
   var now = weatherLabel(data.current.code);
   var today0 = data.daily[0];
-  var html = '<div class="weather-now">'+
-    (data.place ? '<div class="w-place">📍 '+escapeHtml(data.place)+'</div>' : '')+
-    '<div class="w-mainrow"><span class="w-emoji">'+now[1]+'</span><span class="w-temp">'+Math.round(data.current.temp)+'°</span></div>'+
-    '<div class="w-desc">'+now[0]+'</div>'+
-    (today0 ? '<div class="w-range">Od '+Math.round(today0.tmin)+'° do '+Math.round(today0.tmax)+'°</div>' : '')+
-    '</div>';
-  html += '<div class="weather-week">';
-  data.daily.forEach(function(d, i){
-    var lab = weatherLabel(d.code);
-    var dname = i===0 ? "Dziś" : new Date(d.date).toLocaleDateString("pl-PL",{weekday:"short"});
-    html += '<div class="weather-day"><div class="wd-name">'+dname+'</div><div class="wd-emoji">'+lab[1]+'</div><div class="wd-temp">'+Math.round(d.tmax)+'°/'+Math.round(d.tmin)+'°</div></div>';
-  });
+  var tomorrow = data.daily[1];
+
+  var html = '<div class="weather-now">'+(data.place ? '<div class="w-place">📍 '+escapeHtml(data.place)+'</div>' : '');
+  if(isMobile){
+    html += '<div class="w-todayrow">';
+    html += '<div class="w-todaytile"><span class="w-emoji" style="font-size:24px">'+now[1]+'</span><span class="w-temp" style="font-size:26px">'+Math.round(data.current.temp)+'°</span>'+
+      '<div class="w-desc" style="font-size:11px; margin-top:0">'+now[0]+'</div></div>';
+    if(tomorrow){
+      var tlab = weatherLabel(tomorrow.code);
+      html += '<div class="w-tomorrowtile"><div class="wd-name">Jutro</div><div class="wd-emoji">'+tlab[1]+'</div><div class="wd-temp">'+Math.round(tomorrow.tmax)+'°/'+Math.round(tomorrow.tmin)+'°</div></div>';
+    }
+    html += '</div>';
+  } else {
+    html += '<div class="w-mainrow"><span class="w-emoji">'+now[1]+'</span><span class="w-temp">'+Math.round(data.current.temp)+'°</span></div>'+
+      '<div class="w-desc">'+now[0]+'</div>'+
+      (today0 ? '<div class="w-range">Od '+Math.round(today0.tmin)+'° do '+Math.round(today0.tmax)+'°</div>' : '');
+  }
   html += '</div>';
+
+  if(isMobile){
+    html += '<div style="margin-bottom:8px"><a href="#" class="w-expand-link" onclick="toggleWeatherExpanded(); return false;">'+(weatherExpanded?"Zwiń ▴":"Rozwiń — reszta tygodnia ▾")+'</a></div>';
+    if(weatherExpanded){
+      html += '<div class="weather-week">';
+      data.daily.slice(2).forEach(function(d){
+        var lab = weatherLabel(d.code);
+        var dname = new Date(d.date).toLocaleDateString("pl-PL",{weekday:"short"});
+        html += '<div class="weather-day"><div class="wd-name">'+dname+'</div><div class="wd-emoji">'+lab[1]+'</div><div class="wd-temp">'+Math.round(d.tmax)+'°/'+Math.round(d.tmin)+'°</div></div>';
+      });
+      html += '</div>';
+    }
+  } else {
+    html += '<div class="weather-week">';
+    data.daily.forEach(function(d, i){
+      var lab = weatherLabel(d.code);
+      var dname = i===0 ? "Dziś" : new Date(d.date).toLocaleDateString("pl-PL",{weekday:"short"});
+      html += '<div class="weather-day"><div class="wd-name">'+dname+'</div><div class="wd-emoji">'+lab[1]+'</div><div class="wd-temp">'+Math.round(d.tmax)+'°/'+Math.round(d.tmin)+'°</div></div>';
+    });
+    html += '</div>';
+  }
   el.innerHTML = html;
   var animEl = document.getElementById("weatherAnimLayer");
   if(animEl) animEl.innerHTML = buildWeatherAnim(data.current.code);
