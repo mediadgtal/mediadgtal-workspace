@@ -438,6 +438,14 @@ var TAB_ICON_SVG = {
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
 };
+var SOCIAL_TILE_ICON_SVG = {
+  facebook: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
+  instagram: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/></svg>',
+  tiktok: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v10.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M14 7c1.5 1.5 3 2 5 2"/></svg>',
+  youtube: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="4"/><polygon points="10 9 16 12 10 15" fill="currentColor" stroke="none"/></svg>'
+};
+var SOCIAL_PLATFORM_LABEL = {facebook:"Facebook", instagram:"Instagram", tiktok:"TikTok", youtube:"YouTube"};
+var SOCIAL_PLATFORM_COLOR = {facebook:"#1877F2", instagram:"#C13584", tiktok:"#000000", youtube:"#FF0000"};
 var CATEGORIES = ["MediaDGtal","tool4arts","Rozwoj","Admin"];
 var CATEGORY_LABEL = {MediaDGtal:"MediaDGtal", tool4arts:"tool4arts", Rozwoj:"Rozwój", Admin:"Admin"};
 var WEEKDAYS_FULL = ["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
@@ -492,6 +500,7 @@ function migrateHabit(h){
   }
   return h;
 }
+var SOCIAL_TILE_PLATFORMS = ["facebook","instagram","tiktok","youtube"];
 function migrateState(s){
   (s.habits||[]).forEach(migrateHabit);
   if(s.tasks){
@@ -501,6 +510,13 @@ function migrateState(s){
       return new Date(t.deletedAt+"T00:00:00").getTime() >= cutoff;
     });
   }
+  if(!s.socialStats) s.socialStats = {};
+  ["MediaDGtal","tool4arts"].forEach(function(acc){
+    if(!s.socialStats[acc]) s.socialStats[acc] = {};
+    SOCIAL_TILE_PLATFORMS.forEach(function(p){
+      if(!s.socialStats[acc][p]) s.socialStats[acc][p] = {history:[]};
+    });
+  });
   return s;
 }
 window.migrateState = migrateState;
@@ -945,6 +961,11 @@ function defaultState(){
     {id:uid("nt"), text:"Zaimportowano plan publikacji tool4arts.", read:true, date: todayStr()}
   ];
 
+  s.socialStats = {
+    MediaDGtal: {facebook:{history:[]}, instagram:{history:[]}, tiktok:{history:[]}, youtube:{history:[]}},
+    tool4arts: {facebook:{history:[]}, instagram:{history:[]}, tiktok:{history:[]}, youtube:{history:[]}}
+  };
+
   return s;
 }
 
@@ -1080,8 +1101,86 @@ function renderDashboard(el){
 
   html += '</div>'; // end grid-2
 
+  html += renderDashSocialPanel();
+
   el.innerHTML = html;
   loadWeather();
+}
+var dashSocialAccount = "MediaDGtal";
+function setDashSocialAccount(v){ dashSocialAccount = v; renderAll(); }
+function formatFollowerCount(n){
+  var sign = n<0 ? "-" : "";
+  var abs = Math.abs(n);
+  if(abs>=1000000) return sign+(abs/1000000).toFixed(1)+"M";
+  if(abs>=1000) return sign+(abs/1000).toFixed(1)+"K";
+  return sign+String(abs);
+}
+function computeSocialTrend(history){
+  if(!history || !history.length) return null;
+  var sorted = history.slice().sort(function(a,b){ return a.date<b.date?-1:(a.date>b.date?1:0); });
+  var latest = sorted[sorted.length-1];
+  if(sorted.length===1) return {current:latest.count, delta:null};
+  var latestDate = new Date(latest.date+"T00:00:00");
+  var weekAgoTarget = new Date(latestDate); weekAgoTarget.setDate(weekAgoTarget.getDate()-7);
+  var prev = null;
+  for(var i=sorted.length-2; i>=0; i--){
+    var d = new Date(sorted[i].date+"T00:00:00");
+    if(d <= weekAgoTarget){ prev = sorted[i]; break; }
+  }
+  if(!prev) prev = sorted[0];
+  if(prev===latest) return {current:latest.count, delta:null};
+  return {current:latest.count, delta:latest.count-prev.count};
+}
+function renderDashSocialPanel(){
+  var html = '<div class="card" style="margin-top:16px">';
+  html += '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px">'+
+    '<h3 style="margin:0">Social Media</h3>'+
+    '<select id="dashSocialAccount" onchange="setDashSocialAccount(this.value)" style="font-size:12.5px; width:auto">'+
+    ["MediaDGtal","tool4arts"].map(function(a){ return '<option value="'+a+'"'+(dashSocialAccount===a?" selected":"")+'>'+a+'</option>'; }).join("")+
+    '</select></div>';
+  html += '<div class="grid grid-4" style="gap:14px">';
+  SOCIAL_TILE_PLATFORMS.forEach(function(p){
+    var hist = (state.socialStats[dashSocialAccount] && state.socialStats[dashSocialAccount][p] && state.socialStats[dashSocialAccount][p].history) || [];
+    var trend = computeSocialTrend(hist);
+    html += '<div class="card" style="padding:16px">';
+    html += '<div class="row" style="align-items:center; gap:8px; margin-bottom:12px">'+
+      '<span style="width:28px; height:28px; border-radius:8px; background:'+SOCIAL_PLATFORM_COLOR[p]+'; display:flex; align-items:center; justify-content:center; color:#fff; flex:0 0 28px">'+SOCIAL_TILE_ICON_SVG[p]+'</span>'+
+      '<span style="font-size:12px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.03em">'+SOCIAL_PLATFORM_LABEL[p]+'</span></div>';
+    if(!trend){
+      html += '<div class="empty" style="margin-bottom:2px">Brak danych</div>';
+    } else {
+      html += '<div class="stat-value" style="font-size:25px">'+formatFollowerCount(trend.current)+'</div>';
+      if(trend.delta==null){
+        html += '<div style="font-size:11.5px; color:var(--muted); margin-top:5px">brak porównania z ub. tyg.</div>';
+      } else if(trend.delta>0){
+        html += '<div style="font-size:12.5px; color:#3ecf6e; margin-top:5px; font-weight:700">↑ +'+formatFollowerCount(trend.delta)+' vs ub. tydz.</div>';
+      } else if(trend.delta<0){
+        html += '<div style="font-size:12.5px; color:#e5484d; margin-top:5px; font-weight:700">↓ -'+formatFollowerCount(Math.abs(trend.delta))+' vs ub. tydz.</div>';
+      } else {
+        html += '<div style="font-size:12.5px; color:var(--muted); margin-top:5px">bez zmian vs ub. tydz.</div>';
+      }
+    }
+    html += '<button class="linklike" style="margin-top:10px; font-size:12px" onclick="promptSocialStatUpdate(\''+p+'\')">⟳ Aktualizuj</button>';
+    html += '</div>';
+  });
+  html += '</div></div>';
+  return html;
+}
+function promptSocialStatUpdate(platform){
+  var hist = (state.socialStats[dashSocialAccount] && state.socialStats[dashSocialAccount][platform] && state.socialStats[dashSocialAccount][platform].history) || [];
+  var current = hist.length ? hist[hist.length-1].count : null;
+  var input = prompt("Aktualna liczba obserwujących — "+SOCIAL_PLATFORM_LABEL[platform]+" ("+dashSocialAccount+")"+(current!=null?" [obecnie: "+current+"]":""), current!=null?String(current):"");
+  if(input===null) return;
+  var n = parseInt(String(input).replace(/[^0-9]/g,""), 10);
+  if(isNaN(n)) return;
+  if(!state.socialStats[dashSocialAccount]) state.socialStats[dashSocialAccount] = {};
+  if(!state.socialStats[dashSocialAccount][platform]) state.socialStats[dashSocialAccount][platform] = {history:[]};
+  var h = state.socialStats[dashSocialAccount][platform].history;
+  var today = todayStr();
+  var todayEntry = null;
+  for(var i=0;i<h.length;i++){ if(h[i].date===today){ todayEntry=h[i]; break; } }
+  if(todayEntry){ todayEntry.count = n; } else { h.push({date:today, count:n}); }
+  save(); renderAll();
 }
 function currentWeekDates(){
   var d = new Date();
