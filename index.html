@@ -43,7 +43,8 @@
   }
   .navitem:hover{background:rgba(255,255,255,.04); color:#fff}
   .navitem.active{background:var(--active-bg); color:#fff; font-weight:600}
-  .navitem .ico{width:18px; text-align:center; opacity:.85; font-size:13px}
+  .navitem .ico{width:18px; height:18px; flex:0 0 18px; display:flex; align-items:center; justify-content:center; opacity:.85}
+  .navitem .ico svg{width:18px; height:18px; display:block}
   .sidebar-footer{
     margin-top:auto; padding-top:16px; border-top:1px solid var(--border);
     display:flex; align-items:center; gap:10px;
@@ -63,7 +64,41 @@
   }
   #topbar .eyebrow{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:4px}
   #topbar h1{font-size:24px; margin:0; font-weight:700; color:#fff}
-  #content{padding:0 30px 60px; flex:1}
+  #content{padding:0 30px 60px; flex:1; max-width:100%}
+
+  #menuToggle{
+    display:none; align-items:center; justify-content:center; width:34px; height:34px; flex:0 0 34px;
+    background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--muted-light);
+  }
+  #sidebarOverlay{display:none}
+  @media(max-width:860px){
+    #menuToggle{display:flex}
+    #sidebar{
+      position:fixed; top:0; left:0; height:100vh; z-index:300; width:250px; flex:0 0 250px;
+      transform:translateX(-100%); transition:transform .25s ease; box-shadow:2px 0 30px rgba(0,0,0,.5);
+    }
+    #sidebar.open{transform:translateX(0)}
+    #sidebarOverlay{
+      display:block; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:250;
+      opacity:0; pointer-events:none; transition:opacity .25s ease;
+    }
+    #sidebarOverlay.open{opacity:1; pointer-events:auto}
+    #topbar{padding:16px 16px 12px; flex-wrap:wrap; gap:10px}
+    #topbar h1{font-size:19px}
+    #content{padding:0 16px 40px}
+    .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+    .kanban{grid-template-columns:1fr}
+    .colcols{grid-template-columns:1fr}
+    .kpi-row{gap:18px; row-gap:14px}
+    .acc-switch select{min-width:0; width:100%}
+    .chiprow{gap:6px}
+    table{font-size:12px}
+  }
+  @media(max-width:480px){
+    #topbar h1{font-size:17px}
+    .stat-value{font-size:24px}
+    .hero-greet{font-size:21px}
+  }
 
   .grid{display:grid; gap:16px}
   .grid-2{grid-template-columns:repeat(2,1fr)}
@@ -265,6 +300,7 @@
     <button class="btn" id="gateBtn" style="display:none" onclick="__authAction && __authAction()"></button>
   </div>
 </div>
+<div id="sidebarOverlay" onclick="closeSidebar()"></div>
 <div id="sidebar">
   <div class="brand"><img id="brandLogo" alt="MediaDGtal"></div>
   <div id="navwrap"></div>
@@ -279,9 +315,14 @@
 </div>
 <div id="main">
   <div id="topbar">
-    <div>
-      <div class="eyebrow">MediaDGtal</div>
-      <h1 id="pageTitle">Dashboard</h1>
+    <div class="row" style="gap:12px; align-items:center">
+      <button id="menuToggle" onclick="toggleSidebar()" aria-label="Menu">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div>
+        <div class="eyebrow">MediaDGtal</div>
+        <h1 id="pageTitle">Dashboard</h1>
+      </div>
     </div>
     <div id="topActions"></div>
   </div>
@@ -294,17 +335,29 @@ var LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAABDgAAALTCAYAAADzQ7L0AAA4lklEQVR4nO3d63Lj
 
 /* ================= STATE ================= */
 var TABS = [
-  {id:"dashboard", label:"Dashboard", ico:"▦"},
-  {id:"wiadomosci", label:"Wiadomości", ico:"✉"},
-  {id:"posty", label:"Posty", ico:"▥"},
-  {id:"instagram", label:"Instagram", ico:"◎"},
-  {id:"facebook", label:"Facebook", ico:"◉"},
-  {id:"zadania", label:"Zadania", ico:"☑"},
-  {id:"kalendarz", label:"Kalendarz", ico:"▦"},
-  {id:"nawyki", label:"Nawyki", ico:"◈"},
-  {id:"klienci", label:"Klienci", ico:"⬢"},
-  {id:"statystyki", label:"Statystyki", ico:"▤"}
+  {id:"dashboard", label:"Dashboard"},
+  {id:"wiadomosci", label:"Wiadomości"},
+  {id:"posty", label:"Posty"},
+  {id:"instagram", label:"Instagram"},
+  {id:"facebook", label:"Facebook"},
+  {id:"zadania", label:"Zadania"},
+  {id:"kalendarz", label:"Kalendarz"},
+  {id:"nawyki", label:"Nawyki"},
+  {id:"klienci", label:"Klienci"},
+  {id:"statystyki", label:"Statystyki"}
 ];
+var TAB_ICON_SVG = {
+  dashboard: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>',
+  statystyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  wiadomosci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  posty: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+  instagram: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/></svg>',
+  facebook: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
+  zadania: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  kalendarz: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
+  klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+};
 var CATEGORIES = ["MediaDGtal","tool4arts","Rozwoj","Admin"];
 var CATEGORY_LABEL = {MediaDGtal:"MediaDGtal", tool4arts:"tool4arts", Rozwoj:"Rozwój", Admin:"Admin"};
 var WEEKDAYS_FULL = ["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
@@ -716,13 +769,22 @@ function renderNav(){
   var html = "";
   TABS.forEach(function(t){
     html += '<button class="navitem'+(currentTab===t.id?" active":"")+'" onclick="switchTab(\''+t.id+'\')">'+
-      '<span class="ico">'+t.ico+'</span><span>'+t.label+'</span></button>';
+      '<span class="ico">'+(TAB_ICON_SVG[t.id]||"")+'</span><span>'+t.label+'</span></button>';
   });
   document.getElementById("navwrap").innerHTML = html;
 }
 function switchTab(id){
   currentTab = id;
+  closeSidebar();
   renderAll();
+}
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+function closeSidebar(){
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sidebarOverlay").classList.remove("open");
 }
 function setTopActions(html){ document.getElementById("topActions").innerHTML = html || ""; }
 
