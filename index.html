@@ -870,9 +870,14 @@ function renderDashboard(el){
   var todayTasks = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.done; });
   var monthTasks = state.tasks.filter(function(t){ return t.scope==="miesiac" && !t.done; });
   var today = todayStr();
-  var todayEvents = state.events.filter(function(e){ return e.date === today; });
   var weekDates = currentWeekDates();
-  var weekEvents = state.events.filter(function(e){ return weekDates.indexOf(e.date) !== -1; });
+
+  var gcalConnected = !!(window.__gcalToken && gcalCalendars);
+  if(gcalConnected) ensureGCalDashboardEvents();
+  var gcalLoadingDash = gcalConnected && !gcalDashboardCache;
+  var eventsSource = gcalConnected && gcalDashboardCache ? gcalDashboardCache.events : state.events;
+  var todayEvents = eventsSource.filter(function(e){ return e.date === today; });
+  var weekEvents = eventsSource.filter(function(e){ return weekDates.indexOf(e.date) !== -1; });
 
   var html = '<div class="card weather-hero" id="weatherHero">'+
     '<div id="weatherAnimLayer" class="weather-anim"></div>'+
@@ -902,11 +907,13 @@ function renderDashboard(el){
   html += '</div>';
 
   html += '<div class="card"><h3>Dziś w kalendarzu</h3>';
-  html += todayEvents.length ? todayEvents.map(eventRow).join("") : '<div class="empty">Brak wydarzeń na dziś.</div>';
+  if(gcalLoadingDash){ html += '<div class="empty">Synchronizuję z Google Calendar…</div>'; }
+  else{ html += todayEvents.length ? todayEvents.map(eventRow).join("") : '<div class="empty">Brak wydarzeń na dziś.</div>'; }
   html += '</div>';
 
   html += '<div class="card"><h3>Kalendarz na ten tydzień</h3>';
-  html += weekEvents.length ? weekEvents.map(eventRow).join("") : '<div class="empty">Nic więcej zaplanowane w tym tygodniu.</div>';
+  if(gcalLoadingDash){ html += '<div class="empty">Synchronizuję z Google Calendar…</div>'; }
+  else{ html += weekEvents.length ? weekEvents.map(eventRow).join("") : '<div class="empty">Nic więcej zaplanowane w tym tygodniu.</div>'; }
   html += '</div>';
 
   html += '</div>'; // end grid-2
@@ -1071,8 +1078,8 @@ function goalBar(label, val, goal){
     '<div class="habit-bar" style="margin-bottom:0"><div style="width:'+pct+'%"></div></div></div>';
 }
 function eventRow(e){
-  var cal = state.calendars.filter(function(c){ return c.name===e.calendar; })[0] || {color:"#8a8390"};
-  return '<div class="taskitem"><span class="dot" style="background:'+cal.color+'"></span><span class="ttitle">'+
+  var color = e.calendarColor || (state.calendars.filter(function(c){ return c.name===e.calendar; })[0]||{}).color || "#8a8390";
+  return '<div class="taskitem"><span class="dot" style="background:'+color+'"></span><span class="ttitle">'+
     fmtDate(e.date)+(e.time?" · "+e.time:"")+" — "+escapeHtml(e.title)+'</span></div>';
 }
 function toggleTask(id){
@@ -1405,13 +1412,13 @@ function renderZadania(el){
     return;
   }
 
-  html += '<div class="chiprow" style="justify-content:flex-end"><select id="catFilter" onchange="renderAll()" style="width:auto">'+
-    '<option value="">Wszystkie kategorie</option>'+
-    CATEGORIES.map(function(c){return '<option value="'+c+'">'+CATEGORY_LABEL[c]+'</option>';}).join("")+
-    '</select></div>';
-
   var catFilterEl = document.getElementById("catFilter");
   var catFilter = catFilterEl ? catFilterEl.value : "";
+
+  html += '<div class="chiprow" style="justify-content:flex-end"><select id="catFilter" onchange="renderAll()" style="width:auto">'+
+    '<option value=""'+(catFilter===""?" selected":"")+'>Wszystkie kategorie</option>'+
+    CATEGORIES.map(function(c){return '<option value="'+c+'"'+(catFilter===c?" selected":"")+'>'+CATEGORY_LABEL[c]+'</option>';}).join("")+
+    '</select></div>';
 
   var weekDefault = currentWeekDates();
   var tydzienOdEl = document.getElementById("zadTydzienOd");
@@ -1435,7 +1442,8 @@ function renderZadania(el){
       return true;
     });
     var doneCount = items.filter(function(t){return t.done;}).length;
-    html += '<div><div class="col-head"><span>'+label+'</span><b>'+doneCount+'/'+items.length+'</b></div>';
+    var defaultDate = scope==="miesiac" ? miesiacVal+"-01" : (scope==="tydzien" ? tydzienOd : todayStr());
+    html += '<div class="card"><div class="col-head"><span>'+label+'</span><b>'+doneCount+'/'+items.length+'</b></div>';
     if(scope==="tydzien"){
       html += '<div class="row" style="gap:6px; margin-bottom:10px"><input type="date" id="zadTydzienOd" value="'+tydzienOd+'" onchange="renderAll()" style="font-size:12px">'+
         '<input type="date" id="zadTydzienDo" value="'+tydzienDo+'" onchange="renderAll()" style="font-size:12px"></div>';
@@ -1443,16 +1451,19 @@ function renderZadania(el){
     if(scope==="miesiac"){
       html += '<div style="margin-bottom:10px"><input type="month" id="zadMiesiacInput" value="'+miesiacVal+'" onchange="renderAll()" style="font-size:12px"></div>';
     }
-    if(!items.length){ html += '<div class="empty">Brak zadań.</div><button class="linklike" onclick="addTaskScope(\''+scope+'\')">+ Dodaj do „'+label+'"</button>'; }
+    if(!items.length){ html += '<div class="empty">Brak zadań.</div><button class="linklike" onclick="openTaskModal({scope:\''+scope+'\', category:\'MediaDGtal\', date:\''+defaultDate+'\'})">+ Dodaj do „'+label+'"</button>'; }
     else{
+      var listOpen = scope==="miesiac" ? '<div style="max-height:450px; overflow-y:auto">' : '';
+      html += listOpen;
       items.forEach(function(t){
         html += '<div class="taskitem'+(t.done?" done":"")+'">'+
           '<input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask(\''+t.id+'\')">'+
           '<span class="dot"></span>'+
           '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span><br><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></div>'+
-          '<div class="taskmeta"><button class="linklike" onclick="editTask(\''+t.id+'\')">Edytuj</button><button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></div>'+
+          '<div class="taskmeta"><button class="linklike" onclick="openTaskModal({id:\''+t.id+'\'})">Edytuj</button><button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></div>'+
           '</div>';
       });
+      if(scope==="miesiac") html += '</div>';
     }
     html += '</div>';
   });
@@ -1498,19 +1509,65 @@ function renderZadaniaBaza(){
   return html;
 }
 function setZadSub(v){ zadaniaSubview = v; renderAll(); }
-function addTask(){ addTaskScope("miesiac"); }
-function addTaskScope(scope){
-  var title = prompt("Treść zadania:");
+function addTask(){ openTaskModal({scope:"dzien", category:"MediaDGtal", date:todayStr()}); }
+function closeTaskModal(){
+  var m = document.getElementById("taskModal");
+  if(m) m.remove();
+  window.__taskModalCtx = null;
+}
+function openTaskModal(opts){
+  closeTaskModal();
+  if(opts.id){
+    var existing = state.tasks.filter(function(x){return x.id===opts.id;})[0];
+    if(existing){ opts = {id:existing.id, title:existing.title, category:existing.category, scope:existing.scope, date:(existing.completedAt||existing.createdAt||todayStr())}; }
+  }
+  var isEdit = !!opts.id;
+  var catOptions = CATEGORIES.map(function(c){
+    return '<option value="'+c+'"'+(opts.category===c?" selected":"")+'>'+CATEGORY_LABEL[c]+'</option>';
+  }).join("");
+  var scopeOptions = [["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].map(function(p){
+    return '<option value="'+p[0]+'"'+(opts.scope===p[0]?" selected":"")+'>'+p[1]+'</option>';
+  }).join("");
+  var html = '<div class="modal-overlay" id="taskModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj zadanie":"Nowe zadanie")+'</h3>'+
+    '<div class="field"><label>Treść</label><input type="text" id="tmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
+    '<div class="field"><label>Kategoria</label><select id="tmCategory">'+catOptions+'</select></div>'+
+    '<div class="field"><label>Zakres</label><select id="tmScope">'+scopeOptions+'</select></div>'+
+    '<div class="field"><label>Data</label><input type="date" id="tmDate" value="'+(opts.date||todayStr())+'"></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteTaskModal()">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeTaskModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveTaskModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__taskModalCtx = opts;
+}
+function saveTaskModal(){
+  var title = document.getElementById("tmTitle").value.trim();
   if(!title) return;
-  state.tasks.unshift({id:uid("task"), title:title, category:"MediaDGtal", scope:scope, done:false, createdAt:todayStr(), completedAt:null});
+  var category = document.getElementById("tmCategory").value;
+  var scope = document.getElementById("tmScope").value;
+  var date = document.getElementById("tmDate").value || todayStr();
+  var ctx = window.__taskModalCtx || {};
+  if(ctx.id){
+    var t = state.tasks.filter(function(x){return x.id===ctx.id;})[0];
+    if(t){
+      t.title = title; t.category = category; t.scope = scope;
+      if(t.completedAt) t.completedAt = date; else t.createdAt = date;
+    }
+  } else {
+    state.tasks.unshift({id:uid("task"), title:title, category:category, scope:scope, done:false, createdAt:date, completedAt:null});
+  }
+  closeTaskModal();
   save(); renderAll();
 }
-function editTask(id){
-  var t = state.tasks.filter(function(x){return x.id===id;})[0];
-  if(!t) return;
-  var title = prompt("Edytuj treść zadania:", t.title);
-  if(title===null) return;
-  t.title = title;
+function deleteTaskModal(){
+  var ctx = window.__taskModalCtx;
+  if(!ctx || !ctx.id) return;
+  if(!confirm("Usunąć zadanie \""+ctx.title+"\"?")) return;
+  state.tasks = state.tasks.filter(function(t){return t.id!==ctx.id;});
+  closeTaskModal();
   save(); renderAll();
 }
 function deleteTask(id){
@@ -1586,8 +1643,37 @@ function fetchGCalEventsForVisibleMonth(){
     renderAll();
   });
 }
+var gcalDashboardCache = null; // {key:"start_end", events:[...]} zakres dziś→koniec tygodnia widoczny na Dashboardzie
+function ensureGCalDashboardEvents(){
+  if(!window.__gcalToken || !gcalCalendars) return;
+  var weekDates = currentWeekDates();
+  var key = weekDates[0]+"_"+weekDates[6];
+  if(gcalDashboardCache && gcalDashboardCache.key===key) return;
+  var timeMin = new Date(weekDates[0]+"T00:00:00").toISOString();
+  var lastDay = new Date(weekDates[6]+"T00:00:00"); lastDay.setDate(lastDay.getDate()+1);
+  var timeMax = lastDay.toISOString();
+  Promise.all(gcalCalendars.map(function(cal){
+    return fetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(cal.id)+"/events?timeMin="+encodeURIComponent(timeMin)+"&timeMax="+encodeURIComponent(timeMax)+"&singleEvents=true&orderBy=startTime", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+      .then(function(r){ if(r.status===401){ window.__gcalToken=null; gcalCalendars=null; throw new Error("401"); } return r.json(); })
+      .then(function(j){
+        var out = [];
+        (j.items||[]).forEach(function(it){
+          if(!it.start) return;
+          var dates = eventDateRange(it);
+          var t = it.start.dateTime ? it.start.dateTime.slice(11,16) : null;
+          dates.forEach(function(d){
+            out.push({title: it.summary||"(bez tytułu)", date:d, time:t, calendarName:cal.name, calendarColor:cal.color});
+          });
+        });
+        return out;
+      }).catch(function(){ return []; });
+  })).then(function(results){
+    gcalDashboardCache = {key:key, events: [].concat.apply([], results)};
+    renderAll();
+  });
+}
 window.onGCalTokenReady = function(){
-  gcalCalendars = null; gcalEventsCache = {}; gcalConnectError = null;
+  gcalCalendars = null; gcalEventsCache = {}; gcalDashboardCache = null; gcalConnectError = null;
   ensureGCalCalendars();
   ensureHabitsBackupSheet();
   scheduleHabitsBackupPush();
