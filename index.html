@@ -1896,7 +1896,8 @@ function renderKalendarz(el){
     '<h2>'+monthName(calMonth)+' '+calYear+'</h2>'+
     '<button class="btn secondary small" onclick="calNav(1)">Następny →</button></div>';
 
-  html += '<div class="cal-scroll"><div class="cal-grid">';
+  html += scrollNavHtml("calScrollBox","Dni");
+  html += '<div class="cal-scroll" id="calScrollBox"><div class="cal-grid">';
   WEEKDAYS_SHORT.forEach(function(d){ html += '<div class="cal-dow">'+d+'</div>'; });
 
   var first = new Date(calYear, calMonth, 1);
@@ -2163,6 +2164,17 @@ function renderAllKeepScroll(scrollBoxId){
     if(box2) box2.scrollLeft = pos;
   }
 }
+function shiftScroll(scrollBoxId, delta){
+  var box = document.getElementById(scrollBoxId);
+  if(!box) return;
+  box.scrollBy({left:delta, behavior:"smooth"});
+}
+function scrollNavHtml(scrollBoxId, label){
+  return '<div class="row" style="gap:6px; margin-bottom:8px; justify-content:flex-end">'+
+    '<button class="btn secondary small" onclick="shiftScroll(\''+scrollBoxId+'\',-220)">◀ '+label+'</button>'+
+    '<button class="btn secondary small" onclick="shiftScroll(\''+scrollBoxId+'\',220)">'+label+' ▶</button>'+
+    '</div>';
+}
 function pushNawykiUndo(action){
   nawykiUndoStack.push(action);
   if(nawykiUndoStack.length>50) nawykiUndoStack.shift();
@@ -2176,12 +2188,19 @@ function undoNawyki(){
   } else if(a.type==="rename"){
     var h2 = state.habits.filter(function(x){return x.id===a.habitId;})[0];
     if(h2) h2.name = a.prevName;
-  } else if(a.type==="report"){
-    state.habitReports[a.ym] = a.prevValue;
   } else if(a.type==="delete"){
     state.habits.splice(a.index, 0, a.habit);
   } else if(a.type==="add"){
     state.habits = state.habits.filter(function(h){return h.id!==a.habitId;});
+  } else if(a.type==="reportrow-add"){
+    var rr1 = state.habitReports[a.ym];
+    if(rr1) rr1.splice(a.index,1);
+  } else if(a.type==="reportrow-edit"){
+    var rr2 = state.habitReports[a.ym];
+    if(rr2 && rr2[a.index]) rr2[a.index][a.field] = a.prevValue;
+  } else if(a.type==="reportrow-delete"){
+    var rr3 = state.habitReports[a.ym];
+    if(rr3) rr3.splice(a.index, 0, a.row);
   }
   save(); renderAllKeepScroll("nawykiScrollBox");
 }
@@ -2240,6 +2259,7 @@ function renderNawykiMonth(ym){
   var parts = ym.split("-"), y = +parts[0], m = +parts[1];
   var dim = daysInMonth(y,m);
   var html = '';
+  html += scrollNavHtml("nawykiScrollBox","Dni");
   html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>';
   for(var d=1; d<=dim; d++){
@@ -2269,25 +2289,59 @@ function renderNawykiMonth(ym){
   return html;
 }
 
-function renderHabitReportBox(ym){
-  var val = (state.habitReports && state.habitReports[ym]) || "";
-  return '<div class="card" style="margin-top:16px"><h3>Raport miesiąca — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>'+
-    '<textarea id="habitReport_'+ym+'" rows="4" placeholder="Notatki / podsumowanie miesiąca…" onblur="saveHabitReport(\''+ym+'\')">'+escapeHtml(val)+'</textarea></div>';
-}
-function saveHabitReport(ym){
-  var ta = document.getElementById("habitReport_"+ym);
-  if(!ta) return;
+function normalizeHabitReport(ym){
   if(!state.habitReports) state.habitReports = {};
-  var prev = state.habitReports[ym] || "";
-  var val = ta.value;
+  var r = state.habitReports[ym];
+  if(!r){ r = []; state.habitReports[ym] = r; }
+  else if(typeof r === "string"){
+    r = r.trim() ? [{value:"", label:r}] : [];
+    state.habitReports[ym] = r;
+  }
+  return r;
+}
+function renderHabitReportBox(ym){
+  var rows = normalizeHabitReport(ym);
+  var html = '<div class="card" style="margin-top:16px"><h3>Raport miesiąca — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>';
+  html += '<table><thead><tr><th style="width:70px">Dni</th><th>Raport miesiąca</th><th></th></tr></thead><tbody>';
+  if(!rows.length){ html += '<tr><td colspan="3" style="color:var(--muted)">Brak wpisów.</td></tr>'; }
+  rows.forEach(function(r, idx){
+    html += '<tr>'+
+      '<td><input type="text" value="'+escapeHtml(r.value||"")+'" onchange="updateHabitReportRow(\''+ym+'\','+idx+',\'value\',this.value)" style="width:60px; text-align:center"></td>'+
+      '<td><input type="text" value="'+escapeHtml(r.label||"")+'" onchange="updateHabitReportRow(\''+ym+'\','+idx+',\'label\',this.value)"></td>'+
+      '<td><button class="linklike danger" onclick="deleteHabitReportRow(\''+ym+'\','+idx+')">Usuń</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  html += '<button class="linklike" style="margin-top:10px" onclick="addHabitReportRow(\''+ym+'\')">+ Dodaj wiersz</button>';
+  html += '</div>';
+  return html;
+}
+function addHabitReportRow(ym){
+  var rows = normalizeHabitReport(ym);
+  rows.push({value:"", label:""});
+  pushNawykiUndo({type:"reportrow-add", ym:ym, index:rows.length-1});
+  save(); renderAll();
+}
+function updateHabitReportRow(ym, idx, field, val){
+  var rows = normalizeHabitReport(ym);
+  if(!rows[idx]) return;
+  var prev = rows[idx][field];
   if(prev===val) return;
-  pushNawykiUndo({type:"report", ym:ym, prevValue:prev});
-  state.habitReports[ym] = val;
+  pushNawykiUndo({type:"reportrow-edit", ym:ym, index:idx, field:field, prevValue:prev});
+  rows[idx][field] = val;
   save();
+}
+function deleteHabitReportRow(ym, idx){
+  var rows = normalizeHabitReport(ym);
+  if(!rows[idx]) return;
+  var removed = rows[idx];
+  pushNawykiUndo({type:"reportrow-delete", ym:ym, index:idx, row:removed});
+  rows.splice(idx,1);
+  save(); renderAll();
 }
 
 function renderNawykiTotal(yr){
-  var html = '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
+  var html = scrollNavHtml("nawykiScrollBox","Kolumny");
+  html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>'+
     '<th style="text-align:right">Wyk. (rok)</th><th style="text-align:right">Dni (rok)</th><th style="text-align:right">% rok</th>';
   HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
@@ -2400,8 +2454,12 @@ function flushHabitsBackupPush(){
   var rawRows = [["id","name","log_json"]];
   state.habits.forEach(function(h){ rawRows.push([h.id, h.name, JSON.stringify(h.log||{})]); });
 
-  var reportRows = [["miesiac","raport"]];
-  Object.keys(state.habitReports||{}).sort().forEach(function(ym){ reportRows.push([ym, state.habitReports[ym]]); });
+  var reportRows = [["miesiac","dni","raport"]];
+  Object.keys(state.habitReports||{}).sort().forEach(function(ym){
+    var rows = state.habitReports[ym];
+    if(typeof rows === "string"){ reportRows.push([ym, "", rows]); return; }
+    (rows||[]).forEach(function(r){ reportRows.push([ym, r.value||"", r.label||""]); });
+  });
 
   fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId+"/values:batchUpdate", {
     method:"POST",
@@ -2567,7 +2625,8 @@ function applyDateColor(ym, rowId, field, color){
 function renderKlienciMonth(ym){
   if(!state.clientsMonthly[ym]) state.clientsMonthly[ym] = [];
   var rows = state.clientsMonthly[ym];
-  var html = '<div class="card"><div id="klienciScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
+  var html = scrollNavHtml("klienciScrollBox","Kolumny");
+  html += '<div class="card"><div id="klienciScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
     '<th>Lp.</th><th style="position:sticky; left:0; background:var(--bg)">Nazwa</th>';
   CLIENT_FIELDS.slice(1).forEach(function(f){ html += '<th>'+f.label+'</th>'; });
   html += '<th></th></tr></thead><tbody>';
