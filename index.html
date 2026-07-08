@@ -1152,6 +1152,7 @@ function renderWeatherFromData(data){
   var now = weatherLabel(data.current.code);
   var today0 = data.daily[0];
   var tomorrow = data.daily[1];
+  var dayAfter = data.daily[2];
 
   var html = '<div class="weather-now">'+(data.place ? '<div class="w-place">📍 '+escapeHtml(data.place)+'</div>' : '');
   if(isMobile){
@@ -1161,6 +1162,10 @@ function renderWeatherFromData(data){
     if(tomorrow){
       var tlab = weatherLabel(tomorrow.code);
       html += '<div class="w-tomorrowtile"><div class="wd-name">Jutro</div><div class="wd-emoji">'+tlab[1]+'</div><div class="wd-temp">'+Math.round(tomorrow.tmax)+'°/'+Math.round(tomorrow.tmin)+'°</div></div>';
+    }
+    if(dayAfter){
+      var dlab = weatherLabel(dayAfter.code);
+      html += '<div class="w-tomorrowtile"><div class="wd-name">Pojutrze</div><div class="wd-emoji">'+dlab[1]+'</div><div class="wd-temp">'+Math.round(dayAfter.tmax)+'°/'+Math.round(dayAfter.tmin)+'°</div></div>';
     }
     html += '</div>';
   } else {
@@ -1174,7 +1179,7 @@ function renderWeatherFromData(data){
     html += '<div style="margin-bottom:8px"><a href="#" class="w-expand-link" onclick="toggleWeatherExpanded(); return false;">'+(weatherExpanded?"Zwiń ▴":"Rozwiń — reszta tygodnia ▾")+'</a></div>';
     if(weatherExpanded){
       html += '<div class="weather-week">';
-      data.daily.slice(2).forEach(function(d){
+      data.daily.slice(3).forEach(function(d){
         var lab = weatherLabel(d.code);
         var dname = new Date(d.date).toLocaleDateString("pl-PL",{weekday:"short"});
         html += '<div class="weather-day"><div class="wd-name">'+dname+'</div><div class="wd-emoji">'+lab[1]+'</div><div class="wd-temp">'+Math.round(d.tmax)+'°/'+Math.round(d.tmin)+'°</div></div>';
