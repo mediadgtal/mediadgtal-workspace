@@ -2785,7 +2785,7 @@ init();
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, onSnapshot
@@ -2842,8 +2842,14 @@ function showGate(mode){
 function hideGate(){ gate.classList.add("hidden"); }
 
 function doSignIn(){
-  gateText.textContent = "Przekierowuję do logowania Google…";
-  signInWithRedirect(auth, provider);
+  gateText.textContent = "Otwieram okno logowania Google…";
+  signInWithPopup(auth, provider).then(function(result){
+    var credential = GoogleAuthProvider.credentialFromResult(result);
+    window.__gcalToken = credential && credential.accessToken;
+    if(window.onGCalTokenReady) window.onGCalTokenReady();
+  }).catch(function(err){
+    gateText.textContent = "Logowanie nie powiodło się (" + err.code + "). Spróbuj ponownie.";
+  });
 }
 function doSignOut(){ signOut(auth); }
 window.reconnectGCal = doSignIn;
@@ -2899,16 +2905,6 @@ function startSync(){
     setSyncStatus("Offline (tylko lokalnie)");
   });
 }
-
-getRedirectResult(auth).then(function(result){
-  if(result){
-    var credential = GoogleAuthProvider.credentialFromResult(result);
-    window.__gcalToken = credential && credential.accessToken;
-    if(window.onGCalTokenReady) window.onGCalTokenReady();
-  }
-}).catch(function(err){
-  gateText.textContent = "Logowanie nie powiodło się (" + err.code + "). Spróbuj ponownie.";
-});
 
 showGate("loading");
 onAuthStateChanged(auth, function(user){
