@@ -287,7 +287,8 @@
 
   .cal-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
   .cal-header h2{font-size:15px; font-weight:700; color:#fff; margin:0}
-  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden}
+  .cal-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch}
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:640px}
   .cal-dow{background:var(--sidebar-bg); color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; text-align:center; padding:8px 0; font-weight:700}
   .cal-cell{background:var(--bg); min-height:88px; padding:7px; position:relative; cursor:pointer}
   .cal-cell.out{opacity:.35}
@@ -1895,7 +1896,7 @@ function renderKalendarz(el){
     '<h2>'+monthName(calMonth)+' '+calYear+'</h2>'+
     '<button class="btn secondary small" onclick="calNav(1)">Następny →</button></div>';
 
-  html += '<div class="cal-grid">';
+  html += '<div class="cal-scroll"><div class="cal-grid">';
   WEEKDAYS_SHORT.forEach(function(d){ html += '<div class="cal-dow">'+d+'</div>'; });
 
   var first = new Date(calYear, calMonth, 1);
@@ -1929,7 +1930,7 @@ function renderKalendarz(el){
     html += '</div>';
     if(i===41) break;
   }
-  html += '</div>';
+  html += '</div></div>';
 
   el.innerHTML = html;
 }
