@@ -1102,9 +1102,40 @@ function renderDashboard(el){
   html += '</div>'; // end grid-2
 
   html += renderDashSocialPanel();
+  html += renderDashContentPanel();
 
   el.innerHTML = html;
   loadWeather();
+}
+var CONTENT_TILES = [["facebook","FB posty"],["instagram","IG posty"],["tiktok","TikTok posty"],["youtube","YT filmy"]];
+function computeContentStats(platform){
+  var posts = state.posts.filter(function(p){ return p.platform===platform; });
+  var published = posts.filter(function(p){ return p.stage==="opublikowany"; }).length;
+  var planned = posts.filter(function(p){ return p.stage==="zaplanowany"; }).length;
+  return {published:published, planned:planned, total:published+planned};
+}
+function renderDashContentPanel(){
+  var html = '<div class="card" style="margin-top:16px">';
+  html += '<h3 style="margin-bottom:14px">Content</h3>';
+  html += '<div class="grid grid-4" style="gap:14px">';
+  CONTENT_TILES.forEach(function(ct){
+    var platform = ct[0], label = ct[1];
+    var stats = computeContentStats(platform);
+    var pubPct = stats.total ? Math.round(stats.published/stats.total*100) : 0;
+    var planPct = stats.total ? 100-pubPct : 0;
+    html += '<div class="card" style="padding:16px">';
+    html += '<div class="row" style="align-items:center; gap:8px; margin-bottom:12px">'+
+      '<span style="width:28px; height:28px; border-radius:8px; background:'+SOCIAL_PLATFORM_COLOR[platform]+'; display:flex; align-items:center; justify-content:center; color:#fff; flex:0 0 28px">'+SOCIAL_TILE_ICON_SVG[platform]+'</span>'+
+      '<span style="font-size:12px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.03em">'+label+'</span></div>';
+    html += '<div class="stat-value" style="font-size:25px; margin-bottom:9px">'+stats.total+'</div>';
+    html += '<div style="height:6px; border-radius:4px; overflow:hidden; display:flex; background:var(--border)">'+
+      (stats.total ? ('<div style="width:'+pubPct+'%; background:#3ecf6e"></div><div style="width:'+planPct+'%; background:#4a9eff"></div>') : '')+
+      '</div>';
+    html += '<div style="font-size:11.5px; color:var(--muted); margin-top:9px">'+stats.published+' opublikowane · '+stats.planned+' zaplanowane</div>';
+    html += '</div>';
+  });
+  html += '</div></div>';
+  return html;
 }
 var dashSocialAccount = "MediaDGtal";
 function setDashSocialAccount(v){ dashSocialAccount = v; renderAll(); }
@@ -1647,8 +1678,9 @@ function renderPostyKanban(){
     html += '<div class="kanban-col"><h4><span>'+s[1]+'</span><span>'+items.length+'</span></h4>';
     if(!items.length){ html += '<div class="empty">Brak.</div>'; }
     items.forEach(function(p){
-      html += '<div class="kcard">'+escapeHtml(p.title)+
-        '<div><span class="tag tag-'+p.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(p.brand)+'</span></div>'+
+      html += '<div class="kcard" style="cursor:pointer" onclick="openPostModal({id:\''+p.id+'\'})">'+escapeHtml(p.title)+
+        '<div><span class="tag tag-'+p.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(p.brand)+'</span>'+
+        (p.platform ? ' <span class="tag">'+POST_PLATFORM_LABEL[p.platform]+'</span>' : '')+'</div>'+
         (p.date ? '<div class="kdate">'+fmtDate(p.date)+'</div>' : '')+
         '</div>';
     });
@@ -1727,10 +1759,71 @@ function addPostIdea(){
   state.posts.unshift({id:uid("post"), title:val, brand:brandSel.value, stage:"pomysl", category:null, date:null});
   save(); renderAll();
 }
+var POST_PLATFORM_LABEL = {facebook:"Facebook", instagram:"Instagram", tiktok:"TikTok", youtube:"YouTube"};
+var POST_STAGE_LABEL = {pomysl:"Pomysł", szkic:"Szkic", zaplanowany:"Zaplanowany", opublikowany:"Opublikowany"};
 function addPost(){
-  var title = prompt("Tytuł nowego posta:");
+  openPostModal({brand: postyFilter==="Wszystkie"?"MediaDGtal":postyFilter});
+}
+function openPostModal(opts){
+  closePostModal();
+  if(opts.id){
+    var existing = state.posts.filter(function(x){return x.id===opts.id;})[0];
+    if(existing){ opts = {id:existing.id, title:existing.title, brand:existing.brand, platform:existing.platform||"", stage:existing.stage, date:existing.date||""}; }
+  }
+  var isEdit = !!opts.id;
+  var brandOptions = ["MediaDGtal","tool4arts"].map(function(b){
+    return '<option value="'+b+'"'+(opts.brand===b?" selected":"")+'>'+b+'</option>';
+  }).join("");
+  var platformOptions = '<option value=""'+(!opts.platform?" selected":"")+'>— bez platformy —</option>'+
+    Object.keys(POST_PLATFORM_LABEL).map(function(p){
+      return '<option value="'+p+'"'+(opts.platform===p?" selected":"")+'>'+POST_PLATFORM_LABEL[p]+'</option>';
+    }).join("");
+  var stageOptions = Object.keys(POST_STAGE_LABEL).map(function(s){
+    return '<option value="'+s+'"'+((opts.stage||"pomysl")===s?" selected":"")+'>'+POST_STAGE_LABEL[s]+'</option>';
+  }).join("");
+  var html = '<div class="modal-overlay" id="postModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj post":"Nowy post")+'</h3>'+
+    '<div class="field"><label>Tytuł</label><input type="text" id="pmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
+    '<div class="field"><label>Marka</label><select id="pmBrand">'+brandOptions+'</select></div>'+
+    '<div class="field"><label>Platforma</label><select id="pmPlatform">'+platformOptions+'</select></div>'+
+    '<div class="field"><label>Etap</label><select id="pmStage">'+stageOptions+'</select></div>'+
+    '<div class="field"><label>Data (opcjonalnie)</label><input type="date" id="pmDate" value="'+(opts.date||"")+'"></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deletePostModal()">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closePostModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="savePostModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__postModalCtx = opts;
+}
+function closePostModal(){
+  var m = document.getElementById("postModal");
+  if(m) m.remove();
+}
+function savePostModal(){
+  var title = document.getElementById("pmTitle").value.trim();
   if(!title) return;
-  state.posts.unshift({id:uid("post"), title:title, brand: postyFilter==="Wszystkie"?"MediaDGtal":postyFilter, stage:"pomysl", category:null, date:null});
+  var brand = document.getElementById("pmBrand").value;
+  var platform = document.getElementById("pmPlatform").value || null;
+  var stage = document.getElementById("pmStage").value;
+  var date = document.getElementById("pmDate").value || null;
+  var ctx = window.__postModalCtx || {};
+  if(ctx.id){
+    var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
+    if(p){ p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; }
+  } else {
+    state.posts.unshift({id:uid("post"), title:title, brand:brand, stage:stage, category:null, date:date, platform:platform});
+  }
+  closePostModal();
+  save(); renderAll();
+}
+function deletePostModal(){
+  var ctx = window.__postModalCtx;
+  if(!ctx || !ctx.id) return;
+  if(!confirm('Usunąć post "'+ctx.title+'"?')) return;
+  state.posts = state.posts.filter(function(p){ return p.id!==ctx.id; });
+  closePostModal();
   save(); renderAll();
 }
 
