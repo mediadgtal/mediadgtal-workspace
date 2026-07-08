@@ -193,6 +193,9 @@
     padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--sidebar-bg); color:var(--text); width:100%;
   }
   input::placeholder{color:var(--muted)}
+  input[type=date]::-webkit-calendar-picker-indicator,
+  input[type=month]::-webkit-calendar-picker-indicator,
+  input[type=time]::-webkit-calendar-picker-indicator{filter:invert(1); cursor:pointer}
   select{appearance:none; -webkit-appearance:none; padding-right:26px;
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%238a8390'/></svg>");
     background-repeat:no-repeat; background-position:right 10px center;}
@@ -471,6 +474,13 @@ function migrateHabit(h){
 }
 function migrateState(s){
   (s.habits||[]).forEach(migrateHabit);
+  if(s.tasks){
+    var cutoff = Date.now() - 30*86400000;
+    s.tasks = s.tasks.filter(function(t){
+      if(!t.deletedAt) return true;
+      return new Date(t.deletedAt+"T00:00:00").getTime() >= cutoff;
+    });
+  }
   return s;
 }
 window.migrateState = migrateState;
@@ -560,6 +570,12 @@ function setZadCatFilter(v){ zadCatFilter = v; renderAll(); }
 function setZadTydzienOd(v){ zadTydzienOd = v; renderAll(); }
 function setZadTydzienDo(v){ zadTydzienDo = v; renderAll(); }
 function setZadMiesiac(v){ zadMiesiacVal = v; renderAll(); }
+function changeZadMiesiac(delta){
+  var parts = zadMiesiacVal.split("-"), y = +parts[0], m = +parts[1] + delta;
+  if(m<1){ m=12; y--; } else if(m>12){ m=1; y++; }
+  zadMiesiacVal = y+"-"+String(m).padStart(2,"0");
+  renderAll();
+}
 function setZadSearch(v){ zadSearchQuery = v; renderAllKeepFocus("zadSearchInput"); }
 function setZadSort(v){ zadSortMode = v; renderAll(); }
 function renderAllKeepFocus(inputId){
@@ -606,13 +622,14 @@ function undoZad(){
   if(a.type==="toggle"){
     var t = state.tasks.filter(function(x){return x.id===a.id;})[0];
     if(t){ t.done = a.prevDone; t.completedAt = a.prevCompletedAt; }
-  } else if(a.type==="delete"){
-    state.tasks.splice(a.index, 0, a.task);
   } else if(a.type==="add"){
     state.tasks = state.tasks.filter(function(t){return t.id!==a.id;});
   } else if(a.type==="edit"){
     var t2 = state.tasks.filter(function(x){return x.id===a.id;})[0];
     if(t2){ t2.title=a.prev.title; t2.category=a.prev.category; t2.scope=a.prev.scope; t2.createdAt=a.prev.createdAt; t2.completedAt=a.prev.completedAt; }
+  } else if(a.type==="softdelete" || a.type==="restore"){
+    var t3 = state.tasks.filter(function(x){return x.id===a.id;})[0];
+    if(t3) t3.deletedAt = a.prevDeletedAt;
   }
   save(); renderAll();
 }
@@ -622,6 +639,19 @@ var statMonthVal = null;
 var statYearVal = null;
 function setStatMonth(v){ statMonthVal = v; renderAll(); }
 function setStatYear(v){ statYearVal = v; renderAll(); }
+function changeStatMonth(delta){
+  var now = new Date();
+  if(!statMonthVal) statMonthVal = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  var parts = statMonthVal.split("-"), y = +parts[0], m = +parts[1] + delta;
+  if(m<1){ m=12; y--; } else if(m>12){ m=1; y++; }
+  statMonthVal = y+"-"+String(m).padStart(2,"0");
+  renderAll();
+}
+function changeStatYear(delta){
+  if(!statYearVal) statYearVal = String(new Date().getFullYear());
+  statYearVal = String(+statYearVal + delta);
+  renderAll();
+}
 var statCats = {Wszystko:true};
 var calMonth, calYear;
 var gcalCalendars = null; // null = niepołączony; po połączeniu: [{id,name,color}]
@@ -941,8 +971,8 @@ function renderAll(){
 
 /* ================= DASHBOARD ================= */
 function renderDashboard(el){
-  var todayTasks = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.done; });
-  var monthTasks = state.tasks.filter(function(t){ return t.scope==="miesiac" && !t.done; });
+  var todayTasks = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.done && !t.deletedAt; });
+  var monthTasks = state.tasks.filter(function(t){ return t.scope==="miesiac" && !t.done && !t.deletedAt; });
   var today = todayStr();
   var weekDates = currentWeekDates();
 
@@ -1499,6 +1529,7 @@ function renderZadania(el){
     '<button class="'+(zadaniaSubview==="zadania"?"active":"")+'" onclick="setZadSub(\'zadania\')">Zadania</button>'+
     '<button class="'+(zadaniaSubview==="baza"?"active":"")+'" onclick="setZadSub(\'baza\')">Baza</button>'+
     '<button class="'+(zadaniaSubview==="wykonane"?"active":"")+'" onclick="setZadSub(\'wykonane\')">Wykonane</button>'+
+    '<button class="'+(zadaniaSubview==="usuniete"?"active":"")+'" onclick="setZadSub(\'usuniete\')">Usunięte</button>'+
     '</div>';
 
   html += renderZadSearchSortBar();
@@ -1510,6 +1541,11 @@ function renderZadania(el){
   }
   if(zadaniaSubview==="wykonane"){
     html += renderZadaniaWykonane();
+    el.innerHTML = html;
+    return;
+  }
+  if(zadaniaSubview==="usuniete"){
+    html += renderZadaniaUsuniete();
     el.innerHTML = html;
     return;
   }
@@ -1534,7 +1570,7 @@ function renderZadania(el){
   [["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].forEach(function(pair){
     var scope=pair[0], label=pair[1];
     var items = state.tasks.filter(function(t){
-      if(t.scope!==scope || t.done) return false;
+      if(t.scope!==scope || t.done || t.deletedAt) return false;
       if(catFilter && t.category!==catFilter) return false;
       if(!matchesZadSearch(t)) return false;
       var d = t.completedAt || t.createdAt;
@@ -1550,7 +1586,11 @@ function renderZadania(el){
         '<input type="date" value="'+tydzienDo+'" onchange="setZadTydzienDo(this.value)" style="font-size:12px"></div>';
     }
     if(scope==="miesiac"){
-      html += '<div style="margin-bottom:10px"><input type="month" value="'+miesiacVal+'" onchange="setZadMiesiac(this.value)" style="font-size:12px"></div>';
+      html += '<div class="row" style="gap:6px; margin-bottom:10px; align-items:center">'+
+        '<button class="btn secondary small" onclick="changeZadMiesiac(-1)">◀</button>'+
+        '<b style="font-size:13px; flex:1; text-align:center">'+monthName(+miesiacVal.split("-")[1]-1)+' '+miesiacVal.split("-")[0]+'</b>'+
+        '<button class="btn secondary small" onclick="changeZadMiesiac(1)">▶</button>'+
+        '</div>';
     }
     if(!items.length){ html += '<div class="empty">Brak zadań.</div><button class="linklike" onclick="openTaskModal({scope:\''+scope+'\', category:\'MediaDGtal\', date:\''+defaultDate+'\'})">+ Dodaj do „'+label+'"</button>'; }
     else{
@@ -1573,7 +1613,7 @@ function renderZadania(el){
   el.innerHTML = html;
 }
 function renderZadaniaBaza(){
-  var items = state.tasks.filter(function(t){ return t.scope==="baza" && !t.done && matchesZadSearch(t); });
+  var items = state.tasks.filter(function(t){ return t.scope==="baza" && !t.done && !t.deletedAt && matchesZadSearch(t); });
   items = sortTasks(items, zadSortMode);
 
   var html = '<div class="ideas-input-row" style="margin-bottom:14px">'+
@@ -1602,7 +1642,7 @@ function quickAddBazaTask(){
   if(input2) input2.focus();
 }
 function renderZadaniaWykonane(){
-  var items = state.tasks.filter(function(t){ return t.done && matchesZadSearch(t); });
+  var items = state.tasks.filter(function(t){ return t.done && !t.deletedAt && matchesZadSearch(t); });
   items = sortTasks(items, zadSortMode);
 
   var scopeLabel = {baza:"Baza", dzien:"Dziś", tydzien:"Tydzień", miesiac:"Miesiąc"};
@@ -1683,14 +1723,42 @@ function deleteTaskModal(){
   deleteTask(ctx.id);
 }
 function deleteTask(id){
-  var idx = -1;
-  for(var i=0;i<state.tasks.length;i++){ if(state.tasks[i].id===id){ idx=i; break; } }
-  if(idx<0) return;
-  if(!confirm("Usunąć zadanie \""+state.tasks[idx].title+"\"? Możesz to cofnąć przyciskiem \"Cofnij\".")) return;
-  var removed = state.tasks[idx];
-  state.tasks.splice(idx,1);
-  pushZadUndo({type:"delete", task:removed, index:idx});
+  var t = state.tasks.filter(function(x){return x.id===id;})[0];
+  if(!t) return;
+  if(!confirm("Usunąć zadanie \""+t.title+"\"? Trafi do „Usunięte” na 30 dni, możesz je stamtąd przywrócić.")) return;
+  pushZadUndo({type:"softdelete", id:id, prevDeletedAt:t.deletedAt||null});
+  t.deletedAt = todayStr();
   save(); renderAll();
+}
+function restoreTask(id){
+  var t = state.tasks.filter(function(x){return x.id===id;})[0];
+  if(!t) return;
+  pushZadUndo({type:"restore", id:id, prevDeletedAt:t.deletedAt||null});
+  t.deletedAt = null;
+  save(); renderAll();
+}
+function purgeTaskNow(id){
+  if(!confirm("Usunąć na stałe? Tego nie można cofnąć.")) return;
+  state.tasks = state.tasks.filter(function(t){return t.id!==id;});
+  save(); renderAll();
+}
+function renderZadaniaUsuniete(){
+  var now = Date.now();
+  var items = state.tasks.filter(function(t){ return t.deletedAt && matchesZadSearch(t); });
+  items.sort(function(a,b){ return a.deletedAt < b.deletedAt ? 1 : -1; });
+
+  var html = '<div class="stub-note">Zadania usunięte trafiają tutaj na 30 dni, potem znikają na stałe.</div>';
+  html += '<div class="card"><table><thead><tr><th>Zadanie</th><th>Usunięto</th><th>Zostało dni</th><th></th></tr></thead><tbody>';
+  if(!items.length){ html += '<tr><td colspan="4"><div class="empty">Kosz jest pusty.</div></td></tr>'; }
+  items.forEach(function(t){
+    var daysLeft = Math.max(0, 30 - Math.floor((now - new Date(t.deletedAt+"T00:00:00").getTime())/86400000));
+    html += '<tr><td>'+escapeHtml(t.title)+'</td>'+
+      '<td>'+fmtDate(t.deletedAt)+'</td>'+
+      '<td>'+daysLeft+'</td>'+
+      '<td><button class="linklike" onclick="restoreTask(\''+t.id+'\')">Przywróć</button> <button class="linklike danger" onclick="purgeTaskNow(\''+t.id+'\')">Usuń na stałe</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
 }
 
 /* ================= KALENDARZ ================= */
@@ -2672,9 +2740,15 @@ function renderStatystyki(el){
   if(!statMonthVal) statMonthVal = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
   if(!statYearVal) statYearVal = String(now.getFullYear());
   if(statPeriod==="miesiac"){
-    html += '<input type="month" value="'+statMonthVal+'" onchange="setStatMonth(this.value)" style="width:auto; margin-left:10px">';
+    html += '<span class="row" style="gap:6px; margin-left:10px; display:inline-flex; align-items:center">'+
+      '<button class="btn secondary small" onclick="changeStatMonth(-1)">◀</button>'+
+      '<b style="font-size:13px">'+monthName(+statMonthVal.split("-")[1]-1)+' '+statMonthVal.split("-")[0]+'</b>'+
+      '<button class="btn secondary small" onclick="changeStatMonth(1)">▶</button></span>';
   } else {
-    html += '<input type="number" value="'+statYearVal+'" min="2020" max="2100" onchange="setStatYear(this.value)" style="width:100px; margin-left:10px">';
+    html += '<span class="row" style="gap:6px; margin-left:10px; display:inline-flex; align-items:center">'+
+      '<button class="btn secondary small" onclick="changeStatYear(-1)">◀</button>'+
+      '<b style="font-size:13px">'+statYearVal+'</b>'+
+      '<button class="btn secondary small" onclick="changeStatYear(1)">▶</button></span>';
   }
   html += '</div>';
 
