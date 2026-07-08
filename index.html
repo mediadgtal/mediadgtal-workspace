@@ -173,14 +173,10 @@
   .nawyki-grid th, .nawyki-grid td{padding:6px 6px; white-space:nowrap}
   .nawyki-grid td:first-child, .nawyki-grid th:first-child{padding-right:16px; box-shadow:2px 0 0 var(--border)}
   .nawyki-grid input[type=checkbox]{width:14px; height:14px; accent-color:var(--accent)}
-  .nawyki-grid input[type=checkbox]:checked{
+  .nawyki-grid input[type=checkbox]:not(:checked){
     appearance:none; -webkit-appearance:none; width:14px; height:14px;
-    border:1.5px solid var(--accent); border-radius:3px; background:var(--accent);
-    position:relative; cursor:pointer;
-  }
-  .nawyki-grid input[type=checkbox]:checked::after{
-    content:""; position:absolute; left:4px; top:1px; width:4px; height:8px;
-    border:solid var(--bg); border-width:0 2px 2px 0; transform:rotate(45deg);
+    border:1.5px solid var(--accent); border-radius:3px; background:transparent;
+    cursor:pointer;
   }
   .dash-habit{display:flex; align-items:center; gap:9px; padding:6px 0}
   .dash-habit input{accent-color:var(--accent)}
