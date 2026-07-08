@@ -296,6 +296,16 @@
   .cal-daynum{font-size:12px; color:var(--muted-light); margin-bottom:5px}
   .cal-ev{font-size:10.5px; padding:2px 5px; border-radius:4px; margin-bottom:3px; color:#161519; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer}
 
+  .cal-agenda{display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; overflow:hidden}
+  .cal-agenda-row{display:flex; gap:12px; padding:10px 12px; border-bottom:1px solid var(--border); align-items:flex-start; cursor:pointer}
+  .cal-agenda-row:last-child{border-bottom:none}
+  .cal-agenda-row.today{background:rgba(207,155,74,.08)}
+  .cal-agenda-date{flex:0 0 40px; text-align:center; padding-top:2px}
+  .cal-agenda-dow{display:block; font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em}
+  .cal-agenda-num{display:block; font-size:15px; font-weight:700; color:var(--text)}
+  .cal-agenda-row.today .cal-agenda-num{color:var(--accent)}
+  .cal-agenda-events{flex:1; display:flex; flex-direction:column; gap:5px; min-width:0}
+
   .modal-overlay{position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:20px}
   .modal-box{width:360px; max-width:100%}
   .modal-box h3{margin:0 0 16px}
@@ -1896,36 +1906,52 @@ function renderKalendarz(el){
     '<h2>'+monthName(calMonth)+' '+calYear+'</h2>'+
     '<button class="btn secondary small" onclick="calNav(1)">Następny →</button></div>';
 
+  var today = todayStr();
+  var gcalEvents = gcalCalendars ? (gcalEventsCache[gcalMonthKey()]||null) : null;
+  calEventRefs = [];
+  var isMobile = window.innerWidth <= 860;
+
+  if(isMobile){
+    html += '<div class="cal-agenda">';
+    var dim = daysInMonth(calYear, calMonth+1);
+    for(var d=1; d<=dim; d++){
+      var dstr = calYear+"-"+String(calMonth+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+      var isToday = dstr===today;
+      var wd = dowShort(calYear, calMonth+1, d);
+      var evs = calEventsForDay(dstr, gcalEvents);
+      html += '<div class="cal-agenda-row'+(isToday?" today":"")+'" ondblclick="openEventModal({date:\''+dstr+'\'})">'+
+        '<div class="cal-agenda-date"><span class="cal-agenda-dow">'+wd+'</span><span class="cal-agenda-num">'+d+'</span></div>'+
+        '<div class="cal-agenda-events">';
+      if(!evs.length){ html += '<span style="color:var(--muted); font-size:12px">—</span>'; }
+      evs.forEach(function(ev){
+        var idx = calEventRefs.length;
+        calEventRefs.push(ev.ctx);
+        html += '<div class="cal-ev" style="background:'+ev.color+'; white-space:normal; font-size:12px" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+(ev.time?ev.time+" · ":"")+escapeHtml(ev.title)+'</div>';
+      });
+      html += '</div></div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+    return;
+  }
+
   html += '<div class="cal-scroll" id="calScrollBox"><div class="cal-grid">';
   WEEKDAYS_SHORT.forEach(function(d){ html += '<div class="cal-dow">'+d+'</div>'; });
 
   var first = new Date(calYear, calMonth, 1);
   var startOffset = (first.getDay()+6)%7; // Monday=0
   var gridStart = new Date(calYear, calMonth, 1-startOffset);
-  var today = todayStr();
-  var gcalEvents = gcalCalendars ? (gcalEventsCache[gcalMonthKey()]||null) : null;
-  calEventRefs = [];
   for(var i=0;i<42;i++){
-    var d = new Date(gridStart); d.setDate(gridStart.getDate()+i);
-    var dstr = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-    var inMonth = d.getMonth()===calMonth;
-    var isToday = dstr===today;
-    var dayEvents = gcalEvents!==null ? gcalEvents.filter(function(e){ return e.date===dstr; }) : state.events.filter(function(e){ return e.date===dstr; });
-    html += '<div class="cal-cell'+(inMonth?"":" out")+(isToday?" today":"")+'" ondblclick="openEventModal({date:\''+dstr+'\'})"><div class="cal-daynum">'+d.getDate()+'</div>';
-    dayEvents.forEach(function(e){
-      var color, title, ctx;
-      if(gcalEvents!==null){
-        color = e.calendarColor; title = e.title + (e.multiDay ? " ↔" : "");
-        ctx = {existing:true, source:"gcal", id:e.id, calendarId:e.calendarId, title:e.title, date:dstr, time:e.time,
-          calendar:e.calendarName, allDay:e.allDay, rawStartDate:e.rawStartDate, rawEndDate:e.rawEndDate};
-      } else {
-        var cal = state.calendars.filter(function(c){return c.name===e.calendar;})[0] || {color:"#8a8390"};
-        color = cal.color; title = e.title;
-        ctx = {existing:true, source:"local", id:e.id, title:e.title, date:e.date, time:e.time, calendar:e.calendar};
-      }
+    var gd = new Date(gridStart); gd.setDate(gridStart.getDate()+i);
+    var gdstr = gd.getFullYear()+"-"+String(gd.getMonth()+1).padStart(2,"0")+"-"+String(gd.getDate()).padStart(2,"0");
+    var inMonth = gd.getMonth()===calMonth;
+    var gIsToday = gdstr===today;
+    var gEvs = calEventsForDay(gdstr, gcalEvents);
+    html += '<div class="cal-cell'+(inMonth?"":" out")+(gIsToday?" today":"")+'" ondblclick="openEventModal({date:\''+gdstr+'\'})"><div class="cal-daynum">'+gd.getDate()+'</div>';
+    gEvs.forEach(function(ev){
       var idx = calEventRefs.length;
-      calEventRefs.push(ctx);
-      html += '<div class="cal-ev" style="background:'+color+'" title="'+escapeHtml(title)+'" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+escapeHtml(title)+'</div>';
+      calEventRefs.push(ev.ctx);
+      html += '<div class="cal-ev" style="background:'+ev.color+'" title="'+escapeHtml(ev.title)+'" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+escapeHtml(ev.title)+'</div>';
     });
     html += '</div>';
     if(i===41) break;
@@ -1934,6 +1960,23 @@ function renderKalendarz(el){
 
   el.innerHTML = html;
   attachPinchZoom("calScrollBox");
+}
+function calEventsForDay(dstr, gcalEvents){
+  var dayEvents = gcalEvents!==null ? gcalEvents.filter(function(e){ return e.date===dstr; }) : state.events.filter(function(e){ return e.date===dstr; });
+  return dayEvents.map(function(e){
+    if(gcalEvents!==null){
+      return {
+        color: e.calendarColor, title: e.title + (e.multiDay ? " ↔" : ""), time: e.time,
+        ctx: {existing:true, source:"gcal", id:e.id, calendarId:e.calendarId, title:e.title, date:dstr, time:e.time,
+          calendar:e.calendarName, allDay:e.allDay, rawStartDate:e.rawStartDate, rawEndDate:e.rawEndDate}
+      };
+    }
+    var cal = state.calendars.filter(function(c){return c.name===e.calendar;})[0] || {color:"#8a8390"};
+    return {
+      color: cal.color, title: e.title, time: e.time,
+      ctx: {existing:true, source:"local", id:e.id, title:e.title, date:e.date, time:e.time, calendar:e.calendar}
+    };
+  });
 }
 function closeEventModal(){
   var m = document.getElementById("eventModal");
