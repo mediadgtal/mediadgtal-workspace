@@ -2068,7 +2068,17 @@ function renderKalendarz(el){
   attachPinchZoom("calScrollBox");
 }
 function calEventsForDay(dstr, gcalEvents){
-  var dayEvents = gcalEvents!==null ? gcalEvents.filter(function(e){ return e.date===dstr; }) : state.events.filter(function(e){ return e.date===dstr; });
+  var dayEvents;
+  if(gcalEvents!==null){
+    dayEvents = gcalEvents.filter(function(e){ return e.date===dstr; });
+  } else {
+    var dwd = (new Date(dstr+"T00:00:00").getDay()+6)%7;
+    dayEvents = state.events.filter(function(e){
+      if(e.date===dstr) return true;
+      if(e.recurWeekday!=null && e.recurWeekday===dwd && dstr>=e.date) return true;
+      return false;
+    });
+  }
   return dayEvents.map(function(e){
     if(gcalEvents!==null){
       return {
@@ -2105,6 +2115,7 @@ function openEventModal(opts){
     '<div class="field"><label>'+dateLabel+'</label><input type="date" id="evmDate" value="'+(opts.date||todayStr())+'"></div>'+
     '<div class="field"><label>Godzina (opcjonalnie)</label><input type="time" id="evmTime" value="'+(opts.time||"")+'"></div>'+
     '<div class="field"><label>Kalendarz</label><select id="evmCal"'+(disableCalSelect?" disabled":"")+'>'+calOptions+'</select></div>'+
+    (isEdit ? '' : '<div class="field"><label style="display:flex; align-items:center; gap:6px"><input type="checkbox" id="evmRecur" style="width:auto">🔁 Cykliczne — co tydzień, w ten sam dzień tygodnia</label></div>')+
     '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
     (isEdit ? '<button class="btn danger small" onclick="deleteEventModal()">Usuń</button>' : '')+
     '<button class="btn secondary small" onclick="closeEventModal()">Anuluj</button>'+
@@ -2113,6 +2124,7 @@ function openEventModal(opts){
   document.body.insertAdjacentHTML("beforeend", html);
   window.__eventModalCtx = opts;
 }
+var RRULE_BYDAY = ["MO","TU","WE","TH","FR","SA","SU"]; // 0=Pon..6=Ndz
 function saveEventModal(){
   var ctx = window.__eventModalCtx || {};
   var title = document.getElementById("evmTitle").value.trim();
@@ -2120,6 +2132,8 @@ function saveEventModal(){
   var time = document.getElementById("evmTime").value;
   var calName = document.getElementById("evmCal").value;
   if(!title || !date){ alert("Podaj przynajmniej tytuł i datę."); return; }
+  var recurEl = document.getElementById("evmRecur");
+  var isRecur = !ctx.existing && recurEl && recurEl.checked;
 
   var useGcal = ctx.source==="gcal" || (!ctx.existing && gcalCalendars && window.__gcalToken);
   if(useGcal){
@@ -2144,6 +2158,10 @@ function saveEventModal(){
       body.start = {date:date};
       body.end = {date:date};
     }
+    if(isRecur){
+      var recurWd = (new Date(date+"T00:00:00").getDay()+6)%7;
+      body.recurrence = ["RRULE:FREQ=WEEKLY;BYDAY="+RRULE_BYDAY[recurWd]];
+    }
     var url = "https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(targetCalendarId)+"/events"+(ctx.existing?"/"+encodeURIComponent(ctx.id):"");
     fetch(url, {
       method: ctx.existing ? "PATCH" : "POST",
@@ -2165,7 +2183,9 @@ function saveEventModal(){
       var t = state.events.filter(function(x){return x.id===ctx.id;})[0];
       if(t){ t.title=title; t.date=date; t.time=time||null; t.calendar=calName; save(); }
     } else {
-      state.events.push({id:uid("ev"), title:title, date:date, time:time||null, location:null, calendar:calName});
+      var newEv = {id:uid("ev"), title:title, date:date, time:time||null, location:null, calendar:calName};
+      if(isRecur){ newEv.recurWeekday = (new Date(date+"T00:00:00").getDay()+6)%7; }
+      state.events.push(newEv);
       save();
     }
     closeEventModal();
