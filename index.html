@@ -117,16 +117,67 @@
   .hero-greet{font-size:26px; font-style:italic; font-family:Georgia,'Times New Roman',serif; margin:0 0 4px; color:#fff}
   .hero-date{color:var(--muted); font-size:13px}
 
+  /* ---- Animated weather hero ---- */
+  .weather-hero{position:relative; overflow:hidden; padding:22px 22px 20px; min-height:230px}
+  .weather-hero .weather-anim{position:absolute; inset:0; z-index:0; overflow:hidden; border-radius:inherit}
+  .weather-hero-content{position:relative; z-index:2}
+  .weather-hero .hero-greet{color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.4)}
+  .weather-hero .hero-date{color:rgba(255,255,255,.82); text-shadow:0 1px 8px rgba(0,0,0,.35)}
+
+  .wx-bg-clear-day{background:linear-gradient(180deg,#4a90d9,#8fc4ec 60%,#bfe0f5)}
+  .wx-bg-clear-night{background:linear-gradient(180deg,#0b1834,#1c2f52 60%,#2c4066)}
+  .wx-bg-cloudy{background:linear-gradient(180deg,#6c7a89,#9aa7b3 60%,#c2cad1)}
+  .wx-bg-cloudy-night{background:linear-gradient(180deg,#232c38,#3a4550 60%,#4c5964)}
+  .wx-bg-rain{background:linear-gradient(180deg,#3a4652,#57636e 60%,#71808c)}
+  .wx-bg-snow{background:linear-gradient(180deg,#7c8b9c,#aab7c4 60%,#d4dde3)}
+  .wx-bg-storm{background:linear-gradient(180deg,#20242c,#333b46 60%,#454e59)}
+  .wx-bg-fog{background:linear-gradient(180deg,#8a9199,#b7bec4 60%,#d6dade)}
+
+  .wx-sun{position:absolute; top:22px; right:34px; width:60px; height:60px; border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #fff7d6, #ffdd66 55%, #ffb347 100%);
+    box-shadow:0 0 40px 12px rgba(255,210,110,.5); animation:sunPulse 6s ease-in-out infinite}
+  .wx-moon{position:absolute; top:24px; right:38px; width:44px; height:44px; border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #fdfdf5, #d9d9c8 60%, #a9a998 100%);
+    box-shadow:0 0 26px 6px rgba(255,255,240,.3)}
+  @keyframes sunPulse{0%,100%{transform:scale(1)} 50%{transform:scale(1.06)}}
+
+  .wx-cloud{position:absolute; background:rgba(255,255,255,.85); border-radius:50px}
+  .wx-cloud:before, .wx-cloud:after{content:""; position:absolute; background:inherit; border-radius:50%}
+  .wx-cloud.c1{width:90px; height:28px; top:26px; left:-150px; animation:driftCloud 32s linear infinite}
+  .wx-cloud.c1:before{width:42px; height:42px; top:-20px; left:10px}
+  .wx-cloud.c1:after{width:32px; height:32px; top:-14px; left:44px}
+  .wx-cloud.c2{width:66px; height:22px; top:78px; left:-120px; opacity:.7; animation:driftCloud 44s linear infinite; animation-delay:-12s}
+  .wx-cloud.c2:before{width:32px; height:32px; top:-15px; left:8px}
+  .wx-cloud.c2:after{width:24px; height:24px; top:-11px; left:32px}
+  .wx-cloud.c3{width:104px; height:32px; top:128px; left:-160px; opacity:.55; animation:driftCloud 56s linear infinite; animation-delay:-26s}
+  .wx-cloud.c3:before{width:48px; height:48px; top:-22px; left:14px}
+  .wx-cloud.c3:after{width:36px; height:36px; top:-16px; left:54px}
+  @keyframes driftCloud{from{left:-160px} to{left:100%}}
+
+  .wx-rain, .wx-snow{position:absolute; inset:0; overflow:hidden}
+  .wx-drop{position:absolute; top:-20px; width:2px; height:16px;
+    background:linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,.75));
+    animation-name:fallRain; animation-timing-function:linear; animation-iteration-count:infinite}
+  @keyframes fallRain{to{transform:translateY(260px)}}
+  .wx-flake{position:absolute; top:-10px; border-radius:50%; background:#fff; opacity:.9;
+    animation-name:fallSnow; animation-timing-function:linear; animation-iteration-count:infinite}
+  @keyframes fallSnow{to{transform:translate(var(--drift,10px),260px)}}
+  .wx-flash{position:absolute; inset:0; background:#fff; opacity:0; animation:flash 7s ease-in-out infinite}
+  @keyframes flash{0%,93%,100%{opacity:0} 94%{opacity:.45} 95%{opacity:0} 96%{opacity:.3} 97%{opacity:0}}
+
   .weather-widget{margin-top:16px}
-  .weather-now{display:flex; align-items:center; gap:10px; margin-bottom:12px}
-  .weather-now .w-emoji{font-size:28px}
-  .weather-now .w-temp{font-size:24px; font-weight:700; color:#fff}
-  .weather-now .w-desc{color:var(--muted); font-size:13px}
+  .weather-now{margin-bottom:14px}
+  .w-place{font-size:13px; font-weight:700; color:#fff; text-shadow:0 1px 8px rgba(0,0,0,.35); margin-bottom:6px}
+  .w-mainrow{display:flex; align-items:center; gap:10px}
+  .weather-now .w-emoji{font-size:30px; filter:drop-shadow(0 1px 6px rgba(0,0,0,.3))}
+  .weather-now .w-temp{font-size:34px; font-weight:700; color:#fff; text-shadow:0 2px 10px rgba(0,0,0,.35)}
+  .weather-now .w-desc{color:rgba(255,255,255,.9); font-size:13px; text-shadow:0 1px 6px rgba(0,0,0,.3); margin-top:2px}
+  .w-range{color:rgba(255,255,255,.8); font-size:12.5px; margin-top:2px}
   .weather-week{display:flex; gap:8px; flex-wrap:wrap}
-  .weather-day{background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; text-align:center; min-width:64px}
-  .weather-day .wd-name{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px}
+  .weather-day{background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25); border-radius:8px; padding:8px 10px; text-align:center; min-width:64px; backdrop-filter:blur(6px)}
+  .weather-day .wd-name{font-size:11px; color:rgba(255,255,255,.75); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px}
   .weather-day .wd-emoji{font-size:18px; margin-bottom:4px}
-  .weather-day .wd-temp{font-size:12px; color:var(--muted-light)}
+  .weather-day .wd-temp{font-size:12px; color:#fff}
 
   .chip{
     display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
@@ -821,9 +872,11 @@ function renderDashboard(el){
   var weekDates = currentWeekDates();
   var weekEvents = state.events.filter(function(e){ return weekDates.indexOf(e.date) !== -1; });
 
-  var html = '<div class="card"><p class="hero-greet">Cześć, Damian.</p><div class="hero-date">'+
+  var html = '<div class="card weather-hero" id="weatherHero">'+
+    '<div id="weatherAnimLayer" class="weather-anim"></div>'+
+    '<div class="weather-hero-content"><p class="hero-greet">Cześć, Damian.</p><div class="hero-date">'+
     new Date().toLocaleDateString("pl-PL",{weekday:"long", day:"numeric", month:"long"})+'</div>'+
-    renderWeatherWidget()+'</div>';
+    renderWeatherWidget()+'</div></div>';
 
   html += '<div class="grid grid-2" style="margin-top:16px">';
 
@@ -889,11 +942,74 @@ var WEATHER_CODES = {
 function weatherLabel(code){ return WEATHER_CODES[code] || ["Nieznane",""]; }
 var WEATHER_CACHE_KEY = "mdgtal_weather_v1";
 var WEATHER_MAX_AGE_MS = 30*60*1000;
+function weatherCategory(code, isNight){
+  if(code===0) return isNight?"clear-night":"clear-day";
+  if(code===1 || code===2) return isNight?"cloudy-night":"clear-day";
+  if(code===3) return isNight?"cloudy-night":"cloudy";
+  if(code===45 || code===48) return "fog";
+  if([51,53,55,56,57,61,63,65,66,67,80,81].indexOf(code)>=0) return "rain";
+  if([71,73,75,77,85,86].indexOf(code)>=0) return "snow";
+  if([82,95,96,99].indexOf(code)>=0) return "storm";
+  return isNight?"clear-night":"clear-day";
+}
+function buildRainDrops(){
+  var html = "";
+  for(var i=0;i<28;i++){
+    var left = Math.round(Math.random()*100);
+    var dur = (0.6+Math.random()*0.5).toFixed(2);
+    var delay = (Math.random()*1.2).toFixed(2);
+    html += '<div class="wx-drop" style="left:'+left+'%; animation-duration:'+dur+'s; animation-delay:-'+delay+'s"></div>';
+  }
+  return html;
+}
+function buildSnowFlakes(){
+  var html = "";
+  for(var i=0;i<22;i++){
+    var left = Math.round(Math.random()*100);
+    var size = (2+Math.random()*3).toFixed(1);
+    var dur = (4+Math.random()*4).toFixed(2);
+    var delay = (Math.random()*5).toFixed(2);
+    var drift = Math.round((Math.random()*40)-20);
+    html += '<div class="wx-flake" style="left:'+left+'%; width:'+size+'px; height:'+size+'px; animation-duration:'+dur+'s; animation-delay:-'+delay+'s; --drift:'+drift+'px"></div>';
+  }
+  return html;
+}
+function buildWeatherAnim(code){
+  var hour = new Date().getHours();
+  var isNight = hour < 6 || hour >= 21;
+  var cat = weatherCategory(code, isNight);
+  var html = '<div class="wx-bg-'+cat+'" style="position:absolute; inset:0">';
+  if(cat==="clear-day"){
+    html += '<div class="wx-sun"></div>';
+  } else if(cat==="clear-night"){
+    html += '<div class="wx-moon"></div>';
+  } else if(cat==="cloudy" || cat==="cloudy-night" || cat==="fog"){
+    if(cat==="cloudy-night") html += '<div class="wx-moon" style="opacity:.5"></div>';
+    html += '<div class="wx-cloud c1"></div><div class="wx-cloud c2"></div><div class="wx-cloud c3"></div>';
+  } else if(cat==="rain"){
+    html += '<div class="wx-cloud c1"></div><div class="wx-cloud c3"></div>'+
+      '<div class="wx-rain">'+buildRainDrops()+'</div>';
+  } else if(cat==="snow"){
+    html += '<div class="wx-cloud c1"></div><div class="wx-cloud c3"></div>'+
+      '<div class="wx-snow">'+buildSnowFlakes()+'</div>';
+  } else if(cat==="storm"){
+    html += '<div class="wx-cloud c1"></div><div class="wx-cloud c3"></div>'+
+      '<div class="wx-rain">'+buildRainDrops()+'</div><div class="wx-flash"></div>';
+  }
+  html += '</div>';
+  return html;
+}
 function renderWeatherFromData(data){
   var el = document.getElementById("weatherWidget");
   if(!el) return;
   var now = weatherLabel(data.current.code);
-  var html = '<div class="weather-now"><span class="w-emoji">'+now[1]+'</span><span class="w-temp">'+Math.round(data.current.temp)+'°C</span><span class="w-desc">'+now[0]+(data.place?" · "+escapeHtml(data.place):"")+'</span></div>';
+  var today0 = data.daily[0];
+  var html = '<div class="weather-now">'+
+    (data.place ? '<div class="w-place">📍 '+escapeHtml(data.place)+'</div>' : '')+
+    '<div class="w-mainrow"><span class="w-emoji">'+now[1]+'</span><span class="w-temp">'+Math.round(data.current.temp)+'°</span></div>'+
+    '<div class="w-desc">'+now[0]+'</div>'+
+    (today0 ? '<div class="w-range">Od '+Math.round(today0.tmin)+'° do '+Math.round(today0.tmax)+'°</div>' : '')+
+    '</div>';
   html += '<div class="weather-week">';
   data.daily.forEach(function(d, i){
     var lab = weatherLabel(d.code);
@@ -902,6 +1018,8 @@ function renderWeatherFromData(data){
   });
   html += '</div>';
   el.innerHTML = html;
+  var animEl = document.getElementById("weatherAnimLayer");
+  if(animEl) animEl.innerHTML = buildWeatherAnim(data.current.code);
 }
 function renderWeatherError(msg, showRetry){
   var el = document.getElementById("weatherWidget");
