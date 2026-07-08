@@ -940,7 +940,7 @@ var WEATHER_CODES = {
   95:["Burza","⛈"], 96:["Burza z gradem","⛈"], 99:["Burza z gradem silna","⛈"]
 };
 function weatherLabel(code){ return WEATHER_CODES[code] || ["Nieznane",""]; }
-var WEATHER_CACHE_KEY = "mdgtal_weather_v1";
+var WEATHER_CACHE_KEY = "mdgtal_weather_v2";
 var WEATHER_MAX_AGE_MS = 30*60*1000;
 function weatherCategory(code, isNight){
   if(code===0) return isNight?"clear-night":"clear-day";
@@ -1040,9 +1040,9 @@ function loadWeather(forceRetry){
       "&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7";
     fetch(url).then(function(r){ return r.json(); }).then(function(j){
       var place = null;
-      fetch("https://geocoding-api.open-meteo.com/v1/reverse?latitude="+lat+"&longitude="+lon+"&language=pl&count=1")
+      fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude="+lat+"&longitude="+lon+"&localityLanguage=pl")
         .then(function(r){ return r.json(); }).then(function(g){
-          if(g && g.results && g.results[0]) place = g.results[0].name;
+          if(g) place = g.city || g.locality || null;
         }).catch(function(){})
         .finally(function(){
           var data = {
