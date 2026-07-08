@@ -287,7 +287,7 @@
 
   .cal-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
   .cal-header h2{font-size:15px; font-weight:700; color:#fff; margin:0}
-  .cal-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch}
+  .cal-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y}
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:640px}
   .cal-dow{background:var(--sidebar-bg); color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; text-align:center; padding:8px 0; font-weight:700}
   .cal-cell{background:var(--bg); min-height:88px; padding:7px; position:relative; cursor:pointer}
@@ -1896,7 +1896,6 @@ function renderKalendarz(el){
     '<h2>'+monthName(calMonth)+' '+calYear+'</h2>'+
     '<button class="btn secondary small" onclick="calNav(1)">Następny →</button></div>';
 
-  html += scrollNavHtml("calScrollBox","Dni");
   html += '<div class="cal-scroll" id="calScrollBox"><div class="cal-grid">';
   WEEKDAYS_SHORT.forEach(function(d){ html += '<div class="cal-dow">'+d+'</div>'; });
 
@@ -1934,6 +1933,7 @@ function renderKalendarz(el){
   html += '</div></div>';
 
   el.innerHTML = html;
+  attachPinchZoom("calScrollBox");
 }
 function closeEventModal(){
   var m = document.getElementById("eventModal");
@@ -2164,16 +2164,28 @@ function renderAllKeepScroll(scrollBoxId){
     if(box2) box2.scrollLeft = pos;
   }
 }
-function shiftScroll(scrollBoxId, delta){
-  var box = document.getElementById(scrollBoxId);
+var pinchZoomLevels = {nawykiScrollBox:1, klienciScrollBox:1, calScrollBox:1};
+function attachPinchZoom(boxId){
+  var box = document.getElementById(boxId);
   if(!box) return;
-  box.scrollBy({left:delta, behavior:"smooth"});
-}
-function scrollNavHtml(scrollBoxId, label){
-  return '<div class="row" style="gap:6px; margin-bottom:8px; justify-content:flex-end">'+
-    '<button class="btn secondary small" onclick="shiftScroll(\''+scrollBoxId+'\',-220)">◀ '+label+'</button>'+
-    '<button class="btn secondary small" onclick="shiftScroll(\''+scrollBoxId+'\',220)">'+label+' ▶</button>'+
-    '</div>';
+  box.style.zoom = pinchZoomLevels[boxId];
+  var startDist = 0, startZoom = 1;
+  box.ontouchstart = function(e){
+    if(e.touches.length===2){
+      startDist = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      startZoom = pinchZoomLevels[boxId];
+    }
+  };
+  box.ontouchmove = function(e){
+    if(e.touches.length===2 && startDist>0){
+      e.preventDefault();
+      var dist = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      var scale = startZoom * (dist/startDist);
+      scale = Math.max(0.4, Math.min(1.6, scale));
+      pinchZoomLevels[boxId] = scale;
+      box.style.zoom = scale;
+    }
+  };
 }
 function pushNawykiUndo(action){
   nawykiUndoStack.push(action);
@@ -2245,6 +2257,7 @@ function renderNawyki(el){
 
   html += (nawykiTab==="TOTAL") ? renderNawykiTotal(yr) : renderNawykiMonth(nawykiTab);
   el.innerHTML = html;
+  attachPinchZoom("nawykiScrollBox");
 }
 function setNawykiTab(v){ nawykiTab = v; renderAll(); }
 function changeNawykiYear(delta){
@@ -2259,8 +2272,7 @@ function renderNawykiMonth(ym){
   var parts = ym.split("-"), y = +parts[0], m = +parts[1];
   var dim = daysInMonth(y,m);
   var html = '';
-  html += scrollNavHtml("nawykiScrollBox","Dni");
-  html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
+  html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>';
   for(var d=1; d<=dim; d++){
     var wd = dowShort(y,m,d);
@@ -2340,8 +2352,7 @@ function deleteHabitReportRow(ym, idx){
 }
 
 function renderNawykiTotal(yr){
-  var html = scrollNavHtml("nawykiScrollBox","Kolumny");
-  html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
+  var html = '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>'+
     '<th style="text-align:right">Wyk. (rok)</th><th style="text-align:right">Dni (rok)</th><th style="text-align:right">% rok</th>';
   HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
@@ -2548,6 +2559,7 @@ function renderKlienci(el){
 
   html += (klienciTab==="TOTAL") ? renderKlienciTotal(yr) : renderKlienciMonth(klienciTab);
   el.innerHTML = html;
+  attachPinchZoom("klienciScrollBox");
 }
 function setKlienciTab(v){ klienciTab = v; renderAll(); }
 function changeKlienciYear(delta){
@@ -2625,8 +2637,7 @@ function applyDateColor(ym, rowId, field, color){
 function renderKlienciMonth(ym){
   if(!state.clientsMonthly[ym]) state.clientsMonthly[ym] = [];
   var rows = state.clientsMonthly[ym];
-  var html = scrollNavHtml("klienciScrollBox","Kolumny");
-  html += '<div class="card"><div id="klienciScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
+  var html = '<div class="card"><div id="klienciScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
     '<th>Lp.</th><th style="position:sticky; left:0; background:var(--bg)">Nazwa</th>';
   CLIENT_FIELDS.slice(1).forEach(function(f){ html += '<th>'+f.label+'</th>'; });
   html += '<th></th></tr></thead><tbody>';
