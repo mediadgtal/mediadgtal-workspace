@@ -95,6 +95,8 @@
     .acc-switch select{min-width:0; width:100%}
     .chiprow{gap:6px}
     table{font-size:12px}
+    .nawyki-grid th, .nawyki-grid td{padding:5px 4px}
+    .nawyki-grid input[type=checkbox], .nawyki-grid input[type=checkbox]:not(:checked){width:20px; height:20px}
   }
   @media(max-width:480px){
     #topbar h1{font-size:17px}
@@ -927,7 +929,15 @@ function renderDashboard(el){
 
   html += '<div class="card"><h3>Kalendarz na ten tydzień</h3>';
   if(gcalLoadingDash){ html += '<div class="empty">Synchronizuję z Google Calendar…</div>'; }
-  else{ html += weekEvents.length ? weekEvents.map(eventRow).join("") : '<div class="empty">Nic więcej zaplanowane w tym tygodniu.</div>'; }
+  else if(!weekEvents.length){ html += '<div class="empty">Nic więcej zaplanowane w tym tygodniu.</div>'; }
+  else{
+    weekEvents.sort(function(a,b){ return (a.date+((a.time)||"")) < (b.date+((b.time)||"")) ? -1 : 1; });
+    var visibleWeek = dashWeekExpanded ? weekEvents : weekEvents.slice(0,4);
+    html += visibleWeek.map(eventRowWeek).join("");
+    if(weekEvents.length>4){
+      html += '<button class="linklike" onclick="toggleDashWeek()">'+(dashWeekExpanded ? "Pokaż mniej" : "Pokaż więcej ("+(weekEvents.length-4)+")")+'</button>';
+    }
+  }
   html += '</div>';
 
   html += '</div>'; // end grid-2
@@ -1095,6 +1105,17 @@ function eventRow(e){
   var color = e.calendarColor || (state.calendars.filter(function(c){ return c.name===e.calendar; })[0]||{}).color || "#8a8390";
   return '<div class="taskitem"><span class="dot" style="background:'+color+'"></span><span class="ttitle">'+
     fmtDate(e.date)+(e.time?" · "+e.time:"")+" — "+escapeHtml(e.title)+'</span></div>';
+}
+var WEEKDAYS_SHORT_LC = ["ndz","pon","wt","śr","czw","pt","sob"]; // indeks = Date.getDay() (0=niedziela)
+function weekdayShortPl(dateStr){
+  return WEEKDAYS_SHORT_LC[new Date(dateStr+"T00:00:00").getDay()];
+}
+var dashWeekExpanded = false;
+function toggleDashWeek(){ dashWeekExpanded = !dashWeekExpanded; renderAll(); }
+function eventRowWeek(e){
+  var color = e.calendarColor || (state.calendars.filter(function(c){ return c.name===e.calendar; })[0]||{}).color || "#8a8390";
+  return '<div class="taskitem"><span class="dot" style="background:'+color+'"></span><span class="ttitle">'+
+    weekdayShortPl(e.date)+(e.time?" · "+e.time:"")+" — "+escapeHtml(e.title)+'</span></div>';
 }
 function toggleTask(id){
   var t = state.tasks.filter(function(x){return x.id===id;})[0];
@@ -1980,6 +2001,15 @@ function dowShort(y,m,d){ return HABIT_DOW_SHORT[(new Date(y,m-1,d).getDay()+6)%
 var nawykiTab = null; // "YYYY-MM" wybranego miesiąca albo "TOTAL"
 var nawykiYear = null;
 var nawykiUndoStack = [];
+function renderAllKeepScroll(scrollBoxId){
+  var box = document.getElementById(scrollBoxId);
+  var pos = box ? box.scrollLeft : null;
+  renderAll();
+  if(pos!=null){
+    var box2 = document.getElementById(scrollBoxId);
+    if(box2) box2.scrollLeft = pos;
+  }
+}
 function pushNawykiUndo(action){
   nawykiUndoStack.push(action);
   if(nawykiUndoStack.length>50) nawykiUndoStack.shift();
@@ -2000,7 +2030,7 @@ function undoNawyki(){
   } else if(a.type==="add"){
     state.habits = state.habits.filter(function(h){return h.id!==a.habitId;});
   }
-  save(); renderAll();
+  save(); renderAllKeepScroll("nawykiScrollBox");
 }
 
 function renderNawyki(el){
@@ -2060,7 +2090,7 @@ function renderNawykiMonth(ym){
   if(ym < HABIT_LIVE_FROM){
     html += '<div class="stub-note">Ten miesiąc wystartował z checkboxami odtworzonymi z sumarycznych % Twojego Arkusza (pierwsze dni miesiąca zaznaczone tak, by suma się zgadzała) — popraw pojedyncze dni, jeśli pamiętasz inaczej.</div>';
   }
-  html += '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr>'+
+  html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>';
   for(var d=1; d<=dim; d++){
     var wd = dowShort(y,m,d);
@@ -2107,7 +2137,7 @@ function saveHabitReport(ym){
 }
 
 function renderNawykiTotal(yr){
-  var html = '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr>'+
+  var html = '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>'+
     '<th style="text-align:right">Wyk. (rok)</th><th style="text-align:right">Dni (rok)</th><th style="text-align:right">% rok</th>';
   HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
@@ -2136,7 +2166,7 @@ function toggleHabitDay(id, dateKey){
   var prev = !!h.log[dateKey];
   pushNawykiUndo({type:"toggle", habitId:id, dateKey:dateKey, prev:prev});
   if(prev) delete h.log[dateKey]; else h.log[dateKey] = true;
-  save(); renderAll();
+  save(); renderAllKeepScroll("nawykiScrollBox");
 }
 function renameHabit(id){
   var h = state.habits.filter(function(x){return x.id===id;})[0];
@@ -2145,7 +2175,7 @@ function renameHabit(id){
   if(!name || name===h.name) return;
   pushNawykiUndo({type:"rename", habitId:id, prevName:h.name});
   h.name = name;
-  save(); renderAll();
+  save(); renderAllKeepScroll("nawykiScrollBox");
 }
 function addHabit(){
   var name = prompt("Nazwa nawyku:");
@@ -2264,7 +2294,7 @@ function undoKlienci(){
     var r2 = rows2.filter(function(x){return x.id===a.rowId;})[0];
     if(r2){ if(!r2.dateColors) r2.dateColors={}; r2.dateColors[a.field] = a.prevValue; }
   }
-  save(); renderAll();
+  save(); renderAllKeepScroll("klienciScrollBox");
 }
 
 function renderKlienci(el){
@@ -2381,13 +2411,13 @@ function applyDateColor(ym, rowId, field, color){
   pushKlienciUndo({type:"dateColor", ym:ym, rowId:rowId, field:field, prevValue:prev});
   r.dateColors[field] = color;
   closeColorPicker();
-  save(); renderAll();
+  save(); renderAllKeepScroll("klienciScrollBox");
 }
 
 function renderKlienciMonth(ym){
   if(!state.clientsMonthly[ym]) state.clientsMonthly[ym] = [];
   var rows = state.clientsMonthly[ym];
-  var html = '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr>'+
+  var html = '<div class="card"><div id="klienciScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
     '<th>Lp.</th><th style="position:sticky; left:0; background:var(--bg)">Nazwa</th>';
   CLIENT_FIELDS.slice(1).forEach(function(f){ html += '<th>'+f.label+'</th>'; });
   html += '<th></th></tr></thead><tbody>';
@@ -2449,7 +2479,7 @@ function updateClientField(ym, rowId, field, value){
   if(prev===val) return;
   pushKlienciUndo({type:"field", ym:ym, rowId:rowId, field:field, prevValue:prev});
   r[field] = val;
-  save(); renderAll();
+  save(); renderAllKeepScroll("klienciScrollBox");
 }
 function updateClientGoal(ym, value){
   var prev = state.clientsGoals[ym]||0;
