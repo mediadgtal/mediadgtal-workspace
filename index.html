@@ -95,11 +95,14 @@
   .hero-date{color:var(--muted); font-size:13px}
 
   /* ---- Animated weather hero ---- */
-  .weather-hero{position:relative; overflow:hidden; padding:22px 22px 20px; min-height:230px}
+  .weather-hero{position:relative; overflow:hidden; padding:22px 22px 20px; min-height:170px}
   .weather-hero .weather-anim{position:absolute; inset:0; z-index:0; overflow:hidden; border-radius:inherit}
   .weather-hero-content{position:relative; z-index:2}
   .weather-hero .hero-greet{color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.4)}
   .weather-hero .hero-date{color:rgba(255,255,255,.82); text-shadow:0 1px 8px rgba(0,0,0,.35)}
+  .hero-top-row{display:flex; align-items:center; flex-wrap:wrap; gap:22px}
+  .hero-greet-block{flex:0 0 auto}
+  .hero-greet-block .hero-greet{margin-bottom:2px}
 
   .wx-bg-clear-day{background:linear-gradient(180deg,#4a90d9,#8fc4ec 60%,#bfe0f5)}
   .wx-bg-clear-night{background:linear-gradient(180deg,#0b1834,#1c2f52 60%,#2c4066)}
@@ -143,6 +146,7 @@
   @keyframes flash{0%,93%,100%{opacity:0} 94%{opacity:.45} 95%{opacity:0} 96%{opacity:.3} 97%{opacity:0}}
 
   .weather-widget{margin-top:16px}
+  .hero-top-row .weather-widget{margin-top:0}
   .weather-now{margin-bottom:14px}
   .w-place{font-size:13px; font-weight:700; color:#fff; text-shadow:0 1px 8px rgba(0,0,0,.35); margin-bottom:6px}
   .w-mainrow{display:flex; align-items:center; gap:10px}
@@ -150,11 +154,17 @@
   .weather-now .w-temp{font-size:34px; font-weight:700; color:#fff; text-shadow:0 2px 10px rgba(0,0,0,.35)}
   .weather-now .w-desc{color:rgba(255,255,255,.9); font-size:13px; text-shadow:0 1px 6px rgba(0,0,0,.3); margin-top:2px}
   .w-range{color:rgba(255,255,255,.8); font-size:12.5px; margin-top:2px}
-  .weather-week{display:flex; gap:8px; flex-wrap:wrap}
+  .weather-week{display:flex; gap:8px; flex-wrap:wrap; align-items:stretch}
   .weather-day{background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25); border-radius:8px; padding:8px 10px; text-align:center; min-width:64px; backdrop-filter:blur(6px)}
   .weather-day .wd-name{font-size:11px; color:rgba(255,255,255,.75); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px}
   .weather-day .wd-emoji{font-size:18px; margin-bottom:4px}
   .weather-day .wd-temp{font-size:12px; color:#fff}
+  .weather-day-today{min-width:96px; text-align:left; padding:8px 12px}
+  .weather-day-today .wd-place{font-size:10px; color:rgba(255,255,255,.75); margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .weather-day-today .wd-mainline{display:flex; align-items:center; gap:6px}
+  .weather-day-today .wd-emoji{font-size:20px; margin-bottom:0}
+  .weather-day-today .wd-temp{font-size:16px; font-weight:700}
+  .weather-day-today .wd-desc-mini{font-size:10.5px; color:rgba(255,255,255,.8); margin-top:2px; white-space:nowrap}
   .w-todayrow{display:flex; gap:10px; align-items:stretch}
   .w-todaytile{display:flex; flex-direction:column; align-items:flex-start; justify-content:center}
   .w-tomorrowtile{background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25); border-radius:8px; padding:6px 12px; text-align:center; min-width:60px; backdrop-filter:blur(6px)}
@@ -1055,9 +1065,10 @@ function renderDashboard(el){
 
   var html = '<div class="card weather-hero" id="weatherHero">'+
     '<div id="weatherAnimLayer" class="weather-anim"></div>'+
-    '<div class="weather-hero-content"><p class="hero-greet">Cześć, Damian.</p><div class="hero-date">'+
-    new Date().toLocaleDateString("pl-PL",{weekday:"long", day:"numeric", month:"long"})+'</div>'+
-    renderWeatherWidget()+'</div></div>';
+    '<div class="weather-hero-content"><div class="hero-top-row">'+
+    '<div class="hero-greet-block"><p class="hero-greet">Cześć, Damian.</p><div class="hero-date">'+
+    new Date().toLocaleDateString("pl-PL",{weekday:"long", day:"numeric", month:"long"})+'</div></div>'+
+    renderWeatherWidget()+'</div></div></div>';
 
   html += '<div class="grid grid-2" style="margin-top:16px">';
 
@@ -1312,12 +1323,12 @@ function renderWeatherFromData(data){
   lastWeatherData = data;
   var isMobile = window.innerWidth <= 860;
   var now = weatherLabel(data.current.code);
-  var today0 = data.daily[0];
   var tomorrow = data.daily[1];
   var dayAfter = data.daily[2];
 
-  var html = '<div class="weather-now">'+(data.place ? '<div class="w-place">📍 '+escapeHtml(data.place)+'</div>' : '');
+  var html = '';
   if(isMobile){
+    html += '<div class="weather-now">'+(data.place ? '<div class="w-place">📍 '+escapeHtml(data.place)+'</div>' : '');
     html += '<div class="w-todayrow">';
     html += '<div class="w-todaytile"><span class="w-emoji" style="font-size:24px">'+now[1]+'</span><span class="w-temp" style="font-size:26px">'+Math.round(data.current.temp)+'°</span>'+
       '<div class="w-desc" style="font-size:11px; margin-top:0">'+now[0]+'</div></div>';
@@ -1329,15 +1340,7 @@ function renderWeatherFromData(data){
       var dlab = weatherLabel(dayAfter.code);
       html += '<div class="w-tomorrowtile"><div class="wd-name">Pojutrze</div><div class="wd-emoji">'+dlab[1]+'</div><div class="wd-temp">'+Math.round(dayAfter.tmax)+'°/'+Math.round(dayAfter.tmin)+'°</div></div>';
     }
-    html += '</div>';
-  } else {
-    html += '<div class="w-mainrow"><span class="w-emoji">'+now[1]+'</span><span class="w-temp">'+Math.round(data.current.temp)+'°</span></div>'+
-      '<div class="w-desc">'+now[0]+'</div>'+
-      (today0 ? '<div class="w-range">Od '+Math.round(today0.tmin)+'° do '+Math.round(today0.tmax)+'°</div>' : '');
-  }
-  html += '</div>';
-
-  if(isMobile){
+    html += '</div></div>';
     html += '<div style="margin-bottom:8px"><a href="#" class="w-expand-link" onclick="toggleWeatherExpanded(); return false;">'+(weatherExpanded?"Zwiń ▴":"Rozwiń — reszta tygodnia ▾")+'</a></div>';
     if(weatherExpanded){
       html += '<div class="weather-week">';
@@ -1350,9 +1353,14 @@ function renderWeatherFromData(data){
     }
   } else {
     html += '<div class="weather-week">';
-    data.daily.forEach(function(d, i){
+    html += '<div class="weather-day weather-day-today">'+
+      (data.place ? '<div class="wd-place">📍 '+escapeHtml(data.place)+'</div>' : '')+
+      '<div class="wd-mainline"><span class="wd-emoji">'+now[1]+'</span><span class="wd-temp">'+Math.round(data.current.temp)+'°</span></div>'+
+      '<div class="wd-desc-mini">'+now[0]+'</div>'+
+      '</div>';
+    data.daily.slice(1).forEach(function(d){
       var lab = weatherLabel(d.code);
-      var dname = i===0 ? "Dziś" : new Date(d.date).toLocaleDateString("pl-PL",{weekday:"short"});
+      var dname = new Date(d.date).toLocaleDateString("pl-PL",{weekday:"short"});
       html += '<div class="weather-day"><div class="wd-name">'+dname+'</div><div class="wd-emoji">'+lab[1]+'</div><div class="wd-temp">'+Math.round(d.tmax)+'°/'+Math.round(d.tmin)+'°</div></div>';
     });
     html += '</div>';
