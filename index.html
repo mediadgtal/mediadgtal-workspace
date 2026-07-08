@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MediaDGtal — Workspace</title>
 <meta name="description" content="MediaDGtal — prywatny workspace do prowadzenia agencji">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAC8ElEQVR4nO1XzUtUURT/3fvezDwdZxxmTK1GzQxFF5baokUfKzM0aFObVhG0Lv+BIFrYIugPkHZtCoIkCCoqFy0SokSMUAw1v9Bh1NGx+Xzvxv1wyuk1zETOBHlgeJfzzj2/c8/5nfPmEtjIx8Fehl2QjmvPSLaOFAM4VyC02ODZWLTY4NlBUJRYSClO/7PQUoLvBfBPZEC3UxKq2VszBsY4Z3PwlhAQQvPeo9viWGbOqDkAY1a2Vs5VAWjmuQf2AQRazkIv94NSR0aXTmwgFp5GdGlMOiJEgGXA+QkZYPjq4anrgstTC2amEFudRmT2HczkVv5z4OjVIcTX5xBfneH14CmB5nTD5asT7xdHBhGZHVFBiJyB6gbqTl2HN9gpQBOReVHKskATHO59WB59iND4k/wywMwUVsYeY23qzS9prGrrQ2P3TcwO3xXvRb2JhiN9A6CaE5NDN5DYWNqxz9d4Es6KatsM6PZ5IdCcFeIEhGiypopMoU9PYaUTqD/dj835D0jHI6hpvwhX5UGMP7gMZqV3kJhZFtan3+IP2tASZOTg8ikJxJ2HJ17ATEZR2XBC6KrazmN59JEC16W9+uXsGBQ8BzjRmMhQIrIAp7dWOnEYiIW/SDLuYLr87DvK/fAGu/5GAEoYg+YoB0sntzXQXB6Jx4mphKi158AxHO65hQIDIMqZevIBw9PLLDjcARj+Q9hcHBWW30ITCDR3q7ZUg0jsoar/TaST0cICYGZKEs9KS8dqTXUXms7dxsbce2wtfxaACyP34Ql2ItDSI2wEX5Q9X5upGDTdKKALQOH01MDgfc8ZzRh0wwt3dSsCrb1IROYw8/qOzAqImBczrwZQf6ZfBBKeeI7k5oqcA/4GVLdfQnzta/6DqPnCPehlPkUoWUfuLBkNCeerky9/lAksM2YNXxD7j1+Bu6ZVEJN3AW/TtalhMYTspiHZ+0eE/z6ADpvrUrGEY5c+A/jNpXG3ZRuTZiuKCc7FFrSY1/Pv+RlTNoLDfxkAAAAASUVORK5CYII=">
 <link rel="apple-touch-icon" href="data:image/png;base64,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">
 <style>
@@ -1294,9 +1295,142 @@ function toggleTask(id){
 }
 
 /* ================= WIADOMOŚCI ================= */
+/* ================= WIADOMOŚCI / GMAIL ================= */
+var GMAIL_CLIENT_ID = "720090374015-7tv5ams2jfuujdffsroh5vpmjtoos7on.apps.googleusercontent.com";
+var GMAIL_SCOPES = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send";
+var GMAIL_ACCOUNTS = ["kontakt.mediadgtal@gmail.com","gogulskidamian@gmail.com","marketing@tool4arts.com","events.dadam@gmail.com"];
+var gmailTokens = {};
+var gmailCache = {};
+var gmailLoading = {};
+var gmailConnectError = {};
+var gmailActiveFilter = "Wszystkie";
+
+function connectGmailAccount(email){
+  if(typeof google === "undefined" || !google.accounts || !google.accounts.oauth2){
+    alert("Biblioteka logowania Google jeszcze się nie załadowała, spróbuj za chwilę.");
+    return;
+  }
+  delete gmailConnectError[email];
+  var client = google.accounts.oauth2.initTokenClient({
+    client_id: GMAIL_CLIENT_ID,
+    scope: GMAIL_SCOPES,
+    callback: function(resp){
+      if(!resp || resp.error){ gmailConnectError[email] = "Logowanie nie powiodło się."; renderAll(); return; }
+      verifyAndStoreGmailToken(resp.access_token);
+    }
+  });
+  client.requestAccessToken({prompt:"", hint: email});
+}
+function verifyAndStoreGmailToken(token){
+  fetch("https://www.googleapis.com/oauth2/v3/userinfo", {headers:{Authorization:"Bearer "+token}})
+    .then(function(r){ return r.json(); })
+    .then(function(info){
+      if(!info.email) throw new Error("no email");
+      gmailTokens[info.email] = token;
+      delete gmailConnectError[info.email];
+      ensureGmailMessages(info.email, true);
+    })
+    .catch(function(){
+      alert("Nie udało się zweryfikować konta Google.");
+    });
+}
+function setGmailFilter(v){ gmailActiveFilter = v; renderAll(); }
+function ensureGmailMessages(email, force){
+  if(!gmailTokens[email]) return;
+  if(!force && gmailCache[email] && (Date.now()-gmailCache[email].fetchedAt) < 120000) return;
+  if(gmailLoading[email]) return;
+  gmailLoading[email] = true;
+  var token = gmailTokens[email];
+  fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=12&labelIds=INBOX", {headers:{Authorization:"Bearer "+token}})
+    .then(function(r){
+      if(r.status===401){ delete gmailTokens[email]; throw new Error("401"); }
+      if(!r.ok) throw new Error("list failed");
+      return r.json();
+    })
+    .then(function(data){
+      var ids = (data.messages||[]).map(function(m){ return m.id; });
+      return Promise.all(ids.map(function(id){
+        return fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/"+id+
+          "?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-Id&metadataHeaders=References",
+          {headers:{Authorization:"Bearer "+token}}).then(function(r){ return r.json(); });
+      }));
+    })
+    .then(function(msgs){
+      gmailCache[email] = {
+        fetchedAt: Date.now(),
+        messages: msgs.map(function(m){
+          var headers = {};
+          ((m.payload && m.payload.headers) || []).forEach(function(h){ headers[h.name] = h.value; });
+          return {
+            id: m.id, threadId: m.threadId,
+            from: headers["From"]||"", subject: headers["Subject"]||"(bez tematu)",
+            date: headers["Date"]||"", messageIdHeader: headers["Message-Id"]||"",
+            references: headers["References"]||"",
+            snippet: m.snippet||"", unread: (m.labelIds||[]).indexOf("UNREAD")!==-1
+          };
+        }).sort(function(a,b){ return new Date(b.date) - new Date(a.date); })
+      };
+      gmailLoading[email] = false;
+      renderAll();
+    })
+    .catch(function(){
+      gmailLoading[email] = false;
+      gmailConnectError[email] = "Nie udało się pobrać wiadomości.";
+      renderAll();
+    });
+}
 function renderWiadomosci(el){
-  var html = '<div class="stub-note" style="margin-bottom:14px">Docelowo ta zakładka ma połączyć się z prawdziwą pocztą (nie da się dosłownie "przenieść" tu apki Poczta z Maca — lokalna baza Mail.app nie jest dostępna dla żadnej strony internetowej, to ograniczenie systemowe Apple). Po migracji z Artifactu na realny hosting zbudujemy tu prawdziwego klienta poczty podpiętego np. pod Gmail API. Na razie poniżej został lokalny feed powiadomień systemowych.</div>';
-  html += '<div class="card">';
+  var html = '<div class="chiprow" style="margin-bottom:14px">';
+  GMAIL_ACCOUNTS.forEach(function(email){
+    var connected = !!gmailTokens[email];
+    if(connected){
+      html += '<span class="chip'+(gmailActiveFilter===email?" active":"")+'" onclick="setGmailFilter(\''+email+'\')">🟢 '+escapeHtml(email)+'</span>';
+    } else {
+      html += '<span class="chip" onclick="connectGmailAccount(\''+email+'\')" style="opacity:.75">'+escapeHtml(email)+' — Połącz'+(gmailConnectError[email]?" ⚠️":"")+'</span>';
+    }
+  });
+  html += '</div>';
+
+  var connectedEmails = GMAIL_ACCOUNTS.filter(function(e){ return gmailTokens[e]; });
+  if(!connectedEmails.length){
+    html += '<div class="stub-note">Kliknij adres powyżej, żeby połączyć skrzynkę Gmail — każde konto wymaga osobnego logowania. o2.pl nie jest obsługiwane (brak API, wymagałoby osobnego serwera-pośrednika).</div>';
+  } else {
+    if(connectedEmails.length>1){
+      html += '<div class="chiprow" style="margin-bottom:14px"><span class="chip'+(gmailActiveFilter==="Wszystkie"?" active":"")+'" onclick="setGmailFilter(\'Wszystkie\')" style="font-weight:700">Wszystkie</span></div>';
+    }
+    var visibleEmails = gmailActiveFilter==="Wszystkie" ? connectedEmails : [gmailActiveFilter];
+    visibleEmails.forEach(function(email){ ensureGmailMessages(email, false); });
+
+    var allMsgs = [];
+    visibleEmails.forEach(function(email){
+      if(gmailCache[email]){
+        gmailCache[email].messages.forEach(function(m){
+          allMsgs.push({account:email, id:m.id, threadId:m.threadId, from:m.from, subject:m.subject, date:m.date,
+            messageIdHeader:m.messageIdHeader, references:m.references, snippet:m.snippet, unread:m.unread});
+        });
+      }
+    });
+    allMsgs.sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+
+    var anyLoading = visibleEmails.some(function(e){ return gmailLoading[e]; });
+    html += '<div class="card">';
+    if(anyLoading && !allMsgs.length){ html += '<div class="empty">Ładowanie wiadomości…</div>'; }
+    else if(!allMsgs.length){ html += '<div class="empty">Brak wiadomości.</div>'; }
+    else{
+      allMsgs.forEach(function(m){
+        html += '<div class="notif" style="cursor:pointer" onclick="openGmailModal(\''+m.account+'\',\''+m.id+'\')">'+
+          '<span class="dot2'+(m.unread?"":" read")+'"></span>'+
+          '<div style="flex:1; min-width:0">'+
+          '<div class="ntext" style="font-weight:'+(m.unread?"700":"400")+'">'+escapeHtml(m.subject)+'</div>'+
+          '<div class="ntime">'+escapeHtml(m.from)+' · '+escapeHtml(m.account)+'</div>'+
+          '<div style="font-size:12px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">'+escapeHtml(m.snippet)+'</div>'+
+          '</div></div>';
+      });
+    }
+    html += '</div>';
+  }
+
+  html += '<div class="card" style="margin-top:20px"><h3 style="margin-bottom:10px">Powiadomienia lokalne</h3>';
   if(!state.notifications.length){ html += '<div class="empty">Brak powiadomień.</div>'; }
   state.notifications.forEach(function(n){
     html += '<div class="notif" onclick="markRead(\''+n.id+'\')" style="cursor:pointer">'+
@@ -1304,11 +1438,64 @@ function renderWiadomosci(el){
       '<div><div class="ntext">'+escapeHtml(n.text)+'</div><div class="ntime">'+fmtDate(n.date)+'</div></div></div>';
   });
   html += '</div>';
+
   el.innerHTML = html;
 }
 function markRead(id){
   var n = state.notifications.filter(function(x){return x.id===id;})[0];
   if(n){ n.read = true; save(); renderAll(); }
+}
+function openGmailModal(email, id){
+  var msg = gmailCache[email] && gmailCache[email].messages.filter(function(m){ return m.id===id; })[0];
+  if(!msg) return;
+  var html = '<div class="modal-overlay" id="gmailModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+escapeHtml(msg.subject)+'</h3>'+
+    '<div style="font-size:12px; color:var(--muted); margin-bottom:4px">Od: '+escapeHtml(msg.from)+'</div>'+
+    '<div style="font-size:12px; color:var(--muted); margin-bottom:12px">Konto: '+escapeHtml(email)+' · '+escapeHtml(msg.date)+'</div>'+
+    '<div style="font-size:13px; color:var(--text); margin-bottom:16px; white-space:pre-wrap">'+escapeHtml(msg.snippet)+'</div>'+
+    '<div class="field"><label>Odpowiedź</label><textarea id="gmailReplyBody" rows="5" placeholder="Napisz odpowiedź…"></textarea></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:12px">'+
+    '<button class="btn secondary small" onclick="closeGmailModal()">Zamknij</button>'+
+    '<button class="btn small" onclick="sendGmailReply(\''+email+'\',\''+id+'\')">Wyślij odpowiedź</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeGmailModal(){
+  var m = document.getElementById("gmailModal");
+  if(m) m.remove();
+}
+function sendGmailReply(email, id){
+  var body = document.getElementById("gmailReplyBody").value.trim();
+  if(!body) return;
+  var msg = gmailCache[email] && gmailCache[email].messages.filter(function(m){ return m.id===id; })[0];
+  var token = gmailTokens[email];
+  if(!msg || !token) return;
+  var fromMatch = msg.from.match(/<([^>]+)>/);
+  var replyTo = fromMatch ? fromMatch[1] : msg.from;
+  var subj = /^Re:/i.test(msg.subject) ? msg.subject : "Re: "+msg.subject;
+  var lines = [
+    "To: "+replyTo,
+    "Subject: "+subj,
+    "In-Reply-To: "+msg.messageIdHeader,
+    "References: "+(msg.references ? msg.references+" " : "")+msg.messageIdHeader,
+    "Content-Type: text/plain; charset=UTF-8",
+    "",
+    body
+  ];
+  var raw = lines.join("\r\n");
+  var rawB64 = btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+token, "Content-Type":"application/json"},
+    body: JSON.stringify({raw: rawB64, threadId: msg.threadId})
+  }).then(function(r){
+    if(!r.ok) throw new Error("send failed");
+    closeGmailModal();
+    alert("Odpowiedź wysłana.");
+  }).catch(function(){
+    alert("Nie udało się wysłać odpowiedzi.");
+  });
 }
 
 /* ================= POSTY ================= */
