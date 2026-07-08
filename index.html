@@ -302,6 +302,7 @@ var TABS = [
   {id:"zadania", label:"Zadania", ico:"☑"},
   {id:"kalendarz", label:"Kalendarz", ico:"▦"},
   {id:"nawyki", label:"Nawyki", ico:"◈"},
+  {id:"klienci", label:"Klienci", ico:"⬢"},
   {id:"statystyki", label:"Statystyki", ico:"▤"}
 ];
 var CATEGORIES = ["MediaDGtal","tool4arts","Rozwoj","Admin"];
@@ -364,6 +365,45 @@ function migrateState(s){
   return s;
 }
 window.migrateState = migrateState;
+
+var CLIENT_FIELDS = [
+  {key:"nazwa", label:"Nazwa", type:"text"},
+  {key:"lokalizacja", label:"Lokalizacja", type:"text"},
+  {key:"faktura", label:"Faktura", type:"select", options:["","Opłacona","Nieopłacona","Wystawiona"]},
+  {key:"statusKlienta", label:"Status Klienta", type:"select", options:["","Nowy","Kontynuacja","Zakończony"]},
+  {key:"wynagrodzenie", label:"Wynagrodzenie", type:"number"},
+  {key:"budzetRekl", label:"Budżet Rekl.", type:"number"},
+  {key:"iloscWsp", label:"Ilość Wsp.", type:"number"},
+  {key:"okresDni", label:"Okres (dni)", type:"number"},
+  {key:"etapWsp", label:"Etap Wsp.", type:"select", options:["","Start","Raport","Zakończenie"]},
+  {key:"startKampanii", label:"Start Kampanii", type:"date"},
+  {key:"koniecKampanii", label:"Koniec Kampanii", type:"date"},
+  {key:"cel", label:"Cel", type:"text"},
+  {key:"ocenaWsp", label:"Ocena Wsp.", type:"text"},
+  {key:"notatki", label:"Notatki/Uwagi", type:"text"}
+];
+function mkClient(nazwa, lokalizacja, faktura, statusKlienta, wynagrodzenie, budzetRekl, iloscWsp, okresDni, etapWsp, startKampanii, koniecKampanii, cel, ocenaWsp, notatki){
+  return {id:uid("cli"), nazwa:nazwa, lokalizacja:lokalizacja, faktura:faktura, statusKlienta:statusKlienta,
+    wynagrodzenie:wynagrodzenie, budzetRekl:budzetRekl, iloscWsp:iloscWsp, okresDni:okresDni, etapWsp:etapWsp,
+    startKampanii:startKampanii, koniecKampanii:koniecKampanii, cel:cel, ocenaWsp:ocenaWsp, notatki:notatki};
+}
+function prevMonthKey(ym){
+  var p = ym.split("-"), y=+p[0], m=+p[1]-1;
+  if(m<1){ m=12; y--; }
+  return y+"-"+String(m).padStart(2,"0");
+}
+function clientMonthSummary(ym){
+  var rows = ((state.clientsMonthly && state.clientsMonthly[ym]) || []).filter(function(r){return r.nazwa;});
+  var wynagrodzenia = rows.reduce(function(s,r){return s+(+r.wynagrodzenie||0);},0);
+  var przedluzone = rows.filter(function(r){return r.statusKlienta==="Kontynuacja";}).length;
+  var nowi = rows.filter(function(r){return r.statusKlienta==="Nowy";}).length;
+  var zakonczone = rows.filter(function(r){return r.statusKlienta==="Zakończony";}).length;
+  var prevNames = ((state.clientsMonthly && state.clientsMonthly[prevMonthKey(ym)]) || []).map(function(r){return r.nazwa;}).filter(Boolean);
+  var przeniesieni = rows.filter(function(r){return prevNames.indexOf(r.nazwa)>=0;}).length;
+  return {wynagrodzenia:wynagrodzenia, przedluzone:przedluzone, nowi:nowi, zakonczone:zakonczone, przeniesieni:przeniesieni, laczna:rows.length};
+}
+function fmtPln(n){ return Math.round(n||0).toLocaleString("pl-PL")+" zł"; }
+
 var STRUKTURA_ROTATION = [
   {day:"Poniedziałek", pillar:"studio edukacja (TOFU – karuzela)", desc:'„bolesna prawda o branży” — content z emocjami pod zapisania, udostępnienia'},
   {day:"Wtorek", pillar:"story marketing (MOFU – stories)", desc:"storytelling / case / historia"},
@@ -558,6 +598,38 @@ function defaultState(){
   s.habitsBackupSheetId = null;
   s.habitsBackupSheetUrl = null;
 
+  s.clientsGoals = {
+    "2026-01":8000,"2026-02":9000,"2026-03":10000,"2026-04":15000,"2026-05":13000,"2026-06":17000,
+    "2026-07":20000,"2026-08":22000,"2026-09":25000,"2026-10":25000,"2026-11":19000,"2026-12":17000
+  };
+  s.clientsMonthly = {
+    "2026-01": [
+      mkClient("Szkoła tańca Estilo","Wrocław","Opłacona","Kontynuacja",1000,1000,22,30,"Raport","2026-01-25","2026-02-24","Brak",5,"Pierwszy taniec"),
+      mkClient("Art Of Move","Poznań","Opłacona","Kontynuacja",1000,600,20,30,"Raport","2026-01-31","2026-03-02","Brak",5,"Reklama ogólna studia"),
+      mkClient("Venus Pole Dance Studio","Mierzyn","Opłacona","Kontynuacja",1000,1500,6,90,"Raport","2026-01-28","2026-04-28","Brak",5,"Prowizja 30% od karnetu")
+    ],
+    "2026-02": [
+      mkClient("Szkoła tańca Estilo","Wrocław","Opłacona","Kontynuacja",1100,1000,22,30,"Raport","2026-02-24","2026-03-26","Brak",5,"Pierwszy taniec"),
+      mkClient("Art Of Move","Poznań","Opłacona","Kontynuacja",1000,600,20,30,"Raport","2026-01-31","2026-03-02","Brak",5,"Reklama ogólna studia"),
+      mkClient("Jump Dance Studio","Zielona Góra","","Kontynuacja",7000,1500,10,211,"","2026-02-01","2026-08-31","Brak","Hip Hop","")
+    ],
+    "2026-03": [
+      mkClient("Szkoła tańca Estilo","Wrocław","Opłacona","Kontynuacja",1100,1000,23,30,"Raport","2026-03-25","2026-04-24","Brak",5,"Pierwszy taniec"),
+      mkClient("Art Of Move","Poznań","Opłacona","Kontynuacja",1000,600,21,30,"Raport","2026-03-03","2026-04-02","Brak",5,"Reklama ogólna studia"),
+      mkClient("Pole Dance Institute","Wrocław","Opłacona","Nowy",4000,1500,3,90,"","2026-03-30","2026-06-28","Brak","Karnety","zapełnić sale"),
+      mkClient("Venus Pole Dance Studio","Mierzyn","Opłacona","Kontynuacja",192,1500,6,90,"Raport","2026-01-28","2026-04-28","Brak",5,"Prowizja 30% od karnetu")
+    ],
+    "2026-04": [
+      mkClient("Szkoła tańca Estilo","Wrocław","Opłacona","Kontynuacja",1000,1000,24,30,"Raport","2026-04-25","2026-05-25","Brak",5,"Pierwszy taniec"),
+      mkClient("Art Of Move","Poznań","Opłacona","Kontynuacja",1000,600,22,30,"Raport","2026-04-03","2026-05-03","Brak",5,"Reklama ogólna studia"),
+      mkClient("Lotos Aerial","Sosnowiec","Opłacona","Nowy",3000,300,6,90,"Start","2026-04-10","2026-07-09","Brak",5,"Pole Dance, 3msc/prowadzenie SM"),
+      mkClient("Alona Babynina","Warszawa","Opłacona","Nowy",500,300,1,90,"Start","2026-04-27","2026-07-26","Sugestie SoMe","",""),
+      mkClient("Venus Pole Dance Studio","Mierzyn","Opłacona","Kontynuacja",255,1500,6,90,"Raport","2026-01-28","2026-04-28","Brak",5,"Prowizja 30% od karnetu")
+    ]
+  };
+  s.clientsBackupSheetId = null;
+  s.clientsBackupSheetUrl = null;
+
   s.igAccounts = [
     {id:"ig1", handle:"@damian.gogulski", bio:"Marketing dla branży tanecznej — MediaDGtal", initials:"DA",
      goal:1000, stats:[
@@ -613,7 +685,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); }
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -639,10 +711,11 @@ var RENDERERS = {
   facebook: function(el){ renderSocial(el,"facebook"); },
   zadania: renderZadania,
   kalendarz: renderKalendarz,
-  nawyki: renderNawyki
+  nawyki: renderNawyki,
+  klienci: renderKlienci
 };
 var TITLES = {dashboard:"Dashboard", statystyki:"Statystyki", wiadomosci:"Wiadomości", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci"};
 
 function renderAll(){
   renderNav();
@@ -1312,6 +1385,8 @@ window.onGCalTokenReady = function(){
   ensureGCalCalendars();
   ensureHabitsBackupSheet();
   scheduleHabitsBackupPush();
+  ensureClientsBackupSheet();
+  scheduleClientsBackupPush();
 };
 function renderKalendarz(el){
   var now = new Date();
@@ -1860,6 +1935,271 @@ function flushHabitsBackupPush(){
     if(r.status===401){ window.__gcalToken=null; }
     habitsBackupStatus = r.ok ? "ok" : "error";
   }).catch(function(){ habitsBackupStatus = "error"; });
+}
+
+/* ================= KLIENCI ================= */
+var klienciTab = null;
+var klienciYear = null;
+var klienciUndoStack = [];
+function pushKlienciUndo(a){ klienciUndoStack.push(a); if(klienciUndoStack.length>50) klienciUndoStack.shift(); }
+function undoKlienci(){
+  var a = klienciUndoStack.pop();
+  if(!a) return;
+  if(a.type==="field"){
+    var rows = state.clientsMonthly[a.ym]||[];
+    var r = rows.filter(function(x){return x.id===a.rowId;})[0];
+    if(r) r[a.field] = a.prevValue;
+  } else if(a.type==="add"){
+    state.clientsMonthly[a.ym] = (state.clientsMonthly[a.ym]||[]).filter(function(x){return x.id!==a.rowId;});
+  } else if(a.type==="delete"){
+    if(!state.clientsMonthly[a.ym]) state.clientsMonthly[a.ym]=[];
+    state.clientsMonthly[a.ym].splice(a.index, 0, a.row);
+  } else if(a.type==="goal"){
+    state.clientsGoals[a.ym] = a.prevValue;
+  }
+  save(); renderAll();
+}
+
+function renderKlienci(el){
+  var now = new Date();
+  var realCurYm = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  if(!klienciYear) klienciYear = now.getFullYear();
+  if(!klienciTab) klienciTab = realCurYm;
+  var yr = String(klienciYear);
+
+  var topBtns = '<button class="btn secondary" onclick="undoKlienci()">↺ Cofnij</button>';
+  if(klienciTab!=="TOTAL") topBtns += ' <button class="btn" onclick="addClientRow()">+ Klient</button>';
+  setTopActions(topBtns);
+
+  var html = '';
+  if(!window.__gcalToken){
+    html += '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup (osobny arkusz, nie dotyka Twojej Bazy Klientów Agencji 2026).</div>';
+  } else if(!state.clientsBackupSheetId){
+    html += '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
+    ensureClientsBackupSheet();
+  } else {
+    html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
+      (clientsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
+      ' — <a href="'+state.clientsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+  }
+
+  html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
+    '<span style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Rok</span>'+
+    '<button class="btn secondary small" onclick="changeKlienciYear(-1)">◀</button>'+
+    '<b style="font-size:14px; min-width:40px; text-align:center">'+yr+'</b>'+
+    '<button class="btn secondary small" onclick="changeKlienciYear(1)">▶</button>'+
+    '</div>';
+
+  html += '<div class="chiprow">';
+  for(var m=1;m<=12;m++){
+    var ym = yr+"-"+String(m).padStart(2,"0");
+    var cls = "chip";
+    if(klienciTab===ym) cls += " active";
+    if(ym===realCurYm) cls += " chip-current"; else if(ym<realCurYm) cls += " chip-past";
+    html += '<span class="'+cls+'" onclick="setKlienciTab(\''+ym+'\')">'+HABIT_MONTH_ABBR[m-1]+'</span>';
+  }
+  html += '<span class="chip'+(klienciTab==="TOTAL"?" active":"")+'" onclick="setKlienciTab(\'TOTAL\')" style="font-weight:700; border-color:var(--accent)">TOTAL</span>';
+  html += '</div>';
+
+  html += (klienciTab==="TOTAL") ? renderKlienciTotal(yr) : renderKlienciMonth(klienciTab);
+  el.innerHTML = html;
+}
+function setKlienciTab(v){ klienciTab = v; renderAll(); }
+function changeKlienciYear(delta){
+  klienciYear = (klienciYear||new Date().getFullYear()) + delta;
+  if(klienciTab && klienciTab!=="TOTAL"){ klienciTab = klienciYear+"-"+klienciTab.split("-")[1]; }
+  renderAll();
+}
+
+function renderClientFieldInput(ym, r, f){
+  var val = r[f.key];
+  var onCh = "updateClientField(\'"+ym+"\',\'"+r.id+"\',\'"+f.key+"\',this.value)";
+  if(f.type==="select"){
+    var opts = f.options.map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(val===o?" selected":"")+'>'+(o||"—")+'</option>'; }).join("");
+    return '<select onchange="'+onCh+'" style="min-width:120px">'+opts+'</select>';
+  }
+  if(f.type==="number"){
+    return '<input type="number" value="'+(val||0)+'" onchange="'+onCh+'" style="width:85px">';
+  }
+  if(f.type==="date"){
+    return '<input type="date" value="'+(val||"")+'" onchange="'+onCh+'" style="width:135px">';
+  }
+  return '<input type="text" value="'+escapeHtml(val||"")+'" onchange="'+onCh+'" style="min-width:120px">';
+}
+
+function renderKlienciMonth(ym){
+  if(!state.clientsMonthly[ym]) state.clientsMonthly[ym] = [];
+  var rows = state.clientsMonthly[ym];
+  var html = '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr>'+
+    '<th>Lp.</th><th style="position:sticky; left:0; background:var(--bg)">Nazwa</th>';
+  CLIENT_FIELDS.slice(1).forEach(function(f){ html += '<th>'+f.label+'</th>'; });
+  html += '<th></th></tr></thead><tbody>';
+  if(!rows.length){ html += '<tr><td colspan="'+(CLIENT_FIELDS.length+2)+'" style="color:var(--muted)">Brak klientów w tym miesiącu. Dodaj przyciskiem "+ Klient".</td></tr>'; }
+  rows.forEach(function(r, idx){
+    html += '<tr><td>'+(idx+1)+'.</td>';
+    CLIENT_FIELDS.forEach(function(f, fi){
+      var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg)"' : '';
+      html += '<td'+stickyStyle+'>'+renderClientFieldInput(ym, r, f)+'</td>';
+    });
+    html += '<td><button class="linklike danger" onclick="deleteClientRow(\''+ym+'\',\''+r.id+'\')">Usuń</button></td></tr>';
+  });
+  html += '</tbody></table></div></div>';
+
+  var s = clientMonthSummary(ym);
+  html += '<div class="card" style="margin-top:16px"><h3>Podsumowanie — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3><table>'+
+    '<tr><td>Wynagrodzenia</td><td style="text-align:right; font-weight:700; color:var(--accent)">'+fmtPln(s.wynagrodzenia)+'</td></tr>'+
+    '<tr><td>Przedłużone Współprace</td><td style="text-align:right">'+s.przedluzone+'</td></tr>'+
+    '<tr><td>Nowi Klienci</td><td style="text-align:right">'+s.nowi+'</td></tr>'+
+    '<tr><td>Zakończone Współprace</td><td style="text-align:right">'+s.zakonczone+'</td></tr>'+
+    '<tr><td>Klienci Przeniesieni z Poprzedniego Miesiąca</td><td style="text-align:right">'+s.przeniesieni+'</td></tr>'+
+    '<tr><td>Łączna Ilość Klientów</td><td style="text-align:right; font-weight:700">'+s.laczna+'</td></tr>'+
+    '</table></div>';
+  return html;
+}
+
+function renderKlienciTotal(yr){
+  var html = '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr>'+
+    '<th style="position:sticky; left:0; background:var(--bg)">Miesiąc</th><th>Łączna Ilość Klientów</th>'+
+    '<th>Przedłużenie</th><th>Nowi Klienci</th><th>Zakończenie</th><th>Rotacja</th><th>Wynagrodzenie</th><th>Cel $</th><th>% Celu</th></tr></thead><tbody>';
+  var sumWyn=0, sumCel=0, sumNowi=0, sumZak=0;
+  for(var m=1;m<=12;m++){
+    var ym = yr+"-"+String(m).padStart(2,"0");
+    var s = clientMonthSummary(ym);
+    var cel = (state.clientsGoals[ym]!=null) ? state.clientsGoals[ym] : 0;
+    var pctCelu = cel>0 ? Math.round(s.wynagrodzenia/cel*100)+"%" : "—";
+    var rotacja = s.laczna>0 ? Math.round(s.zakonczone/s.laczna*100)+"%" : "—";
+    sumWyn += s.wynagrodzenia; sumCel += cel; sumNowi += s.nowi; sumZak += s.zakonczone;
+    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600">'+monthName(m-1)+'</td>'+
+      '<td style="text-align:right">'+s.laczna+'</td>'+
+      '<td style="text-align:right">'+s.przedluzone+'</td>'+
+      '<td style="text-align:right">'+s.nowi+'</td>'+
+      '<td style="text-align:right">'+s.zakonczone+'</td>'+
+      '<td style="text-align:right">'+rotacja+'</td>'+
+      '<td style="text-align:right; color:var(--accent); font-weight:600">'+fmtPln(s.wynagrodzenia)+'</td>'+
+      '<td style="text-align:right"><input type="number" value="'+cel+'" onchange="updateClientGoal(\''+ym+'\',this.value)" style="width:95px; text-align:right"></td>'+
+      '<td style="text-align:right; font-weight:700">'+pctCelu+'</td></tr>';
+  }
+  var pctCeluYear = sumCel>0 ? Math.round(sumWyn/sumCel*100)+"%" : "—";
+  html += '<tr style="font-weight:700"><td style="position:sticky; left:0; background:var(--bg)">Wyniki (Rok)</td>'+
+    '<td></td><td></td>'+
+    '<td style="text-align:right">'+sumNowi+'</td>'+
+    '<td style="text-align:right">'+sumZak+'</td>'+
+    '<td></td>'+
+    '<td style="text-align:right; color:var(--accent)">'+fmtPln(sumWyn)+'</td>'+
+    '<td style="text-align:right">'+fmtPln(sumCel)+'</td>'+
+    '<td style="text-align:right">'+pctCeluYear+'</td></tr>';
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+function updateClientField(ym, rowId, field, value){
+  var rows = state.clientsMonthly[ym]||[];
+  var r = rows.filter(function(x){return x.id===rowId;})[0];
+  if(!r) return;
+  var prev = r[field];
+  var isNumeric = typeof prev==="number";
+  var val = isNumeric ? (+value||0) : value;
+  if(prev===val) return;
+  pushKlienciUndo({type:"field", ym:ym, rowId:rowId, field:field, prevValue:prev});
+  r[field] = val;
+  save(); renderAll();
+}
+function updateClientGoal(ym, value){
+  var prev = state.clientsGoals[ym]||0;
+  var val = +value||0;
+  if(prev===val) return;
+  pushKlienciUndo({type:"goal", ym:ym, prevValue:prev});
+  state.clientsGoals[ym] = val;
+  save(); renderAll();
+}
+function addClientRow(){
+  if(!klienciTab || klienciTab==="TOTAL") return;
+  if(!state.clientsMonthly[klienciTab]) state.clientsMonthly[klienciTab] = [];
+  var row = mkClient("","","","",0,0,0,0,"","","","","","");
+  state.clientsMonthly[klienciTab].push(row);
+  pushKlienciUndo({type:"add", ym:klienciTab, rowId:row.id});
+  save(); renderAll();
+}
+function deleteClientRow(ym, rowId){
+  if(!confirm("Na pewno usunąć tego klienta z tego miesiąca? Możesz to cofnąć przyciskiem \"Cofnij\".")) return;
+  var rows = state.clientsMonthly[ym]||[];
+  var idx = -1;
+  for(var i=0;i<rows.length;i++){ if(rows[i].id===rowId){ idx=i; break; } }
+  if(idx<0) return;
+  var removed = rows[idx];
+  rows.splice(idx,1);
+  pushKlienciUndo({type:"delete", ym:ym, row:removed, index:idx});
+  save(); renderAll();
+}
+
+/* ---- Kopia zapasowa Klientów w osobnym arkuszu Google Sheets (nie dotyka Bazy Klientów Agencji 2026) ---- */
+var clientsBackupSyncTimer = null;
+var clientsBackupPending = false;
+var clientsBackupCreating = false;
+var clientsBackupStatus = "idle";
+
+function ensureClientsBackupSheet(){
+  if(!window.__gcalToken || state.clientsBackupSheetId || clientsBackupCreating) return;
+  clientsBackupCreating = true;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      properties:{title:"Klienci — kopia zapasowa (system)"},
+      sheets:[{properties:{title:"TOTAL"}},{properties:{title:"RAW"}}]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    clientsBackupCreating = false;
+    if(data.spreadsheetId){
+      state.clientsBackupSheetId = data.spreadsheetId;
+      state.clientsBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      save(); renderAll();
+    }
+  }).catch(function(){ clientsBackupCreating = false; });
+}
+function scheduleClientsBackupPush(){
+  if(!window.__gcalToken || !state.clientsBackupSheetId) return;
+  clientsBackupPending = true;
+  if(clientsBackupSyncTimer) clearTimeout(clientsBackupSyncTimer);
+  clientsBackupSyncTimer = setTimeout(flushClientsBackupPush, 1500);
+}
+function flushClientsBackupPush(){
+  if(!clientsBackupPending) return;
+  clientsBackupPending = false;
+  if(!window.__gcalToken || !state.clientsBackupSheetId) return;
+  var yr = new Date().getFullYear();
+
+  var totalRows = [["MIESIĄC","ŁĄCZNA ILOŚĆ KLIENTÓW","PRZEDŁUŻENIE","NOWI KLIENCI","ZAKOŃCZENIE","ROTACJA","WYNAGRODZENIE","CEL $","% CELU"]];
+  for(var m=1;m<=12;m++){
+    var ym = yr+"-"+String(m).padStart(2,"0");
+    var s = clientMonthSummary(ym);
+    var cel = state.clientsGoals[ym]||0;
+    var pctCelu = cel>0 ? Math.round(s.wynagrodzenia/cel*100)+"%" : "";
+    var rotacja = s.laczna>0 ? Math.round(s.zakonczone/s.laczna*100)+"%" : "";
+    totalRows.push([monthName(m-1), s.laczna, s.przedluzone, s.nowi, s.zakonczone, rotacja, s.wynagrodzenia, cel, pctCelu]);
+  }
+
+  var rawRows = [["miesiac","id","nazwa","lokalizacja","faktura","statusKlienta","wynagrodzenie","budzetRekl","iloscWsp","okresDni","etapWsp","startKampanii","koniecKampanii","cel","ocenaWsp","notatki"]];
+  Object.keys(state.clientsMonthly).sort().forEach(function(ym){
+    (state.clientsMonthly[ym]||[]).forEach(function(r){
+      rawRows.push([ym, r.id, r.nazwa, r.lokalizacja, r.faktura, r.statusKlienta, r.wynagrodzenie, r.budzetRekl, r.iloscWsp, r.okresDni, r.etapWsp, r.startKampanii, r.koniecKampanii, r.cel, r.ocenaWsp, r.notatki]);
+    });
+  });
+
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientsBackupSheetId+"/values:batchUpdate", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      valueInputOption:"RAW",
+      data:[{range:"TOTAL!A1", values: totalRows},{range:"RAW!A1", values: rawRows}]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    clientsBackupStatus = r.ok ? "ok" : "error";
+  }).catch(function(){ clientsBackupStatus = "error"; });
 }
 
 /* ================= STATYSTYKI ================= */
