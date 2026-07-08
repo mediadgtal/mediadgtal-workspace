@@ -2244,12 +2244,22 @@ function purgeTaskNow(id){
   state.tasks = state.tasks.filter(function(t){return t.id!==id;});
   save(); renderAll();
 }
+function purgeAllTasksNow(){
+  var count = state.tasks.filter(function(t){ return t.deletedAt; }).length;
+  if(!count) return;
+  if(!confirm("Trwale usunąć wszystkie ("+count+") zadania z kosza? Tego nie można cofnąć.")) return;
+  state.tasks = state.tasks.filter(function(t){ return !t.deletedAt; });
+  save(); renderAll();
+}
 function renderZadaniaUsuniete(){
   var now = Date.now();
   var items = state.tasks.filter(function(t){ return t.deletedAt && matchesZadSearch(t); });
   items.sort(function(a,b){ return a.deletedAt < b.deletedAt ? 1 : -1; });
 
   var html = '<div class="stub-note">Zadania usunięte trafiają tutaj na 30 dni, potem znikają na stałe.</div>';
+  if(items.length){
+    html += '<div style="text-align:right; margin-bottom:10px"><button class="btn danger small" onclick="purgeAllTasksNow()">Wyczyść wszystkie</button></div>';
+  }
   html += '<div class="card"><table><thead><tr><th>Zadanie</th><th>Usunięto</th><th>Zostało dni</th><th></th></tr></thead><tbody>';
   if(!items.length){ html += '<tr><td colspan="4"><div class="empty">Kosz jest pusty.</div></td></tr>'; }
   items.forEach(function(t){
@@ -2910,22 +2920,20 @@ function deleteHabitReportRow(ym, idx){
 function renderNawykiTotal(yr){
   var html = '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>'+
-    '<th style="text-align:right">Wyk. (rok)</th><th style="text-align:right">Dni (rok)</th><th style="text-align:right">% rok</th>';
+    '<th style="text-align:right">Suma (dni)</th><th style="text-align:right">% rok</th>';
   HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
-  html += '<th style="text-align:right">Suma</th><th></th></tr></thead><tbody>';
+  html += '<th></th></tr></thead><tbody>';
   state.habits.forEach(function(h){
     var ys = habitYearStats(h, yr);
     html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
       escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span></td>'+
       '<td style="text-align:right; font-weight:600">'+ys.done+'</td>'+
-      '<td style="text-align:right; color:var(--muted)">'+ys.days+'</td>'+
       '<td style="text-align:right; color:var(--accent); font-weight:700">'+ys.pct+'%</td>';
     for(var m=1;m<=12;m++){
       var st = habitMonthStats(h, yr+"-"+String(m).padStart(2,"0"));
       html += '<td style="text-align:center">'+st.pct+'%</td>';
     }
-    html += '<td style="text-align:right; font-weight:700">'+ys.done+'</td>'+
-      '<td><button class="linklike danger" onclick="deleteHabit(\''+h.id+'\')">Usuń</button></td></tr>';
+    html += '<td><button class="linklike danger" onclick="deleteHabit(\''+h.id+'\')">Usuń</button></td></tr>';
   });
   html += '</tbody></table></div></div>';
   return html;
