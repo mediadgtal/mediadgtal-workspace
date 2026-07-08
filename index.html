@@ -376,12 +376,29 @@ var CLIENT_FIELDS = [
   {key:"iloscWsp", label:"Ilość Wsp.", type:"number"},
   {key:"okresDni", label:"Okres (dni)", type:"number"},
   {key:"etapWsp", label:"Etap Wsp.", type:"select", options:["","Start","Raport","Zakończenie"]},
-  {key:"startKampanii", label:"Start Kampanii", type:"date"},
-  {key:"koniecKampanii", label:"Koniec Kampanii", type:"date"},
-  {key:"cel", label:"Cel", type:"text"},
-  {key:"ocenaWsp", label:"Ocena Wsp.", type:"text"},
+  {key:"startKampanii", label:"Start Współpracy", type:"date"},
+  {key:"koniecKampanii", label:"Koniec Współpracy", type:"date"},
   {key:"notatki", label:"Notatki/Uwagi", type:"text"}
 ];
+var CLIENT_COLOR_PALETTE = [
+  ["#000000","#434343","#666666","#999999","#b7b7b7","#d9d9d9","#efefef","#ffffff"],
+  ["#e6194b","#f58231","#ffe119","#3cb44b","#42d4f4","#4363d8","#911eb4","#f032e6"],
+  ["#f4a3b3","#fbc9a3","#fff3a3","#a8e0b0","#a3e8f4","#a3b8e6","#c9a3e6","#f4a3ea"]
+];
+function campaignAutoColor(r){
+  if(!r.koniecKampanii) return {startKampanii:null, koniecKampanii:null};
+  var end = new Date(r.koniecKampanii+"T00:00:00");
+  var today = new Date(todayStr()+"T00:00:00");
+  var diffDays = Math.round((end-today)/86400000);
+  if(isNaN(diffDays)) return {startKampanii:null, koniecKampanii:null};
+  if(diffDays < 0) return {startKampanii:"var(--muted)", koniecKampanii:"var(--muted)"};
+  if(diffDays <= 3) return {startKampanii:null, koniecKampanii:"var(--danger)"};
+  return {startKampanii:null, koniecKampanii:null};
+}
+function resolvedDateColor(r, field){
+  if(r.dateColors && r.dateColors[field]) return r.dateColors[field];
+  return campaignAutoColor(r)[field];
+}
 function mkClient(nazwa, lokalizacja, faktura, statusKlienta, wynagrodzenie, budzetRekl, iloscWsp, okresDni, etapWsp, startKampanii, koniecKampanii, cel, ocenaWsp, notatki){
   return {id:uid("cli"), nazwa:nazwa, lokalizacja:lokalizacja, faktura:faktura, statusKlienta:statusKlienta,
     wynagrodzenie:wynagrodzenie, budzetRekl:budzetRekl, iloscWsp:iloscWsp, okresDni:okresDni, etapWsp:etapWsp,
@@ -1956,6 +1973,10 @@ function undoKlienci(){
     state.clientsMonthly[a.ym].splice(a.index, 0, a.row);
   } else if(a.type==="goal"){
     state.clientsGoals[a.ym] = a.prevValue;
+  } else if(a.type==="dateColor"){
+    var rows2 = state.clientsMonthly[a.ym]||[];
+    var r2 = rows2.filter(function(x){return x.id===a.rowId;})[0];
+    if(r2){ if(!r2.dateColors) r2.dateColors={}; r2.dateColors[a.field] = a.prevValue; }
   }
   save(); renderAll();
 }
@@ -2022,9 +2043,49 @@ function renderClientFieldInput(ym, r, f){
     return '<input type="number" value="'+(val||0)+'" onchange="'+onCh+'" style="width:85px">';
   }
   if(f.type==="date"){
-    return '<input type="date" value="'+(val||"")+'" onchange="'+onCh+'" style="width:135px">';
+    var color = resolvedDateColor(r, f.key);
+    var dstyle = "width:135px"+(color?"; background:"+color+"; color:#fff; border-color:"+color:"");
+    return '<div class="row" style="gap:4px; flex-wrap:nowrap">'+
+      '<input type="date" value="'+(val||"")+'" onchange="'+onCh+'" style="'+dstyle+'">'+
+      '<span onclick="openColorPicker(\''+ym+'\',\''+r.id+'\',\''+f.key+'\')" title="Zmień kolor" '+
+      'style="cursor:pointer; width:15px; height:15px; border-radius:3px; border:1px solid var(--border); background:'+(color||"transparent")+'; flex:0 0 15px"></span></div>';
+  }
+  if(f.key==="notatki"){
+    return '<input type="text" value="'+escapeHtml(val||"")+'" onchange="'+onCh+'" style="min-width:240px">';
   }
   return '<input type="text" value="'+escapeHtml(val||"")+'" onchange="'+onCh+'" style="min-width:120px">';
+}
+
+function closeColorPicker(){
+  var m = document.getElementById("colorPickerModal");
+  if(m) m.remove();
+}
+function openColorPicker(ym, rowId, field){
+  closeColorPicker();
+  var html = '<div class="modal-overlay" id="colorPickerModal" onclick="if(event.target===this) closeColorPicker()">'+
+    '<div class="modal-box card" style="width:230px">'+
+    '<div class="linklike" style="margin-bottom:10px; cursor:pointer" onclick="applyDateColor(\''+ym+'\',\''+rowId+'\',\''+field+'\',null)">↺ Resetuj (automatycznie)</div>'+
+    CLIENT_COLOR_PALETTE.map(function(row){
+      return '<div class="row" style="gap:5px; margin-bottom:5px">'+row.map(function(c){
+        return '<div onclick="applyDateColor(\''+ym+'\',\''+rowId+'\',\''+field+'\',\''+c+'\')" style="width:22px; height:22px; border-radius:4px; background:'+c+'; border:1px solid var(--border); cursor:pointer"></div>';
+      }).join("")+'</div>';
+    }).join("")+
+    '<div class="field" style="margin-top:8px"><label>Własny kolor</label><input type="color" onchange="applyDateColor(\''+ym+'\',\''+rowId+'\',\''+field+'\',this.value)"></div>'+
+    '<div class="row" style="justify-content:flex-end; margin-top:10px"><button class="btn secondary small" onclick="closeColorPicker()">Zamknij</button></div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function applyDateColor(ym, rowId, field, color){
+  var rows = state.clientsMonthly[ym]||[];
+  var r = rows.filter(function(x){return x.id===rowId;})[0];
+  if(!r) return;
+  if(!r.dateColors) r.dateColors = {};
+  var prev = r.dateColors[field] || null;
+  if(prev===color) { closeColorPicker(); return; }
+  pushKlienciUndo({type:"dateColor", ym:ym, rowId:rowId, field:field, prevValue:prev});
+  r.dateColors[field] = color;
+  closeColorPicker();
+  save(); renderAll();
 }
 
 function renderKlienciMonth(ym){
@@ -2048,10 +2109,6 @@ function renderKlienciMonth(ym){
   var s = clientMonthSummary(ym);
   html += '<div class="card" style="margin-top:16px"><h3>Podsumowanie — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3><table>'+
     '<tr><td>Wynagrodzenia</td><td style="text-align:right; font-weight:700; color:var(--accent)">'+fmtPln(s.wynagrodzenia)+'</td></tr>'+
-    '<tr><td>Przedłużone Współprace</td><td style="text-align:right">'+s.przedluzone+'</td></tr>'+
-    '<tr><td>Nowi Klienci</td><td style="text-align:right">'+s.nowi+'</td></tr>'+
-    '<tr><td>Zakończone Współprace</td><td style="text-align:right">'+s.zakonczone+'</td></tr>'+
-    '<tr><td>Klienci Przeniesieni z Poprzedniego Miesiąca</td><td style="text-align:right">'+s.przeniesieni+'</td></tr>'+
     '<tr><td>Łączna Ilość Klientów</td><td style="text-align:right; font-weight:700">'+s.laczna+'</td></tr>'+
     '</table></div>';
   return html;
