@@ -545,11 +545,6 @@ var CLIENT_FIELDS = [
   {key:"koniecKampanii", label:"Koniec Współpracy", type:"date"},
   {key:"notatki", label:"Notatki/Uwagi", type:"text"}
 ];
-var CLIENT_COLOR_PALETTE = [
-  ["#000000","#434343","#666666","#999999","#b7b7b7","#d9d9d9","#efefef","#ffffff"],
-  ["#e6194b","#f58231","#ffe119","#3cb44b","#42d4f4","#4363d8","#911eb4","#f032e6"],
-  ["#f4a3b3","#fbc9a3","#fff3a3","#a8e0b0","#a3e8f4","#a3b8e6","#c9a3e6","#f4a3ea"]
-];
 function computeKoniecDate(r){
   if(!r.startKampanii || !r.okresDni) return r.koniecKampanii||"";
   var d = new Date(r.startKampanii+"T00:00:00");
@@ -568,9 +563,9 @@ function campaignAutoColor(r){
   return {startKampanii:null, koniecKampanii:null};
 }
 function resolvedDateColor(r, field){
-  if(r.dateColors && r.dateColors[field]) return r.dateColors[field];
   return campaignAutoColor(r)[field];
 }
+var INVOICE_STATUS_COLOR = {"Opłacona":"#3ecf6e", "Wystawiona":"var(--muted)", "Nieopłacona":"var(--danger)"};
 function mkClient(nazwa, lokalizacja, faktura, statusKlienta, wynagrodzenie, budzetRekl, iloscWsp, okresDni, etapWsp, startKampanii, koniecKampanii, cel, ocenaWsp, notatki){
   return {id:uid("cli"), nazwa:nazwa, lokalizacja:lokalizacja, faktura:faktura, statusKlienta:statusKlienta,
     wynagrodzenie:wynagrodzenie, budzetRekl:budzetRekl, iloscWsp:iloscWsp, okresDni:okresDni, etapWsp:etapWsp,
@@ -3080,10 +3075,6 @@ function undoKlienci(){
     state.clientsMonthly[a.ym].splice(a.index, 0, a.row);
   } else if(a.type==="goal"){
     state.clientsGoals[a.ym] = a.prevValue;
-  } else if(a.type==="dateColor"){
-    var rows2 = state.clientsMonthly[a.ym]||[];
-    var r2 = rows2.filter(function(x){return x.id===a.rowId;})[0];
-    if(r2){ if(!r2.dateColors) r2.dateColors={}; r2.dateColors[a.field] = a.prevValue; }
   }
   save(); renderAllKeepScroll("klienciScrollBox");
 }
@@ -3143,9 +3134,15 @@ function changeKlienciYear(delta){
 function renderClientFieldInput(ym, r, f){
   var val = r[f.key];
   var onCh = "updateClientField(\'"+ym+"\',\'"+r.id+"\',\'"+f.key+"\',this.value)";
-  if(f.type==="select"){
+  if(f.key==="faktura"){
+    var fColor = INVOICE_STATUS_COLOR[val] || null;
     var opts = f.options.map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(val===o?" selected":"")+'>'+(o||"—")+'</option>'; }).join("");
-    return '<select onchange="'+onCh+'" style="min-width:120px">'+opts+'</select>';
+    var fstyle = "min-width:120px"+(fColor?"; background:"+fColor+"; color:#fff; border-color:"+fColor+"; font-weight:600":"");
+    return '<select onchange="'+onCh+'" style="'+fstyle+'">'+opts+'</select>';
+  }
+  if(f.type==="select"){
+    var opts2 = f.options.map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(val===o?" selected":"")+'>'+(o||"—")+'</option>'; }).join("");
+    return '<select onchange="'+onCh+'" style="min-width:120px">'+opts2+'</select>';
   }
   if(f.type==="number"){
     return '<input type="number" value="'+(val||0)+'" onchange="'+onCh+'" style="width:85px">';
@@ -3155,55 +3152,17 @@ function renderClientFieldInput(ym, r, f){
     var kColor = resolvedDateColor(r, f.key);
     var kstyle = "width:135px; text-align:center; padding:9px 6px; border-radius:8px; border:1px solid "+(kColor||"var(--border)")+
       "; background:"+(kColor||"var(--sidebar-bg)")+"; color:"+(kColor?"#fff":"var(--text)")+"; font-size:13px";
-    return '<div class="row" style="gap:4px; flex-wrap:nowrap">'+
-      '<div title="Wyliczane automatycznie: Start Współpracy + Okres (dni)" style="'+kstyle+'">'+(kVal||"—")+'</div>'+
-      '<span onclick="openColorPicker(\''+ym+'\',\''+r.id+'\',\''+f.key+'\')" title="Zmień kolor" '+
-      'style="cursor:pointer; width:15px; height:15px; border-radius:3px; border:1px solid var(--border); background:'+(kColor||"transparent")+'; flex:0 0 15px"></span></div>';
+    return '<div title="Wyliczane automatycznie: Start Współpracy + Okres (dni)" style="'+kstyle+'">'+(kVal||"—")+'</div>';
   }
   if(f.type==="date"){
     var color = resolvedDateColor(r, f.key);
     var dstyle = "width:135px"+(color?"; background:"+color+"; color:#fff; border-color:"+color:"");
-    return '<div class="row" style="gap:4px; flex-wrap:nowrap">'+
-      '<input type="date" value="'+(val||"")+'" onchange="'+onCh+'" style="'+dstyle+'">'+
-      '<span onclick="openColorPicker(\''+ym+'\',\''+r.id+'\',\''+f.key+'\')" title="Zmień kolor" '+
-      'style="cursor:pointer; width:15px; height:15px; border-radius:3px; border:1px solid var(--border); background:'+(color||"transparent")+'; flex:0 0 15px"></span></div>';
+    return '<input type="date" value="'+(val||"")+'" onchange="'+onCh+'" style="'+dstyle+'">';
   }
   if(f.key==="notatki"){
     return '<input type="text" value="'+escapeHtml(val||"")+'" onchange="'+onCh+'" style="min-width:240px">';
   }
   return '<input type="text" value="'+escapeHtml(val||"")+'" onchange="'+onCh+'" style="min-width:120px">';
-}
-
-function closeColorPicker(){
-  var m = document.getElementById("colorPickerModal");
-  if(m) m.remove();
-}
-function openColorPicker(ym, rowId, field){
-  closeColorPicker();
-  var html = '<div class="modal-overlay" id="colorPickerModal" onclick="if(event.target===this) closeColorPicker()">'+
-    '<div class="modal-box card" style="width:230px">'+
-    '<div class="linklike" style="margin-bottom:10px; cursor:pointer" onclick="applyDateColor(\''+ym+'\',\''+rowId+'\',\''+field+'\',null)">↺ Resetuj (automatycznie)</div>'+
-    CLIENT_COLOR_PALETTE.map(function(row){
-      return '<div class="row" style="gap:5px; margin-bottom:5px">'+row.map(function(c){
-        return '<div onclick="applyDateColor(\''+ym+'\',\''+rowId+'\',\''+field+'\',\''+c+'\')" style="width:22px; height:22px; border-radius:4px; background:'+c+'; border:1px solid var(--border); cursor:pointer"></div>';
-      }).join("")+'</div>';
-    }).join("")+
-    '<div class="field" style="margin-top:8px"><label>Własny kolor</label><input type="color" onchange="applyDateColor(\''+ym+'\',\''+rowId+'\',\''+field+'\',this.value)"></div>'+
-    '<div class="row" style="justify-content:flex-end; margin-top:10px"><button class="btn secondary small" onclick="closeColorPicker()">Zamknij</button></div>'+
-    '</div></div>';
-  document.body.insertAdjacentHTML("beforeend", html);
-}
-function applyDateColor(ym, rowId, field, color){
-  var rows = state.clientsMonthly[ym]||[];
-  var r = rows.filter(function(x){return x.id===rowId;})[0];
-  if(!r) return;
-  if(!r.dateColors) r.dateColors = {};
-  var prev = r.dateColors[field] || null;
-  if(prev===color) { closeColorPicker(); return; }
-  pushKlienciUndo({type:"dateColor", ym:ym, rowId:rowId, field:field, prevValue:prev});
-  r.dateColors[field] = color;
-  closeColorPicker();
-  save(); renderAllKeepScroll("klienciScrollBox");
 }
 
 function renderKlienciMonth(ym){
