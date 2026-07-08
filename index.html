@@ -652,13 +652,30 @@ function undoZad(){
     state.tasks = state.tasks.filter(function(t){return t.id!==a.id;});
   } else if(a.type==="edit"){
     var t2 = state.tasks.filter(function(x){return x.id===a.id;})[0];
-    if(t2){ t2.title=a.prev.title; t2.category=a.prev.category; t2.scope=a.prev.scope; t2.createdAt=a.prev.createdAt; t2.completedAt=a.prev.completedAt; }
+    if(t2){ t2.title=a.prev.title; t2.category=a.prev.category; t2.scope=a.prev.scope; t2.createdAt=a.prev.createdAt; t2.completedAt=a.prev.completedAt; t2.recurWeekday=a.prev.recurWeekday; }
   } else if(a.type==="softdelete" || a.type==="restore"){
     var t3 = state.tasks.filter(function(x){return x.id===a.id;})[0];
     if(t3) t3.deletedAt = a.prevDeletedAt;
+  } else if(a.type==="recurtoggle"){
+    var t4 = state.tasks.filter(function(x){return x.id===a.id;})[0];
+    if(t4){
+      if(!t4.recurCompletions) t4.recurCompletions = {};
+      if(a.prev) t4.recurCompletions[a.dateKey] = true; else delete t4.recurCompletions[a.dateKey];
+    }
   }
   save(); renderAll();
 }
+function toggleRecurTaskToday(id){
+  var t = state.tasks.filter(function(x){return x.id===id;})[0];
+  if(!t) return;
+  if(!t.recurCompletions) t.recurCompletions = {};
+  var key = todayStr();
+  var prev = !!t.recurCompletions[key];
+  pushZadUndo({type:"recurtoggle", id:id, dateKey:key, prev:prev});
+  if(prev) delete t.recurCompletions[key]; else t.recurCompletions[key] = true;
+  save(); renderAll();
+}
+function todayWeekdayIdx(){ return (new Date().getDay()+6)%7; }
 var postySubtab = "kanban";
 var statPeriod = "miesiac"; // tylko "miesiac" lub "rok" — bez dziennego
 var statMonthVal = null;
@@ -989,7 +1006,12 @@ function renderAll(){
 
 /* ================= DASHBOARD ================= */
 function renderDashboard(el){
-  var todayTasks = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.done && !t.deletedAt; });
+  var todayWd = todayWeekdayIdx();
+  var todayTasks = state.tasks.filter(function(t){
+    if(t.scope!=="dzien" || t.deletedAt) return false;
+    if(t.recurWeekday!=null) return t.recurWeekday===todayWd && !(t.recurCompletions && t.recurCompletions[todayStr()]);
+    return !t.done;
+  });
   var monthTasks = state.tasks.filter(function(t){ return t.scope==="miesiac" && !t.done && !t.deletedAt; });
   var today = todayStr();
   var weekDates = currentWeekDates();
@@ -1013,7 +1035,8 @@ function renderDashboard(el){
   if(!todayTasks.length){ html += '<div class="empty">Brak zadań na dziś — dobra robota.</div>'; }
   else{
     todayTasks.slice(0,8).forEach(function(t){
-      html += '<div class="taskitem"><input type="checkbox" onchange="toggleTask(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+escapeHtml(t.title)+'</span></div>';
+      var togFn = t.recurWeekday!=null ? "toggleRecurTaskToday" : "toggleTask";
+      html += '<div class="taskitem"><input type="checkbox" onchange="'+togFn+'(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+(t.recurWeekday!=null?"🔁 ":"")+escapeHtml(t.title)+'</span></div>';
     });
   }
   html += '</div>';
@@ -1623,13 +1646,19 @@ function renderZadania(el){
   if(!zadMiesiacVal) zadMiesiacVal = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
   var miesiacVal = zadMiesiacVal;
 
+  var todayWd = todayWeekdayIdx();
   html += '<div class="colcols">';
   [["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].forEach(function(pair){
     var scope=pair[0], label=pair[1];
     var items = state.tasks.filter(function(t){
-      if(t.scope!==scope || t.done || t.deletedAt) return false;
+      if(t.scope!==scope || t.deletedAt) return false;
       if(catFilter && t.category!==catFilter) return false;
       if(!matchesZadSearch(t)) return false;
+      if(t.recurWeekday!=null){
+        if(scope!=="dzien") return false;
+        return t.recurWeekday===todayWd && !(t.recurCompletions && t.recurCompletions[todayStr()]);
+      }
+      if(t.done) return false;
       var d = t.completedAt || t.createdAt;
       if(scope==="tydzien"){ if(d < tydzienOd || d > tydzienDo) return false; }
       if(scope==="miesiac"){ if(!d || d.slice(0,7)!==miesiacVal) return false; }
@@ -1650,10 +1679,11 @@ function renderZadania(el){
       var listOpen = scope==="miesiac" ? '<div style="max-height:450px; overflow-y:auto">' : '';
       html += listOpen;
       items.forEach(function(t){
+        var togFn = t.recurWeekday!=null ? "toggleRecurTaskToday" : "toggleTask";
         html += '<div class="taskitem">'+
-          '<input type="checkbox" onchange="toggleTask(\''+t.id+'\')">'+
+          '<input type="checkbox" onchange="'+togFn+'(\''+t.id+'\')">'+
           '<span class="dot"></span>'+
-          '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span><br><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></div>'+
+          '<div style="flex:1"><span class="ttitle">'+(t.recurWeekday!=null?"🔁 ":"")+escapeHtml(t.title)+'</span><br><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></div>'+
           '<div class="taskmeta"><button class="linklike" onclick="openTaskModal({id:\''+t.id+'\'})">Edytuj</button><button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></div>'+
           '</div>';
       });
@@ -1723,22 +1753,28 @@ function openTaskModal(opts){
   closeTaskModal();
   if(opts.id){
     var existing = state.tasks.filter(function(x){return x.id===opts.id;})[0];
-    if(existing){ opts = {id:existing.id, title:existing.title, category:existing.category, scope:existing.scope, date:(existing.completedAt||existing.createdAt||todayStr())}; }
+    if(existing){ opts = {id:existing.id, title:existing.title, category:existing.category, scope:existing.scope, date:(existing.completedAt||existing.createdAt||todayStr()), recurWeekday:(existing.recurWeekday!=null?existing.recurWeekday:null)}; }
   }
   var isEdit = !!opts.id;
+  var isRecur = opts.recurWeekday!=null;
   var catOptions = CATEGORIES.map(function(c){
     return '<option value="'+c+'"'+(opts.category===c?" selected":"")+'>'+CATEGORY_LABEL[c]+'</option>';
   }).join("");
   var scopeOptions = [["baza","Baza (nieprzydzielone)"],["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].map(function(p){
     return '<option value="'+p[0]+'"'+(opts.scope===p[0]?" selected":"")+'>'+p[1]+'</option>';
   }).join("");
+  var recurDayOptions = HABIT_DOW_SHORT.map(function(d,i){
+    return '<option value="'+i+'"'+((isRecur?opts.recurWeekday:0)===i?" selected":"")+'>'+d+'</option>';
+  }).join("");
   var html = '<div class="modal-overlay" id="taskModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj zadanie":"Nowe zadanie")+'</h3>'+
     '<div class="field"><label>Treść</label><input type="text" id="tmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
     '<div class="field"><label>Kategoria</label><select id="tmCategory">'+catOptions+'</select></div>'+
-    '<div class="field"><label>Zakres</label><select id="tmScope">'+scopeOptions+'</select></div>'+
-    '<div class="field"><label>Data</label><input type="date" id="tmDate" value="'+(opts.date||todayStr())+'"></div>'+
+    '<div class="field" id="tmScopeField" style="'+(isRecur?"display:none":"")+'"><label>Zakres</label><select id="tmScope">'+scopeOptions+'</select></div>'+
+    '<div class="field" id="tmDateField" style="'+(isRecur?"display:none":"")+'"><label>Data</label><input type="date" id="tmDate" value="'+(opts.date||todayStr())+'"></div>'+
+    '<div class="field"><label style="display:flex; align-items:center; gap:6px"><input type="checkbox" id="tmRecur" '+(isRecur?"checked":"")+' onchange="toggleRecurFieldsInModal(this.checked)" style="width:auto">🔁 Cykliczne — co tydzień, w wybrany dzień</label></div>'+
+    '<div class="field" id="tmRecurDayField" style="'+(isRecur?"":"display:none")+'"><label>Dzień tygodnia</label><select id="tmRecurDay">'+recurDayOptions+'</select></div>'+
     '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
     (isEdit ? '<button class="btn danger small" onclick="deleteTaskModal()">Usuń</button>' : '')+
     '<button class="btn secondary small" onclick="closeTaskModal()">Anuluj</button>'+
@@ -1747,24 +1783,50 @@ function openTaskModal(opts){
   document.body.insertAdjacentHTML("beforeend", html);
   window.__taskModalCtx = opts;
 }
+function toggleRecurFieldsInModal(isRecur){
+  var scopeField = document.getElementById("tmScopeField");
+  var dateField = document.getElementById("tmDateField");
+  var recurDayField = document.getElementById("tmRecurDayField");
+  if(scopeField) scopeField.style.display = isRecur ? "none" : "";
+  if(dateField) dateField.style.display = isRecur ? "none" : "";
+  if(recurDayField) recurDayField.style.display = isRecur ? "" : "none";
+}
 function saveTaskModal(){
   var title = document.getElementById("tmTitle").value.trim();
   if(!title) return;
   var category = document.getElementById("tmCategory").value;
-  var scope = document.getElementById("tmScope").value;
-  var date = document.getElementById("tmDate").value || todayStr();
+  var isRecur = document.getElementById("tmRecur").checked;
   var ctx = window.__taskModalCtx || {};
-  if(ctx.id){
-    var t = state.tasks.filter(function(x){return x.id===ctx.id;})[0];
-    if(t){
-      pushZadUndo({type:"edit", id:t.id, prev:{title:t.title, category:t.category, scope:t.scope, createdAt:t.createdAt, completedAt:t.completedAt}});
-      t.title = title; t.category = category; t.scope = scope;
-      if(t.completedAt) t.completedAt = date; else t.createdAt = date;
+
+  if(isRecur){
+    var recurDay = +document.getElementById("tmRecurDay").value;
+    if(ctx.id){
+      var t = state.tasks.filter(function(x){return x.id===ctx.id;})[0];
+      if(t){
+        pushZadUndo({type:"edit", id:t.id, prev:{title:t.title, category:t.category, scope:t.scope, createdAt:t.createdAt, completedAt:t.completedAt, recurWeekday:(t.recurWeekday!=null?t.recurWeekday:null)}});
+        t.title = title; t.category = category; t.scope = "dzien"; t.recurWeekday = recurDay;
+        if(!t.recurCompletions) t.recurCompletions = {};
+      }
+    } else {
+      var newRecurTask = {id:uid("task"), title:title, category:category, scope:"dzien", done:false, createdAt:todayStr(), completedAt:null, recurWeekday:recurDay, recurCompletions:{}};
+      state.tasks.unshift(newRecurTask);
+      pushZadUndo({type:"add", id:newRecurTask.id});
     }
   } else {
-    var newTask = {id:uid("task"), title:title, category:category, scope:scope, done:false, createdAt:date, completedAt:null};
-    state.tasks.unshift(newTask);
-    pushZadUndo({type:"add", id:newTask.id});
+    var scope = document.getElementById("tmScope").value;
+    var date = document.getElementById("tmDate").value || todayStr();
+    if(ctx.id){
+      var t2 = state.tasks.filter(function(x){return x.id===ctx.id;})[0];
+      if(t2){
+        pushZadUndo({type:"edit", id:t2.id, prev:{title:t2.title, category:t2.category, scope:t2.scope, createdAt:t2.createdAt, completedAt:t2.completedAt, recurWeekday:(t2.recurWeekday!=null?t2.recurWeekday:null)}});
+        t2.title = title; t2.category = category; t2.scope = scope; t2.recurWeekday = null;
+        if(t2.completedAt) t2.completedAt = date; else t2.createdAt = date;
+      }
+    } else {
+      var newTask = {id:uid("task"), title:title, category:category, scope:scope, done:false, createdAt:date, completedAt:null, recurWeekday:null};
+      state.tasks.unshift(newTask);
+      pushZadUndo({type:"add", id:newTask.id});
+    }
   }
   closeTaskModal();
   save(); renderAll();
