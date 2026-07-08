@@ -73,36 +73,6 @@
     background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--muted-light);
   }
   #sidebarOverlay{display:none}
-  @media(max-width:860px){
-    #menuToggle{display:flex}
-    #sidebar{
-      position:fixed; top:0; left:0; height:100vh; z-index:300; width:250px; flex:0 0 250px;
-      transform:translateX(-100%); transition:transform .25s ease; box-shadow:2px 0 30px rgba(0,0,0,.5);
-    }
-    #sidebar.open{transform:translateX(0)}
-    #sidebarOverlay{
-      display:block; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:250;
-      opacity:0; pointer-events:none; transition:opacity .25s ease;
-    }
-    #sidebarOverlay.open{opacity:1; pointer-events:auto}
-    #topbar{padding:16px 16px 12px; flex-wrap:wrap; gap:10px}
-    #topbar h1{font-size:19px}
-    #content{padding:0 16px 40px}
-    .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
-    .kanban{grid-template-columns:1fr}
-    .colcols{grid-template-columns:1fr}
-    .kpi-row{gap:18px; row-gap:14px}
-    .acc-switch select{min-width:0; width:100%}
-    .chiprow{gap:6px}
-    table{font-size:12px}
-    .nawyki-grid th, .nawyki-grid td{padding:5px 4px}
-    .nawyki-grid input[type=checkbox], .nawyki-grid input[type=checkbox]:not(:checked){width:20px; height:20px}
-  }
-  @media(max-width:480px){
-    #topbar h1{font-size:17px}
-    .stat-value{font-size:24px}
-    .hero-greet{font-size:21px}
-  }
 
   .grid{display:grid; gap:16px}
   .grid-2{grid-template-columns:repeat(2,1fr)}
@@ -259,7 +229,7 @@
   .linklike:hover{color:#fff}
   .linklike.danger{color:var(--danger)}
 
-  .nawyki-grid{font-size:12px}
+  .nawyki-grid{font-size:12px; width:auto}
   .nawyki-grid th, .nawyki-grid td{padding:6px 6px; white-space:nowrap}
   .nawyki-grid td:first-child, .nawyki-grid th:first-child{padding-right:16px; box-shadow:2px 0 0 var(--border)}
   .nawyki-grid input[type=checkbox]{width:14px; height:14px; accent-color:var(--accent)}
@@ -344,6 +314,38 @@
   #authGate p{color:var(--muted); font-size:14px; line-height:1.5; margin:0 0 18px}
   #authGate .btn{font-size:14px}
   .sync-status{font-size:11px; color:var(--muted); margin-top:2px}
+
+  /* ---- Media queries na samym końcu arkusza, żeby wygrywały kaskadę z regułami bazowymi o tej samej specyficzności zdefiniowanymi wyżej ---- */
+  @media(max-width:860px){
+    #menuToggle{display:flex}
+    #sidebar{
+      position:fixed; top:0; left:0; height:100vh; z-index:300; width:250px; flex:0 0 250px;
+      transform:translateX(-100%); transition:transform .25s ease; box-shadow:2px 0 30px rgba(0,0,0,.5);
+    }
+    #sidebar.open{transform:translateX(0)}
+    #sidebarOverlay{
+      display:block; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:250;
+      opacity:0; pointer-events:none; transition:opacity .25s ease;
+    }
+    #sidebarOverlay.open{opacity:1; pointer-events:auto}
+    #topbar{padding:16px 16px 12px; flex-wrap:wrap; gap:10px}
+    #topbar h1{font-size:19px}
+    #content{padding:0 16px 40px}
+    .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+    .kanban{grid-template-columns:1fr}
+    .colcols{grid-template-columns:1fr}
+    .kpi-row{gap:18px; row-gap:14px}
+    .acc-switch select{min-width:0; width:100%}
+    .chiprow{gap:6px}
+    table{font-size:12px}
+    .nawyki-grid th, .nawyki-grid td{padding:5px 4px}
+    .nawyki-grid input[type=checkbox], .nawyki-grid input[type=checkbox]:not(:checked){width:20px; height:20px}
+  }
+  @media(max-width:480px){
+    #topbar h1{font-size:17px}
+    .stat-value{font-size:24px}
+    .hero-greet{font-size:21px}
+  }
 </style>
 </head>
 <body>
@@ -418,7 +420,6 @@ var CATEGORY_LABEL = {MediaDGtal:"MediaDGtal", tool4arts:"tool4arts", Rozwoj:"Ro
 var WEEKDAYS_FULL = ["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
 var WEEKDAYS_SHORT = ["PON","WT","ŚR","CZW","PT","SOB","ND"];
 var HABIT_MONTH_ABBR = ["Sty","Lut","Mar","Kwi","Maj","Cze","Lip","Sie","Wrz","Paź","Lis","Gru"];
-var HABIT_LIVE_FROM = "2026-07"; // pierwszy miesiąc, dla którego checkboxy odzwierciedlają realne zaznaczenia; wcześniejsze miesiące startują odtworzone z % Arkusza, ale nadal są edytowalne
 var HABIT_HISTORY_2026 = { // dokładne % miesięczne z zakładki TOTAL Arkusza "Arkusz zadań 2026" (miesiące zamknięte przed migracją)
   "Dzień bez alkoholu": {"2026-01":97,"2026-02":100,"2026-03":100,"2026-04":100,"2026-05":100,"2026-06":100},
   "Dzień bez palenia fajek": {"2026-01":87,"2026-02":61,"2026-03":100,"2026-04":53,"2026-05":3,"2026-06":100},
@@ -552,12 +553,69 @@ var zadCatFilter = ""; // stan filtrów Zadań trzymany w JS, nie w DOM — rend
 var zadTydzienOd = null;
 var zadTydzienDo = null;
 var zadMiesiacVal = null;
-var bazaYearFilterVal = "";
+var zadSearchQuery = "";
+var zadSortMode = "newest"; // newest | oldest | az
+var zadUndoStack = [];
 function setZadCatFilter(v){ zadCatFilter = v; renderAll(); }
 function setZadTydzienOd(v){ zadTydzienOd = v; renderAll(); }
 function setZadTydzienDo(v){ zadTydzienDo = v; renderAll(); }
 function setZadMiesiac(v){ zadMiesiacVal = v; renderAll(); }
-function setBazaYearFilter(v){ bazaYearFilterVal = v; renderAll(); }
+function setZadSearch(v){ zadSearchQuery = v; renderAllKeepFocus("zadSearchInput"); }
+function setZadSort(v){ zadSortMode = v; renderAll(); }
+function renderAllKeepFocus(inputId){
+  var el = document.getElementById(inputId);
+  var pos = el ? el.selectionStart : null;
+  var hadFocus = el && document.activeElement===el;
+  renderAll();
+  var el2 = document.getElementById(inputId);
+  if(el2 && hadFocus){
+    el2.focus();
+    if(pos!=null && el2.setSelectionRange) el2.setSelectionRange(pos,pos);
+  }
+}
+function sortTasks(items, mode){
+  var arr = items.slice();
+  if(mode==="az"){
+    arr.sort(function(a,b){ return a.title.localeCompare(b.title,"pl"); });
+  } else {
+    arr.sort(function(a,b){
+      var da = a.completedAt||a.createdAt||"", db = b.completedAt||b.createdAt||"";
+      if(da===db) return 0;
+      return mode==="oldest" ? (da<db?-1:1) : (da<db?1:-1);
+    });
+  }
+  return arr;
+}
+function matchesZadSearch(t){
+  if(!zadSearchQuery) return true;
+  return t.title.toLowerCase().indexOf(zadSearchQuery.toLowerCase())>=0;
+}
+function renderZadSearchSortBar(){
+  return '<div class="row" style="gap:8px; margin-bottom:14px; flex-wrap:wrap">'+
+    '<input type="text" id="zadSearchInput" placeholder="Szukaj zadania…" value="'+escapeHtml(zadSearchQuery)+'" oninput="setZadSearch(this.value)" style="flex:1; min-width:180px">'+
+    '<select onchange="setZadSort(this.value)" style="width:auto">'+
+      '<option value="newest"'+(zadSortMode==="newest"?" selected":"")+'>Najnowsze</option>'+
+      '<option value="oldest"'+(zadSortMode==="oldest"?" selected":"")+'>Najstarsze</option>'+
+      '<option value="az"'+(zadSortMode==="az"?" selected":"")+'>A-Z</option>'+
+    '</select></div>';
+}
+function pushZadUndo(a){ zadUndoStack.push(a); if(zadUndoStack.length>50) zadUndoStack.shift(); }
+function undoZad(){
+  var a = zadUndoStack.pop();
+  if(!a) return;
+  if(a.type==="toggle"){
+    var t = state.tasks.filter(function(x){return x.id===a.id;})[0];
+    if(t){ t.done = a.prevDone; t.completedAt = a.prevCompletedAt; }
+  } else if(a.type==="delete"){
+    state.tasks.splice(a.index, 0, a.task);
+  } else if(a.type==="add"){
+    state.tasks = state.tasks.filter(function(t){return t.id!==a.id;});
+  } else if(a.type==="edit"){
+    var t2 = state.tasks.filter(function(x){return x.id===a.id;})[0];
+    if(t2){ t2.title=a.prev.title; t2.category=a.prev.category; t2.scope=a.prev.scope; t2.createdAt=a.prev.createdAt; t2.completedAt=a.prev.completedAt; }
+  }
+  save(); renderAll();
+}
 var postySubtab = "kanban";
 var statPeriod = "miesiac"; // tylko "miesiac" lub "rok" — bez dziennego
 var statMonthVal = null;
@@ -1120,6 +1178,7 @@ function eventRowWeek(e){
 function toggleTask(id){
   var t = state.tasks.filter(function(x){return x.id===id;})[0];
   if(!t) return;
+  pushZadUndo({type:"toggle", id:id, prevDone:t.done, prevCompletedAt:t.completedAt});
   t.done = !t.done; t.completedAt = t.done ? todayStr() : null;
   save(); renderAll();
 }
@@ -1435,14 +1494,22 @@ function saveMeasurement(platform){
 
 /* ================= ZADANIA ================= */
 function renderZadania(el){
-  setTopActions('<button class="btn" onclick="addTask()">+ Nowe zadanie</button>');
+  setTopActions('<button class="btn secondary" onclick="undoZad()">↺ Cofnij</button> <button class="btn" onclick="addTask()">+ Nowe zadanie</button>');
   var html = '<div class="tabsw">'+
     '<button class="'+(zadaniaSubview==="zadania"?"active":"")+'" onclick="setZadSub(\'zadania\')">Zadania</button>'+
     '<button class="'+(zadaniaSubview==="baza"?"active":"")+'" onclick="setZadSub(\'baza\')">Baza</button>'+
+    '<button class="'+(zadaniaSubview==="wykonane"?"active":"")+'" onclick="setZadSub(\'wykonane\')">Wykonane</button>'+
     '</div>';
+
+  html += renderZadSearchSortBar();
 
   if(zadaniaSubview==="baza"){
     html += renderZadaniaBaza();
+    el.innerHTML = html;
+    return;
+  }
+  if(zadaniaSubview==="wykonane"){
+    html += renderZadaniaWykonane();
     el.innerHTML = html;
     return;
   }
@@ -1467,16 +1534,17 @@ function renderZadania(el){
   [["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].forEach(function(pair){
     var scope=pair[0], label=pair[1];
     var items = state.tasks.filter(function(t){
-      if(t.scope!==scope) return false;
+      if(t.scope!==scope || t.done) return false;
       if(catFilter && t.category!==catFilter) return false;
+      if(!matchesZadSearch(t)) return false;
       var d = t.completedAt || t.createdAt;
       if(scope==="tydzien"){ if(d < tydzienOd || d > tydzienDo) return false; }
       if(scope==="miesiac"){ if(!d || d.slice(0,7)!==miesiacVal) return false; }
       return true;
     });
-    var doneCount = items.filter(function(t){return t.done;}).length;
+    items = sortTasks(items, zadSortMode);
     var defaultDate = scope==="miesiac" ? miesiacVal+"-01" : (scope==="tydzien" ? tydzienOd : todayStr());
-    html += '<div class="card"><div class="col-head"><span>'+label+'</span><b>'+doneCount+'/'+items.length+'</b></div>';
+    html += '<div class="card"><div class="col-head"><span>'+label+'</span><b>'+items.length+'</b></div>';
     if(scope==="tydzien"){
       html += '<div class="row" style="gap:6px; margin-bottom:10px"><input type="date" value="'+tydzienOd+'" onchange="setZadTydzienOd(this.value)" style="font-size:12px">'+
         '<input type="date" value="'+tydzienDo+'" onchange="setZadTydzienDo(this.value)" style="font-size:12px"></div>';
@@ -1489,8 +1557,8 @@ function renderZadania(el){
       var listOpen = scope==="miesiac" ? '<div style="max-height:450px; overflow-y:auto">' : '';
       html += listOpen;
       items.forEach(function(t){
-        html += '<div class="taskitem'+(t.done?" done":"")+'">'+
-          '<input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask(\''+t.id+'\')">'+
+        html += '<div class="taskitem">'+
+          '<input type="checkbox" onchange="toggleTask(\''+t.id+'\')">'+
           '<span class="dot"></span>'+
           '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span><br><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></div>'+
           '<div class="taskmeta"><button class="linklike" onclick="openTaskModal({id:\''+t.id+'\'})">Edytuj</button><button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></div>'+
@@ -1505,43 +1573,54 @@ function renderZadania(el){
   el.innerHTML = html;
 }
 function renderZadaniaBaza(){
-  var years = {};
-  state.tasks.forEach(function(t){
-    var d = t.completedAt || t.createdAt;
-    if(d) years[d.slice(0,4)] = true;
-  });
-  var yearList = Object.keys(years).sort().reverse();
-  var yearFilter = bazaYearFilterVal;
+  var items = state.tasks.filter(function(t){ return t.scope==="baza" && !t.done && matchesZadSearch(t); });
+  items = sortTasks(items, zadSortMode);
 
-  var html = '<div class="chiprow" style="justify-content:flex-end"><select onchange="setBazaYearFilter(this.value)" style="width:auto">'+
-    '<option value=""'+(yearFilter===""?" selected":"")+'>Wszystkie lata</option>'+
-    yearList.map(function(y){ return '<option value="'+y+'"'+(y===yearFilter?" selected":"")+'>'+y+'</option>'; }).join("")+
-    '</select></div>';
-
-  var items = state.tasks.filter(function(t){
-    if(!yearFilter) return true;
-    var d = t.completedAt || t.createdAt;
-    return d && d.slice(0,4)===yearFilter;
-  }).sort(function(a,b){
-    var da = a.completedAt || a.createdAt || "", db = b.completedAt || b.createdAt || "";
-    return da < db ? 1 : -1;
-  });
-
-  var scopeLabel = {dzien:"Dziś", tydzien:"Tydzień", miesiac:"Miesiąc"};
-  html += '<div class="card"><table><thead><tr><th>Zadanie</th><th>Kategoria</th><th>Zakres</th><th>Status</th><th>Data</th></tr></thead><tbody>';
-  if(!items.length){ html += '<tr><td colspan="5"><div class="empty">Brak zadań dla wybranego okresu.</div></td></tr>'; }
+  var html = '<div class="ideas-input-row" style="margin-bottom:14px">'+
+    '<input type="text" id="bazaQuickAdd" placeholder="Szybka notatka — wpisz i naciśnij Enter…" onkeydown="if(event.key===\'Enter\'){ quickAddBazaTask(); }">'+
+    '<button class="btn" onclick="quickAddBazaTask()">+ Dodaj</button></div>';
+  html += '<div class="card"><table><thead><tr><th>Zadanie</th><th></th></tr></thead><tbody>';
+  if(!items.length){ html += '<tr><td colspan="2"><div class="empty">Baza jest pusta.</div></td></tr>'; }
   items.forEach(function(t){
     html += '<tr><td>'+escapeHtml(t.title)+'</td>'+
+      '<td><button class="linklike" onclick="openTaskModal({id:\''+t.id+'\'})">Przydziel</button> <button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+function quickAddBazaTask(){
+  var input = document.getElementById("bazaQuickAdd");
+  if(!input) return;
+  var title = input.value.trim();
+  if(!title) return;
+  var newTask = {id:uid("task"), title:title, category:"MediaDGtal", scope:"baza", done:false, createdAt:todayStr(), completedAt:null};
+  state.tasks.unshift(newTask);
+  pushZadUndo({type:"add", id:newTask.id});
+  save();
+  renderAll();
+  var input2 = document.getElementById("bazaQuickAdd");
+  if(input2) input2.focus();
+}
+function renderZadaniaWykonane(){
+  var items = state.tasks.filter(function(t){ return t.done && matchesZadSearch(t); });
+  items = sortTasks(items, zadSortMode);
+
+  var scopeLabel = {baza:"Baza", dzien:"Dziś", tydzien:"Tydzień", miesiac:"Miesiąc"};
+  var html = '<div class="card"><table><thead><tr><th></th><th>Zadanie</th><th>Kategoria</th><th>Zakres</th><th>Ukończono</th><th></th></tr></thead><tbody>';
+  if(!items.length){ html += '<tr><td colspan="6"><div class="empty">Brak ukończonych zadań.</div></td></tr>'; }
+  items.forEach(function(t){
+    html += '<tr><td><input type="checkbox" checked onchange="toggleTask(\''+t.id+'\')"></td>'+
+      '<td>'+escapeHtml(t.title)+'</td>'+
       '<td><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></td>'+
       '<td>'+(scopeLabel[t.scope]||t.scope)+'</td>'+
-      '<td>'+(t.done ? "Ukończone" : "Otwarte")+'</td>'+
-      '<td>'+fmtDate(t.completedAt || t.createdAt)+'</td></tr>';
+      '<td>'+fmtDate(t.completedAt)+'</td>'+
+      '<td><button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></td></tr>';
   });
   html += '</tbody></table></div>';
   return html;
 }
 function setZadSub(v){ zadaniaSubview = v; renderAll(); }
-function addTask(){ openTaskModal({scope:"dzien", category:"MediaDGtal", date:todayStr()}); }
+function addTask(){ openTaskModal({scope:"baza", category:"MediaDGtal", date:todayStr()}); }
 function closeTaskModal(){
   var m = document.getElementById("taskModal");
   if(m) m.remove();
@@ -1557,7 +1636,7 @@ function openTaskModal(opts){
   var catOptions = CATEGORIES.map(function(c){
     return '<option value="'+c+'"'+(opts.category===c?" selected":"")+'>'+CATEGORY_LABEL[c]+'</option>';
   }).join("");
-  var scopeOptions = [["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].map(function(p){
+  var scopeOptions = [["baza","Baza (nieprzydzielone)"],["dzien","Dziś"],["tydzien","Tydzień"],["miesiac","Miesiąc"]].map(function(p){
     return '<option value="'+p[0]+'"'+(opts.scope===p[0]?" selected":"")+'>'+p[1]+'</option>';
   }).join("");
   var html = '<div class="modal-overlay" id="taskModal">'+
@@ -1585,11 +1664,14 @@ function saveTaskModal(){
   if(ctx.id){
     var t = state.tasks.filter(function(x){return x.id===ctx.id;})[0];
     if(t){
+      pushZadUndo({type:"edit", id:t.id, prev:{title:t.title, category:t.category, scope:t.scope, createdAt:t.createdAt, completedAt:t.completedAt}});
       t.title = title; t.category = category; t.scope = scope;
       if(t.completedAt) t.completedAt = date; else t.createdAt = date;
     }
   } else {
-    state.tasks.unshift({id:uid("task"), title:title, category:category, scope:scope, done:false, createdAt:date, completedAt:null});
+    var newTask = {id:uid("task"), title:title, category:category, scope:scope, done:false, createdAt:date, completedAt:null};
+    state.tasks.unshift(newTask);
+    pushZadUndo({type:"add", id:newTask.id});
   }
   closeTaskModal();
   save(); renderAll();
@@ -1597,13 +1679,17 @@ function saveTaskModal(){
 function deleteTaskModal(){
   var ctx = window.__taskModalCtx;
   if(!ctx || !ctx.id) return;
-  if(!confirm("Usunąć zadanie \""+ctx.title+"\"?")) return;
-  state.tasks = state.tasks.filter(function(t){return t.id!==ctx.id;});
   closeTaskModal();
-  save(); renderAll();
+  deleteTask(ctx.id);
 }
 function deleteTask(id){
-  state.tasks = state.tasks.filter(function(t){return t.id!==id;});
+  var idx = -1;
+  for(var i=0;i<state.tasks.length;i++){ if(state.tasks[i].id===id){ idx=i; break; } }
+  if(idx<0) return;
+  if(!confirm("Usunąć zadanie \""+state.tasks[idx].title+"\"? Możesz to cofnąć przyciskiem \"Cofnij\".")) return;
+  var removed = state.tasks[idx];
+  state.tasks.splice(idx,1);
+  pushZadUndo({type:"delete", task:removed, index:idx});
   save(); renderAll();
 }
 
@@ -2087,9 +2173,6 @@ function renderNawykiMonth(ym){
   var parts = ym.split("-"), y = +parts[0], m = +parts[1];
   var dim = daysInMonth(y,m);
   var html = '';
-  if(ym < HABIT_LIVE_FROM){
-    html += '<div class="stub-note">Ten miesiąc wystartował z checkboxami odtworzonymi z sumarycznych % Twojego Arkusza (pierwsze dni miesiąca zaznaczone tak, by suma się zgadzała) — popraw pojedyncze dni, jeśli pamiętasz inaczej.</div>';
-  }
   html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>';
   for(var d=1; d<=dim; d++){
@@ -2702,7 +2785,7 @@ init();
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
+  getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, onSnapshot
@@ -2759,14 +2842,8 @@ function showGate(mode){
 function hideGate(){ gate.classList.add("hidden"); }
 
 function doSignIn(){
-  gateText.textContent = "Otwieram okno logowania Google…";
-  signInWithPopup(auth, provider).then(function(result){
-    var credential = GoogleAuthProvider.credentialFromResult(result);
-    window.__gcalToken = credential && credential.accessToken;
-    if(window.onGCalTokenReady) window.onGCalTokenReady();
-  }).catch(function(err){
-    gateText.textContent = "Logowanie nie powiodło się (" + err.code + "). Spróbuj ponownie.";
-  });
+  gateText.textContent = "Przekierowuję do logowania Google…";
+  signInWithRedirect(auth, provider);
 }
 function doSignOut(){ signOut(auth); }
 window.reconnectGCal = doSignIn;
@@ -2822,6 +2899,16 @@ function startSync(){
     setSyncStatus("Offline (tylko lokalnie)");
   });
 }
+
+getRedirectResult(auth).then(function(result){
+  if(result){
+    var credential = GoogleAuthProvider.credentialFromResult(result);
+    window.__gcalToken = credential && credential.accessToken;
+    if(window.onGCalTokenReady) window.onGCalTokenReady();
+  }
+}).catch(function(err){
+  gateText.textContent = "Logowanie nie powiodło się (" + err.code + "). Spróbuj ponownie.";
+});
 
 showGate("loading");
 onAuthStateChanged(auth, function(user){
