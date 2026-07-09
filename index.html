@@ -485,6 +485,7 @@ var TABS = [
   {id:"facebook", label:"Facebook", group:"Social Media"},
   {id:"nawyki", label:"Nawyki", group:"Narzędzia"},
   {id:"klienci", label:"Klienci", group:"Narzędzia"},
+  {id:"agent", label:"Agent AI", group:"Narzędzia"},
   {id:"statystyki", label:"Statystyki", group:"Narzędzia"}
 ];
 var TAB_ICON_SVG = {
@@ -497,7 +498,8 @@ var TAB_ICON_SVG = {
   zadania: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   kalendarz: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
-  klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+  klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  agent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.8 4.4L18 8l-4.2 1.6L12 14l-1.8-4.4L6 8l4.2-1.6z"/><path d="M19 15l.9 2.2L22 18l-2.1.8L19 21l-.9-2.2L16 18l2.1-.8z"/></svg>'
 };
 var SOCIAL_TILE_ICON_SVG = {
   facebook: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
@@ -602,6 +604,7 @@ function migrateState(s){
   });
   if(!s.brands || !s.brands.length) s.brands = ["MediaDGtal","tool4arts"];
   if(!s.driveMonthFolders) s.driveMonthFolders = {};
+  if(!s.agentRequests) s.agentRequests = [];
   (function(){
     var wasMissing = !s.ideaCategories;
     if(!s.ideaCategories) s.ideaCategories = {};
@@ -983,6 +986,8 @@ function defaultState(){
 
   s.driveMonthFolders = {};
 
+  s.agentRequests = [];
+
   s.hasla = [];
   syncHaslaFromContentCalendar(s);
 
@@ -1132,10 +1137,11 @@ var RENDERERS = {
   zadania: renderZadania,
   kalendarz: renderKalendarz,
   nawyki: renderNawyki,
-  klienci: renderKlienci
+  klienci: renderKlienci,
+  agent: renderAgentAI
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", wiadomosci:"Wiadomości", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", agent:"Agent AI"};
 
 function renderAll(){
   renderNav();
@@ -4061,6 +4067,68 @@ function undoKlienci(){
   save(); renderAllKeepScroll("klienciScrollBox");
 }
 
+/* ================= AGENT AI ================= */
+var AGENT_STATUS_LABEL = {nowe:"Nowe", wtoku:"W realizacji", gotowe:"Gotowe"};
+var AGENT_STATUS_NEXT = {nowe:"wtoku", wtoku:"gotowe", gotowe:"nowe"};
+function renderAgentAI(el){
+  setTopActions('');
+  var html = '<div class="stub-note">Wpisz czego potrzebujesz (np. "przygotuj 5 postów na przyszły tydzień dla MediaDGtal") i wyślij zlecenie. Odbieram je w sesjach Claude Code — piszę teksty (hooki, opisy, CTA), generuję grafiki w Twojej Canvie do przejrzenia/edycji, a po Twojej akceptacji wrzucam gotowe posty do zakładki Szkic albo Zaplanowane. Publikację na platformach robisz Ty sam.</div>';
+
+  html += '<div class="card" style="margin-bottom:16px">'+
+    '<div class="field"><label>Nowe zlecenie</label><textarea id="agentRequestText" rows="3" placeholder="np. Przygotuj 5 postów na przyszły tydzień dla MediaDGtal, temat: powrót do treningów po wakacjach"></textarea></div>'+
+    '<div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap">'+
+      '<div class="field" style="flex:0 0 auto; margin-bottom:0"><label>Marka</label><select id="agentRequestBrand">'+
+        state.brands.map(function(b){ return '<option value="'+escapeHtml(b)+'"'+(b===postyFilter?" selected":"")+'>'+escapeHtml(b)+'</option>'; }).join("")+
+      '</select></div>'+
+      '<button class="btn" onclick="addAgentRequest()">Wyślij do agenta</button>'+
+    '</div></div>';
+
+  var items = state.agentRequests.slice().sort(function(a,b){ return a.createdAt<b.createdAt?1:-1; });
+  html += '<div class="card"><h3 style="margin:0 0 10px">Zlecenia</h3>';
+  if(!items.length){ html += '<div class="empty">Brak zleceń.</div>'; }
+  else {
+    html += '<div style="overflow-x:auto"><table><thead><tr><th>Zlecenie</th><th>Marka</th><th>Data</th><th>Status</th><th></th></tr></thead><tbody>';
+    items.forEach(function(r){
+      html += '<tr>'+
+        '<td style="max-width:340px; white-space:pre-wrap">'+escapeHtml(r.text)+(r.note?'<div style="color:var(--muted-light); font-size:12px; margin-top:4px">Notatka: '+escapeHtml(r.note)+'</div>':'')+'</td>'+
+        '<td><span class="tag tag-'+r.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(r.brand)+'</span></td>'+
+        '<td>'+fmtDate(r.createdAt)+'</td>'+
+        '<td><span class="tag tag-stage-'+(r.status==="gotowe"?"opublikowany":r.status==="wtoku"?"zaplanowany":"szkic")+'" style="cursor:pointer" onclick="cycleAgentStatus(\''+r.id+'\')" title="Kliknij żeby zmienić status">'+AGENT_STATUS_LABEL[r.status]+'</span></td>'+
+        '<td style="white-space:nowrap"><button class="linklike" onclick="setAgentNote(\''+r.id+'\')">Notatka</button> <button class="linklike danger" onclick="deleteAgentRequest(\''+r.id+'\')">Usuń</button></td>'+
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+function addAgentRequest(){
+  var textEl = document.getElementById("agentRequestText");
+  var text = textEl.value.trim();
+  if(!text) return;
+  var brand = document.getElementById("agentRequestBrand").value;
+  state.agentRequests.unshift({id:uid("areq"), text:text, brand:brand, status:"nowe", createdAt:todayStr(), note:null});
+  save(); renderAll();
+}
+function cycleAgentStatus(id){
+  var r = state.agentRequests.filter(function(x){return x.id===id;})[0];
+  if(!r) return;
+  r.status = AGENT_STATUS_NEXT[r.status] || "nowe";
+  save(); renderAll();
+}
+function setAgentNote(id){
+  var r = state.agentRequests.filter(function(x){return x.id===id;})[0];
+  if(!r) return;
+  var note = prompt("Notatka (np. co zostało zrobione):", r.note||"");
+  if(note===null) return;
+  r.note = note.trim() || null;
+  save(); renderAll();
+}
+function deleteAgentRequest(id){
+  if(!confirm("Usunąć to zlecenie?")) return;
+  state.agentRequests = state.agentRequests.filter(function(r){return r.id!==id;});
+  save(); renderAll();
+}
 function renderKlienci(el){
   var now = new Date();
   var realCurYm = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
