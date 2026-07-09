@@ -2297,7 +2297,7 @@ function openPostModal(opts){
     '<div class="field"><label>Opis na Facebooku</label><textarea id="pmCaptionFb" rows="3" placeholder="Treść publikowana pod postem na Facebooku...">'+escapeHtml(opts.captionFb||"")+'</textarea></div>'+
     '<div class="field"><label>Opis na Instagramie</label><textarea id="pmCaptionIg" rows="3" placeholder="Treść publikowana pod postem na Instagramie...">'+escapeHtml(opts.captionIg||"")+'</textarea></div>'+
     '<div class="field"><label>Zdjęcia (linki, jeden na linię — pierwszy = główny)</label><textarea id="pmImages" rows="2" placeholder="https://...">'+escapeHtml(opts.images||"")+'</textarea>'+
-      '<span style="font-size:11px; color:var(--muted)">Wklej bezpośredni link do pliku (np. kończący się na .jpg/.png) — link do udostępniania z Google Drive/Zdjęć/Canva zwykle nie zadziała wprost.</span></div>'+
+      '<span style="font-size:11px; color:var(--muted)">Zwykły link "Udostępnij" z Google Drive (drive.google.com/file/d/...) zadziała automatycznie — plik musi mieć ustawione "Każdy, kto ma link". Z Google Zdjęć/Canva wklej bezpośredni link do pliku (kończący się np. na .jpg/.png).</span></div>'+
     '<div class="field" id="pmCarouselWrap"><label style="display:flex; align-items:center; gap:8px; cursor:pointer">'+
       '<input type="checkbox" id="pmCarousel" onchange="updatePostModalVisibility()"'+(opts.isCarousel?" checked":"")+'> Karuzela na Instagramie (na Facebooku wrzucę tylko główne zdjęcie + cały tekst)'+
     '</label></div>'+
@@ -2323,6 +2323,15 @@ function closePostModal(){
   var m = document.getElementById("postModal");
   if(m) m.remove();
 }
+function normalizeImageUrl(url){
+  url = (url||"").trim();
+  if(!url) return url;
+  var m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if(!m) m = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if(!m) m = url.match(/drive\.google\.com\/uc\?(?:export=[a-zA-Z]+&)?id=([a-zA-Z0-9_-]+)/);
+  if(m) return "https://drive.google.com/uc?export=view&id="+m[1];
+  return url;
+}
 function savePostModal(){
   var title = document.getElementById("pmTitle").value.trim();
   if(!title) return;
@@ -2332,9 +2341,9 @@ function savePostModal(){
   var date = document.getElementById("pmDate").value || null;
   var captionFb = document.getElementById("pmCaptionFb").value.trim();
   var captionIg = document.getElementById("pmCaptionIg").value.trim();
-  var images = document.getElementById("pmImages").value.split("\n").map(function(s){return s.trim();}).filter(Boolean);
+  var images = document.getElementById("pmImages").value.split("\n").map(function(s){return normalizeImageUrl(s);}).filter(Boolean);
   var isCarousel = platform==="fbig" && document.getElementById("pmCarousel").checked;
-  var fbImage = isCarousel ? document.getElementById("pmFbImage").value.trim() : "";
+  var fbImage = isCarousel ? normalizeImageUrl(document.getElementById("pmFbImage").value) : "";
   var ctx = window.__postModalCtx || {};
   if(ctx.id){
     var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
