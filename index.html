@@ -422,6 +422,20 @@
   .ceo-econ-tile{background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:10px; padding:12px}
   .ceo-econ-label{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em}
   .ceo-econ-value{font-size:15px; font-weight:700; color:#fff; margin-top:4px}
+  .ceo-prestige-badge{background:linear-gradient(90deg,#cf9b4a,#e0954a); color:#241a0a; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:6px}
+  .ceo-mentor{border:1px solid rgba(207,155,74,.35)}
+  .ceo-mentor-line{font-size:13px; color:var(--muted-light); padding:6px 0; border-bottom:1px solid var(--border)}
+  .ceo-mentor-line:last-child{border-bottom:none}
+  .ceo-talent-group{margin-bottom:14px}
+  .ceo-talent-group:last-child{margin-bottom:0}
+  .ceo-talent-title{font-size:12.5px; font-weight:700; color:var(--muted-light); margin-bottom:6px}
+  .ceo-talent-node{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; color:var(--muted-light); padding:3px 0; cursor:pointer}
+  .ceo-talent-branch{color:var(--muted); margin-right:4px}
+  .ceo-talent-node.unlocked{color:var(--accent)}
+  .ceo-faction-status{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px}
+  .ceo-faction-friendly{background:#20302a; color:#63b58a}
+  .ceo-faction-neutral{background:var(--admin-bg); color:var(--admin-text)}
+  .ceo-faction-locked{background:rgba(209,99,111,.15); color:var(--danger)}
 
   .ideas-box{margin-top:22px}
   .ideas-input-row{display:flex; gap:10px; margin-bottom:10px}
@@ -730,6 +744,32 @@ function migrateState(s){
     if(!c.rewards) c.rewards = [];
     if(!c.finance) c.finance = {akcje:0, gotowka:0};
     if(!c.bosses) c.bosses = {};
+    if(!c.talentTree) c.talentTree = {marketing:["Ads","Copywriting","Branding","Viral Content"], sales:["Cold DM","Discovery","Closing","Negotiation"], programming:["AI","Claude","React","Automation"]};
+    if(!c.talentUnlocked) c.talentUnlocked = {};
+    if(!c.inventory) c.inventory = ["MacBook","Claude Max","ChatGPT","Canva","Meta Ads","Google Workspace","Make","Zapier"];
+    if(!c.guild) c.guild = [
+      {id:uid("gu"), name:"Marta", role:"Partner", bonus:"+10 Happiness"},
+      {id:uid("gu"), name:"Programista", role:"Developer", bonus:""},
+      {id:uid("gu"), name:"Klienci", role:"NPC", bonus:""}
+    ];
+    if(!c.factions) c.factions = [
+      {id:uid("fc"), name:"Pole Dance", status:"Friendly"},
+      {id:uid("fc"), name:"Dance", status:"Friendly"},
+      {id:uid("fc"), name:"Yoga", status:"Neutral"},
+      {id:uid("fc"), name:"Pilates", status:"Friendly"},
+      {id:uid("fc"), name:"Martial Arts", status:"Locked"}
+    ];
+    if(!c.kpiManual) c.kpiManual = {leady:0, sprzedaz:0, retencja:0, ruch:0, konwersja:0};
+    if(!c.timeline) c.timeline = [
+      {id:uid("tl"), year:"2024", label:"Pierwszy klient"},
+      {id:uid("tl"), year:"2025", label:"MediaDGtal"},
+      {id:uid("tl"), year:"2026", label:"Tool4Arts"},
+      {id:uid("tl"), year:"2027", label:"100 klientów"}
+    ];
+    if(!c.monthlyXpHistory) c.monthlyXpHistory = {};
+    if(c.prestige==null) c.prestige = 0;
+    if(c.streak==null) c.streak = 0;
+    if(c.lastActiveDate===undefined) c.lastActiveDate = null;
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1130,7 +1170,37 @@ function defaultState(){
       {id:uid("rw"), label:"Kolacja w dobrej restauracji z Martą", cost:600}
     ],
     finance: {akcje:8000, gotowka:90000},
-    bosses: {}
+    bosses: {},
+    talentTree: {
+      marketing: ["Ads","Copywriting","Branding","Viral Content"],
+      sales: ["Cold DM","Discovery","Closing","Negotiation"],
+      programming: ["AI","Claude","React","Automation"]
+    },
+    talentUnlocked: {},
+    inventory: ["MacBook","Claude Max","ChatGPT","Canva","Meta Ads","Google Workspace","Make","Zapier"],
+    guild: [
+      {id:uid("gu"), name:"Marta", role:"Partner", bonus:"+10 Happiness"},
+      {id:uid("gu"), name:"Programista", role:"Developer", bonus:""},
+      {id:uid("gu"), name:"Klienci", role:"NPC", bonus:""}
+    ],
+    factions: [
+      {id:uid("fc"), name:"Pole Dance", status:"Friendly"},
+      {id:uid("fc"), name:"Dance", status:"Friendly"},
+      {id:uid("fc"), name:"Yoga", status:"Neutral"},
+      {id:uid("fc"), name:"Pilates", status:"Friendly"},
+      {id:uid("fc"), name:"Martial Arts", status:"Locked"}
+    ],
+    kpiManual: {leady:0, sprzedaz:0, retencja:0, ruch:0, konwersja:0},
+    timeline: [
+      {id:uid("tl"), year:"2024", label:"Pierwszy klient"},
+      {id:uid("tl"), year:"2025", label:"MediaDGtal"},
+      {id:uid("tl"), year:"2026", label:"Tool4Arts"},
+      {id:uid("tl"), year:"2027", label:"100 klientów"}
+    ],
+    monthlyXpHistory: {},
+    prestige: 0,
+    streak: 0,
+    lastActiveDate: null
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
 
@@ -4247,12 +4317,27 @@ function ceoClass(){
   if(totals.zdrowie===max) return "Wojownik Formy";
   return "Mędrzec Życia";
 }
+function dateMinusDays(dateStr, n){
+  var d = new Date(dateStr+"T00:00:00");
+  d.setDate(d.getDate()-n);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function ceoBumpStreak(){
+  var today = todayStr();
+  if(state.ceo.lastActiveDate===today) return;
+  var yesterday = dateMinusDays(today,1);
+  state.ceo.streak = (state.ceo.lastActiveDate===yesterday) ? (state.ceo.streak||0)+1 : 1;
+  state.ceo.lastActiveDate = today;
+}
 function addCeoXp(skillKey, amount){
   if(!CEO_SKILL_DEFS[skillKey]) skillKey = "strategie";
   if(!state.ceo.skills[skillKey]) state.ceo.skills[skillKey] = 0;
   state.ceo.skills[skillKey] += amount;
   if(state.ceo.skills[skillKey]<0) state.ceo.skills[skillKey] = 0;
-  state.ceo.gold = Math.max(0, state.ceo.gold + Math.round(amount*0.5));
+  var mult = 1 + 0.05*(state.ceo.prestige||0);
+  state.ceo.gold = Math.max(0, state.ceo.gold + Math.round(amount*0.5*mult));
+  if(amount>0) ceoBumpStreak();
+  state.ceo.monthlyXpHistory[todayStr().slice(0,7)] = ceoTotalXp();
   save();
 }
 function ceoHabitMapping(name){
@@ -4453,6 +4538,7 @@ function renderCEO(el){
   setTopActions('');
   ceoCheckHabitThresholds();
   ceoCheckAchievements();
+  state.ceo.monthlyXpHistory[todayStr().slice(0,7)] = ceoTotalXp();
 
   var lvl = ceoCharLevelInfo();
   var rank = ceoRank(lvl.level);
@@ -4461,20 +4547,27 @@ function renderCEO(el){
   var html = '<div class="card ceo-header">'+
     '<img class="ceo-avatar" src="data:image/jpeg;base64,'+AVATAR_B64+'" alt="Avatar">'+
     '<div class="ceo-header-info">'+
-      '<div class="ceo-name">Damian Gogulski <span class="ceo-class">— '+escapeHtml(cls)+'</span></div>'+
-      '<div class="ceo-rank">'+escapeHtml(rank)+' · Poziom '+lvl.level+'</div>'+
+      '<div class="ceo-name">Damian Gogulski <span class="ceo-class">— '+escapeHtml(cls)+'</span>'+(state.ceo.prestige>0?' <span class="ceo-prestige-badge">Prestige '+state.ceo.prestige+'</span>':'')+'</div>'+
+      '<div class="ceo-rank">'+escapeHtml(rank)+' · Poziom '+lvl.level+' · 🔥 Streak: '+(state.ceo.streak||0)+' dni</div>'+
       '<div class="ceo-xpbar"><div class="ceo-xpbar-fill" style="width:'+Math.round(lvl.xpInLevel/lvl.xpForNext*100)+'%"></div></div>'+
       '<div class="ceo-xptext">'+lvl.xpInLevel+' / '+lvl.xpForNext+' XP do poziomu '+(lvl.level+1)+'</div>'+
     '</div>'+
     '<div class="ceo-gold">🪙 '+state.ceo.gold.toLocaleString("pl-PL")+'<span>Gold</span></div>'+
   '</div>';
 
+  html += renderCeoMentor();
   html += renderCeoSkills();
+  html += renderCeoTalentTree();
   html += renderCeoBoss();
   html += renderCeoQuests();
   html += renderCeoEpicQuests();
   html += renderCeoAchievements();
+  html += renderCeoPrestige(lvl);
+  html += renderCeoKpi();
   html += renderCeoEconomy();
+  html += renderCeoInventoryGuildFactions();
+  html += renderCeoTimeline();
+  html += renderCeoRanking();
 
   el.innerHTML = html;
 }
@@ -4621,6 +4714,222 @@ function renderCeoEconomy(){
   html += '<button class="linklike" onclick="addCeoReward()">+ Dodaj nagrodę</button>';
   html += '</div>';
   return html;
+}
+
+function ceoWeakestSkill(){
+  var weakest = null, min = Infinity;
+  Object.keys(CEO_SKILL_DEFS).forEach(function(k){
+    var xp = state.ceo.skills[k]||0;
+    if(xp<min){ min=xp; weakest=k; }
+  });
+  return weakest;
+}
+function ceoMentorInsight(){
+  var lines = [];
+  var todayS = todayStr();
+  var mainItems = state.tasks.filter(function(t){return t.scope==="dzien" && !t.deletedAt;});
+  var doneToday = mainItems.filter(function(t){return t.done;}).length;
+  if(mainItems.length>0){
+    lines.push('Dziś odhaczone '+doneToday+' / '+mainItems.length+' zadań głównych.'+(doneToday<mainItems.length ? ' Zostało jeszcze '+(mainItems.length-doneToday)+' do zrobienia.' : ' Wszystko zrobione — dobra robota!'));
+  }
+  var weakest = ceoWeakestSkill();
+  if(weakest){
+    lines.push('Najsłabsza umiejętność to '+CEO_SKILL_DEFS[weakest].icon+' '+CEO_SKILL_DEFS[weakest].label+' — warto tam dorzucić trochę uwagi.');
+  }
+  var months = Object.keys(state.ceo.monthlyXpHistory).sort();
+  if(months.length>=2){
+    var diff = state.ceo.monthlyXpHistory[months[months.length-1]] - state.ceo.monthlyXpHistory[months[months.length-2]];
+    if(diff>0) lines.push('Ten miesiąc idzie lepiej niż poprzedni o '+diff+' XP.');
+  }
+  if(state.ceo.streak>=3) lines.push('Streak '+state.ceo.streak+' dni z rzędu — nie przerywaj! 🔥');
+  return lines;
+}
+function renderCeoMentor(){
+  var lines = ceoMentorInsight();
+  var html = '<div class="card ceo-mentor" style="margin-top:16px"><h3 style="margin-top:0">🤖 AI Mentor</h3>'+
+    '<div style="font-size:11px; color:var(--muted); margin-bottom:10px">Podpowiedzi liczone na bieżąco z Twoich prawdziwych danych w aplikacji (nie live-analiza Claude — to może przyjść później).</div>';
+  if(!lines.length){ html += '<div class="empty">Brak jeszcze danych do analizy.</div>'; }
+  lines.forEach(function(l){ html += '<div class="ceo-mentor-line">'+escapeHtml(l)+'</div>'; });
+  html += '</div>';
+  return html;
+}
+var CEO_TALENT_GROUP_SKILL = {marketing:"marketing", sales:"strategie", programming:"automatyzacje"};
+var CEO_TALENT_GROUP_LABEL = {marketing:"Marketing", sales:"Sales", programming:"Programming"};
+function renderCeoTalentTree(){
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">Drzewko talentów</h3>';
+  Object.keys(state.ceo.talentTree).forEach(function(group){
+    var nodes = state.ceo.talentTree[group];
+    html += '<div class="ceo-talent-group"><div class="ceo-talent-title">'+(CEO_TALENT_GROUP_LABEL[group]||group)+'</div>';
+    nodes.forEach(function(node, i){
+      var key = group+"|"+node;
+      var unlocked = !!state.ceo.talentUnlocked[key];
+      var branch = (i===nodes.length-1) ? "└──" : "├──";
+      html += '<div class="ceo-talent-node'+(unlocked?" unlocked":"")+'" onclick="toggleCeoTalent(\''+group+'\',\''+jsAttrStr(node)+'\')">'+
+        '<span class="ceo-talent-branch">'+branch+'</span>'+(unlocked?"✅":"⬜")+' '+escapeHtml(node)+'</div>';
+    });
+    html += '</div>';
+  });
+  html += '<button class="linklike" style="margin-top:6px" onclick="addCeoTalentNode()">+ Dodaj węzeł</button>';
+  html += '</div>';
+  return html;
+}
+function toggleCeoTalent(group, node){
+  var key = group+"|"+node;
+  var wasUnlocked = !!state.ceo.talentUnlocked[key];
+  state.ceo.talentUnlocked[key] = !wasUnlocked;
+  addCeoXp(CEO_TALENT_GROUP_SKILL[group]||"strategie", wasUnlocked?-10:10);
+  renderAll();
+}
+function addCeoTalentNode(){
+  var groups = Object.keys(state.ceo.talentTree);
+  var groupList = groups.map(function(g,i){return (i+1)+"="+(CEO_TALENT_GROUP_LABEL[g]||g);}).join(", ");
+  var idx = parseInt(prompt("Do której gałęzi dodać? "+groupList,"1"),10)-1;
+  var group = groups[idx];
+  if(!group) return;
+  var label = prompt("Nazwa nowego węzła:");
+  if(!label) return;
+  state.ceo.talentTree[group].push(label);
+  save(); renderAll();
+}
+function renderCeoInventoryGuildFactions(){
+  var html = '<div class="ceo-quest-cols" style="margin-top:16px">';
+
+  html += '<div class="card"><h3 style="margin-top:0">🎒 Inventory</h3><div style="font-size:11px; color:var(--muted); margin-bottom:8px">Zasoby, które masz do dyspozycji.</div>';
+  state.ceo.inventory.forEach(function(item, i){
+    html += '<div class="ceo-quest-item"><span>'+escapeHtml(item)+'</span><button class="linklike danger" onclick="removeCeoInventoryItem('+i+')">✕</button></div>';
+  });
+  html += '<button class="linklike" onclick="addCeoInventoryItem()">+ Dodaj</button></div>';
+
+  html += '<div class="card"><h3 style="margin-top:0">🛡️ Guild</h3><div style="font-size:11px; color:var(--muted); margin-bottom:8px">Ludzie wokół Ciebie.</div>';
+  state.ceo.guild.forEach(function(g){
+    html += '<div class="ceo-quest-item"><span><b>'+escapeHtml(g.name)+'</b>'+(g.role?' — '+escapeHtml(g.role):'')+(g.bonus?' <span class="ceo-quest-xp">'+escapeHtml(g.bonus)+'</span>':'')+'</span><button class="linklike danger" onclick="removeCeoGuildMember(\''+g.id+'\')">✕</button></div>';
+  });
+  html += '<button class="linklike" onclick="addCeoGuildMember()">+ Dodaj</button></div>';
+
+  html += '<div class="card"><h3 style="margin-top:0">🏳️ Frakcje</h3><div style="font-size:11px; color:var(--muted); margin-bottom:8px">Branże, w których działasz (klik zmienia status).</div>';
+  state.ceo.factions.forEach(function(f){
+    html += '<div class="ceo-quest-item" onclick="cycleCeoFactionStatus(\''+f.id+'\')"><span>'+escapeHtml(f.name)+'</span><span class="ceo-faction-status ceo-faction-'+f.status.toLowerCase()+'">'+escapeHtml(f.status)+'</span></div>';
+  });
+  html += '<button class="linklike" onclick="addCeoFaction()">+ Dodaj</button></div>';
+
+  html += '</div>';
+  return html;
+}
+function addCeoInventoryItem(){
+  var label = prompt("Nazwa zasobu/narzędzia:");
+  if(!label) return;
+  state.ceo.inventory.push(label);
+  save(); renderAll();
+}
+function removeCeoInventoryItem(idx){
+  state.ceo.inventory.splice(idx,1);
+  save(); renderAll();
+}
+function addCeoGuildMember(){
+  var name = prompt("Imię / nazwa:");
+  if(!name) return;
+  var role = prompt("Rola (np. Partner, Developer, NPC):","");
+  var bonus = prompt("Bonus (opcjonalnie, np. +10 Happiness):","");
+  state.ceo.guild.push({id:uid("gu"), name:name, role:role||"", bonus:bonus||""});
+  save(); renderAll();
+}
+function removeCeoGuildMember(id){
+  state.ceo.guild = state.ceo.guild.filter(function(g){return g.id!==id;});
+  save(); renderAll();
+}
+function addCeoFaction(){
+  var name = prompt("Nazwa branży/frakcji:");
+  if(!name) return;
+  state.ceo.factions.push({id:uid("fc"), name:name, status:"Neutral"});
+  save(); renderAll();
+}
+function cycleCeoFactionStatus(id){
+  var f = state.ceo.factions.filter(function(x){return x.id===id;})[0];
+  if(!f) return;
+  var order = ["Locked","Neutral","Friendly"];
+  var idx = order.indexOf(f.status);
+  f.status = order[(idx+1)%order.length];
+  save(); renderAll();
+}
+function ceoLiveFollowersTotal(){
+  var total = 0;
+  (state.igAccounts||[]).forEach(function(a){ if(a.stats && a.stats.length) total += a.stats[a.stats.length-1].followers||0; });
+  (state.fbAccounts||[]).forEach(function(a){ if(a.stats && a.stats.length) total += a.stats[a.stats.length-1].followers||0; });
+  return total;
+}
+function renderCeoKpi(){
+  var f = ceoCurrentMonthFinance();
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">📡 KPI — Panel dowodzenia</h3><div class="ceo-econ-grid">'+
+    '<div class="ceo-econ-tile" style="cursor:pointer" onclick="editCeoKpiField(\'leady\')"><div class="ceo-econ-label">Leady ✎</div><div class="ceo-econ-value">'+state.ceo.kpiManual.leady+'</div></div>'+
+    '<div class="ceo-econ-tile" style="cursor:pointer" onclick="editCeoKpiField(\'sprzedaz\')"><div class="ceo-econ-label">Sprzedaż ✎</div><div class="ceo-econ-value">'+state.ceo.kpiManual.sprzedaz+'</div></div>'+
+    '<div class="ceo-econ-tile"><div class="ceo-econ-label">Przychód</div><div class="ceo-econ-value">'+fmtPln(f.revenue)+'</div></div>'+
+    '<div class="ceo-econ-tile"><div class="ceo-econ-label">Klienci</div><div class="ceo-econ-value">'+ceoTotalUniqueClients()+'</div></div>'+
+    '<div class="ceo-econ-tile" style="cursor:pointer" onclick="editCeoKpiField(\'retencja\')"><div class="ceo-econ-label">Retencja ✎</div><div class="ceo-econ-value">'+state.ceo.kpiManual.retencja+'%</div></div>'+
+    '<div class="ceo-econ-tile"><div class="ceo-econ-label">Followers</div><div class="ceo-econ-value">'+ceoLiveFollowersTotal().toLocaleString("pl-PL")+'</div></div>'+
+    '<div class="ceo-econ-tile" style="cursor:pointer" onclick="editCeoKpiField(\'ruch\')"><div class="ceo-econ-label">Ruch ✎</div><div class="ceo-econ-value">'+state.ceo.kpiManual.ruch+'</div></div>'+
+    '<div class="ceo-econ-tile" style="cursor:pointer" onclick="editCeoKpiField(\'konwersja\')"><div class="ceo-econ-label">Konwersja ✎</div><div class="ceo-econ-value">'+state.ceo.kpiManual.konwersja+'%</div></div>'+
+  '</div></div>';
+  return html;
+}
+function editCeoKpiField(key){
+  var val = prompt("Nowa wartość:", state.ceo.kpiManual[key]);
+  if(val===null) return;
+  var num = parseFloat(val.replace(",","."));
+  if(isNaN(num)) return;
+  state.ceo.kpiManual[key] = num;
+  save(); renderAll();
+}
+function renderCeoTimeline(){
+  var items = state.ceo.timeline.slice().sort(function(a,b){return a.year<b.year?-1:(a.year>b.year?1:0);});
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">📜 Historia</h3>';
+  items.forEach(function(t){
+    html += '<div class="ceo-quest-item"><span><b>'+escapeHtml(t.year)+'</b> — '+escapeHtml(t.label)+'</span><button class="linklike danger" onclick="removeCeoTimelineItem(\''+t.id+'\')">✕</button></div>';
+  });
+  html += '<button class="linklike" onclick="addCeoTimelineItem()">+ Dodaj kamień milowy</button>';
+  html += '</div>';
+  return html;
+}
+function addCeoTimelineItem(){
+  var year = prompt("Rok:", String(new Date().getFullYear()));
+  if(!year) return;
+  var label = prompt("Wydarzenie:");
+  if(!label) return;
+  state.ceo.timeline.push({id:uid("tl"), year:year, label:label});
+  save(); renderAll();
+}
+function removeCeoTimelineItem(id){
+  state.ceo.timeline = state.ceo.timeline.filter(function(t){return t.id!==id;});
+  save(); renderAll();
+}
+function renderCeoRanking(){
+  var months = Object.keys(state.ceo.monthlyXpHistory).sort();
+  var best = null, bestVal = -1;
+  months.forEach(function(m){ if(state.ceo.monthlyXpHistory[m]>bestVal){ bestVal=state.ceo.monthlyXpHistory[m]; best=m; } });
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">📈 Ranking — Ty vs Ty</h3>';
+  if(!months.length){ html += '<div class="empty">Za mało danych.</div></div>'; return html; }
+  html += '<table><thead><tr><th>Miesiąc</th><th>XP</th></tr></thead><tbody>';
+  months.forEach(function(m){
+    var label = monthName(+m.split("-")[1]-1)+" "+m.split("-")[0];
+    html += '<tr'+(m===best?' style="color:var(--accent); font-weight:700"':'')+'><td>'+label+(m===best?' 🏆 najlepszy':'')+'</td><td>'+state.ceo.monthlyXpHistory[m].toLocaleString("pl-PL")+'</td></tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+var CEO_PRESTIGE_THRESHOLD = 20000;
+function renderCeoPrestige(lvl){
+  var canPrestige = lvl.xp >= CEO_PRESTIGE_THRESHOLD;
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">✨ Prestige</h3>'+
+    '<div style="font-size:12px; color:var(--muted-light); margin-bottom:10px">Po osiągnięciu ogromnego celu ('+CEO_PRESTIGE_THRESHOLD.toLocaleString("pl-PL")+' XP łącznie) możesz zrobić reset poziomu — jak w Diablo. Poziom i XP umiejętności wracają do zera, ale zostaje trwały bonus +5% do Gold za każdy poziom Prestige (obecnie: Prestige '+state.ceo.prestige+', +'+(state.ceo.prestige*5)+'% Gold).</div>'+
+    '<button class="btn'+(canPrestige?"":" secondary")+'"'+(canPrestige?"":" disabled")+' onclick="doCeoPrestige()">'+(canPrestige?"Wykonaj Prestige":"Zbierz "+(CEO_PRESTIGE_THRESHOLD-lvl.xp).toLocaleString("pl-PL")+" XP więcej")+'</button>'+
+  '</div>';
+  return html;
+}
+function doCeoPrestige(){
+  if(ceoTotalXp() < CEO_PRESTIGE_THRESHOLD) return;
+  if(!confirm("Na pewno? Twój poziom i XP umiejętności wrócą do zera, ale zyskujesz trwały bonus +5% do Gold.")) return;
+  Object.keys(CEO_SKILL_DEFS).forEach(function(k){ state.ceo.skills[k] = 0; });
+  state.ceo.prestige = (state.ceo.prestige||0)+1;
+  save(); renderAll();
 }
 
 /* ================= AGENT AI ================= */
