@@ -200,6 +200,13 @@
   .tag-Rozwoj{background:var(--rozwoj-bg); color:var(--rozwoj-text)}
   .tag-Admin{background:var(--admin-bg); color:var(--admin-text)}
   .tag-Osobiste{background:#20302a; color:#63b58a}
+  .tag-platform-facebook{background:#1b2a3a; color:#6fa3d8}
+  .tag-platform-instagram{background:#341f2e; color:#d8709e}
+  .tag-platform-tiktok{background:#232323; color:#c9c9c9}
+  .tag-platform-youtube{background:#3a1c1c; color:#e0716c}
+  .tag-stage-szkic{background:var(--admin-bg); color:var(--admin-text)}
+  .tag-stage-zaplanowany{background:var(--tool4arts-bg); color:var(--tool4arts-text)}
+  .tag-stage-opublikowany{background:#20302a; color:#63b58a}
 
   .stub-note{
     background:rgba(207,155,74,.08); border:1px solid rgba(207,155,74,.25); color:var(--accent);
@@ -701,7 +708,7 @@ function toggleRecurTaskToday(id){
   save(); renderAll();
 }
 function todayWeekdayIdx(){ return (new Date().getDay()+6)%7; }
-var postySubtab = "kanban";
+var postySubtab = "pulpit";
 var statPeriod = "miesiac"; // tylko "miesiac" lub "rok" — bez dziennego
 var statMonthVal = null;
 var statYearVal = null;
@@ -1641,11 +1648,12 @@ function sendGmailReply(email, id){
 
 /* ================= POSTY ================= */
 var postyFilter = "Wszystkie";
+var postyPlatformFilter = "Wszystkie";
 function renderPosty(el){
   setTopActions('<button class="btn" onclick="addPost()">+ Nowy post</button>');
 
   var html = '<div class="tabsw">'+
-    '<button class="'+(postySubtab==="kanban"?"active":"")+'" onclick="setPostySub(\'kanban\')">Kanban</button>'+
+    '<button class="'+(postySubtab==="pulpit"?"active":"")+'" onclick="setPostySub(\'pulpit\')">Pulpit</button>'+
     '<button class="'+(postySubtab==="kalendarz"?"active":"")+'" onclick="setPostySub(\'kalendarz\')">Kalendarz publikacji</button>'+
     '<button class="'+(postySubtab==="kategorie"?"active":"")+'" onclick="setPostySub(\'kategorie\')">Pomysły wg kategorii</button>'+
     '</div>';
@@ -1656,6 +1664,15 @@ function renderPosty(el){
     html += '<span class="chip'+(postyFilter===b?" active":"")+'" onclick="setPostyFilter(\''+b+'\')">'+b+'</span>';
   });
   html += '</div>';
+
+  if(postySubtab==="pulpit"){
+    html += '<div class="chiprow">';
+    ["Wszystkie"].concat(Object.keys(POST_PLATFORM_LABEL)).forEach(function(p){
+      var label = p==="Wszystkie" ? p : POST_PLATFORM_ICON[p]+" "+POST_PLATFORM_LABEL[p];
+      html += '<span class="chip'+(postyPlatformFilter===p?" active":"")+'" onclick="setPostyPlatformFilter(\''+p+'\')">'+label+'</span>';
+    });
+    html += '</div>';
+  }
 
   html += '<div class="ideas-input-row" style="margin-bottom:18px">'+
     '<input type="text" id="postIdeaInput" placeholder="Nowy pomysł na post / rolkę / relację...">'+
@@ -1668,28 +1685,39 @@ function renderPosty(el){
 
   if(postySubtab==="kalendarz"){ html += renderPostyKalendarz(); }
   else if(postySubtab==="kategorie"){ html += renderPostyKategorie(); }
-  else { html += renderPostyKanban(); }
+  else { html += renderPostyPulpit(); }
 
   el.innerHTML = html;
 }
-function renderPostyKanban(){
-  var stages = [["pomysl","Pomysł"],["szkic","Szkic"],["zaplanowany","Zaplanowany"],["opublikowany","Opublikowany"]];
-  var filtered = state.posts.filter(function(p){ return postyFilter==="Wszystkie" || p.brand===postyFilter; });
-  var html = '<div class="kanban">';
-  stages.forEach(function(s){
-    var items = filtered.filter(function(p){ return p.stage===s[0]; });
-    html += '<div class="kanban-col"><h4><span>'+s[1]+'</span><span>'+items.length+'</span></h4>';
-    if(!items.length){ html += '<div class="empty">Brak.</div>'; }
-    items.forEach(function(p){
-      html += '<div class="kcard" style="cursor:pointer" onclick="openPostModal({id:\''+p.id+'\'})">'+escapeHtml(p.title)+
-        '<div><span class="tag tag-'+p.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(p.brand)+'</span>'+
-        (p.platform ? ' <span class="tag">'+POST_PLATFORM_LABEL[p.platform]+'</span>' : '')+'</div>'+
-        (p.date ? '<div class="kdate">'+fmtDate(p.date)+'</div>' : '')+
-        '</div>';
-    });
-    html += '</div>';
+function renderPostyPulpit(){
+  var STAGE_ORDER = {szkic:0, zaplanowany:1, opublikowany:2};
+  var filtered = state.posts.filter(function(p){
+    if(p.stage==="pomysl") return false;
+    if(postyFilter!=="Wszystkie" && p.brand!==postyFilter) return false;
+    if(postyPlatformFilter!=="Wszystkie" && p.platform!==postyPlatformFilter) return false;
+    return true;
   });
-  html += '</div>';
+  filtered = filtered.slice().sort(function(a,b){
+    if(a.date && b.date) return a.date<b.date ? -1 : (a.date>b.date ? 1 : 0);
+    if(a.date && !b.date) return -1;
+    if(!a.date && b.date) return 1;
+    return (STAGE_ORDER[a.stage]||0) - (STAGE_ORDER[b.stage]||0);
+  });
+  if(!filtered.length){
+    return '<div class="card"><div class="empty">Brak zaplanowanych materiałów. Pomysły bez terminu znajdziesz w zakładce "Pomysły wg kategorii".</div></div>';
+  }
+  var html = '<div class="card"><div style="overflow-x:auto"><table><thead><tr>'+
+    '<th>Data</th><th>Platforma</th><th>Marka</th><th>Tytuł</th><th>Etap</th></tr></thead><tbody>';
+  filtered.forEach(function(p){
+    html += '<tr style="cursor:pointer" onclick="openPostModal({id:\''+p.id+'\'})">'+
+      '<td>'+(p.date ? fmtDate(p.date) : '<span style="color:var(--muted)">— brak daty —</span>')+'</td>'+
+      '<td>'+(p.platform ? '<span class="tag tag-platform-'+p.platform+'">'+POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]+'</span>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td><span class="tag tag-'+p.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(p.brand)+'</span></td>'+
+      '<td>'+escapeHtml(p.title)+'</td>'+
+      '<td><span class="tag tag-stage-'+p.stage+'">'+POST_STAGE_LABEL[p.stage]+'</span></td>'+
+      '</tr>';
+  });
+  html += '</tbody></table></div></div>';
   return html;
 }
 function renderPostyKalendarz(){
@@ -1754,6 +1782,7 @@ function renderPostyKategorie(){
 }
 function setPostySub(v){ postySubtab = v; renderAll(); }
 function setPostyFilter(b){ postyFilter = b; renderAll(); }
+function setPostyPlatformFilter(p){ postyPlatformFilter = p; renderAll(); }
 function addPostIdea(){
   var input = document.getElementById("postIdeaInput");
   var brandSel = document.getElementById("postIdeaBrand");
@@ -1763,6 +1792,7 @@ function addPostIdea(){
   save(); renderAll();
 }
 var POST_PLATFORM_LABEL = {facebook:"Facebook", instagram:"Instagram", tiktok:"TikTok", youtube:"YouTube"};
+var POST_PLATFORM_ICON = {facebook:"📘", instagram:"📷", tiktok:"🎵", youtube:"▶️"};
 var POST_STAGE_LABEL = {pomysl:"Pomysł", szkic:"Szkic", zaplanowany:"Zaplanowany", opublikowany:"Opublikowany"};
 function addPost(){
   openPostModal({brand: postyFilter==="Wszystkie"?"MediaDGtal":postyFilter});
