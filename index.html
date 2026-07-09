@@ -352,6 +352,33 @@
   .ig-preview-caption .linklike{font-size:12px; margin-top:4px; color:#8e8e8e}
   .ig-preview-platform{padding:0 12px 12px; display:flex; gap:6px}
 
+  .tt-preview-box{width:300px; max-width:100%; aspect-ratio:9/16; background:#000; border-radius:18px; overflow:hidden; position:relative; box-shadow:var(--shadow); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#fff}
+  .tt-preview-media{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#111}
+  .tt-preview-noimg{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#8e8e8e; font-size:12.5px; text-align:center; padding:20px}
+  .tt-preview-play{position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:52px; height:52px; border-radius:50%; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; font-size:22px; pointer-events:none}
+  .tt-preview-actions{position:absolute; right:8px; bottom:74px; display:flex; flex-direction:column; gap:16px; align-items:center; font-size:22px; text-shadow:0 1px 4px rgba(0,0,0,.6)}
+  .tt-preview-actions span{font-size:10px; font-weight:600}
+  .tt-preview-bottom{position:absolute; left:0; right:52px; bottom:0; padding:14px 12px 16px; background:linear-gradient(to top, rgba(0,0,0,.75), rgba(0,0,0,0) 90%)}
+  .tt-preview-handle{font-weight:700; font-size:13px; margin-bottom:4px}
+  .tt-preview-brokenmsg{position:absolute; inset:0; display:none; align-items:center; justify-content:center; text-align:center; padding:20px; font-size:12px; line-height:1.4; color:#ccc; background:#000}
+  .tt-preview-media.tt-preview-broken{display:none}
+  .tt-preview-wrap.tt-preview-broken .tt-preview-brokenmsg{display:flex}
+
+  .yt-preview-box{width:400px; max-width:100%; background:#fff; border-radius:14px; overflow:hidden; box-shadow:var(--shadow); color:#0f0f0f; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .yt-preview-thumbwrap{position:relative; width:100%; aspect-ratio:16/9; background:#000; display:flex; align-items:center; justify-content:center}
+  .yt-preview-thumb{width:100%; height:100%; object-fit:cover; display:block}
+  .yt-preview-noimg{color:#8e8e8e; font-size:13px; text-align:center; padding:20px}
+  .yt-preview-play{position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:0; height:0; border-top:14px solid transparent; border-bottom:14px solid transparent; border-left:22px solid rgba(255,255,255,.9); filter:drop-shadow(0 1px 3px rgba(0,0,0,.5)); pointer-events:none}
+  .yt-preview-brokenmsg{display:none; position:absolute; inset:0; align-items:center; justify-content:center; text-align:center; padding:20px; font-size:12px; line-height:1.4; color:#8e8e8e; background:#fafafa}
+  .yt-preview-thumbwrap.yt-preview-broken .yt-preview-thumb{display:none}
+  .yt-preview-thumbwrap.yt-preview-broken .yt-preview-brokenmsg{display:flex}
+  .yt-preview-body{padding:12px 14px}
+  .yt-preview-title{font-size:15px; font-weight:600; line-height:1.35; margin-bottom:8px}
+  .yt-preview-channel{display:flex; align-items:center; gap:8px; margin-bottom:10px}
+  .yt-preview-avatar{width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#dc9d6b,#d38b7d); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:11px; flex:0 0 28px}
+  .yt-preview-channel span{font-size:12px; color:#606060}
+  .yt-preview-desc{background:#f2f2f2; border-radius:10px; padding:10px 12px; font-size:12.5px; line-height:1.4; color:#0f0f0f; white-space:pre-wrap; word-break:break-word}
+
   .ideas-box{margin-top:22px}
   .ideas-input-row{display:flex; gap:10px; margin-bottom:10px}
   .idea-item{padding:9px 4px; border-bottom:1px solid var(--border); font-size:13px; color:var(--muted-light)}
@@ -1749,6 +1776,7 @@ function renderPosty(el){
     '<button class="'+(postySubtab==="zaplanowane"?"active":"")+'" onclick="setPostySub(\'zaplanowane\')">Zaplanowane</button>'+
     '<button class="'+(postySubtab==="hasla"?"active":"")+'" onclick="setPostySub(\'hasla\')">Hasła</button>'+
     '<button class="'+(postySubtab==="kategorie"?"active":"")+'" onclick="setPostySub(\'kategorie\')">Baza</button>'+
+    '<button class="'+(postySubtab==="szkic"?"active":"")+'" onclick="setPostySub(\'szkic\')">Szkic</button>'+
     '<button class="'+(postySubtab==="kosz"?"active":"")+'" onclick="setPostySub(\'kosz\')">Kosz</button>'+
     '</div>';
 
@@ -1783,6 +1811,7 @@ function renderPosty(el){
   else if(postySubtab==="zaplanowane"){ html += renderPostyZaplanowane(); }
   else if(postySubtab==="hasla"){ html += renderPostyHasla(); }
   else if(postySubtab==="kategorie"){ html += renderPostyBaza(); }
+  else if(postySubtab==="szkic"){ html += renderPostySzkic(); }
   else if(postySubtab==="kosz"){ html += renderPostyKosz(); }
   else { html += renderPostyPulpit(); }
 
@@ -1928,7 +1957,7 @@ function renderPostyZaplanowane(){
   var now = new Date();
   if(zapMonth===undefined){ zapMonth = now.getMonth(); zapYear = now.getFullYear(); }
   var items = state.posts.filter(function(p){
-    return !p.deletedAt && p.brand===postyFilter && p.stage!=="pomysl" && p.date &&
+    return !p.deletedAt && p.brand===postyFilter && (p.stage==="zaplanowany" || p.stage==="opublikowany") && p.date &&
       (postyPlatformFilter==="Wszystkie" || p.platform===postyPlatformFilter);
   });
   var byDate = {};
@@ -2039,6 +2068,7 @@ function importDriveMonthFolder(){
         var images = files.filter(function(f){ return f.mimeType.indexOf("image/")===0; })
           .sort(function(a,b){ return a.name<b.name?-1:(a.name>b.name?1:0); })
           .map(function(f){ return "https://drive.google.com/uc?export=view&id="+f.id; });
+        var videoFile = files.filter(function(f){ return f.mimeType.indexOf("video/")===0; })[0];
         var textFiles = files.filter(function(f){ return f.mimeType==="text/plain" || f.mimeType==="application/vnd.google-apps.document" || /\.txt$/i.test(f.name); });
         var fbFile = textFiles.filter(function(f){ return /fb|facebook/i.test(f.name); })[0];
         var igFile = textFiles.filter(function(f){ return /ig|insta/i.test(f.name); })[0];
@@ -2049,6 +2079,7 @@ function importDriveMonthFolder(){
         if(soloFile) textPromises.push(driveFetchTextContent(soloFile).then(function(t){ m.captionFb = t; m.captionIg = t; }));
         return Promise.all(textPromises).then(function(){
           m.images = images;
+          m.video = videoFile ? "https://drive.google.com/uc?export=view&id="+videoFile.id : null;
           m.folderName = m.folder.name;
         });
       });
@@ -2064,6 +2095,7 @@ function importDriveMonthFolder(){
           updated++;
         }
         post.images = m.images;
+        if(m.video) post.video = m.video;
         if(post.platform==="fbig") post.isCarousel = m.images.length>1;
         if(m.captionFb!=null && !post.captionFb) post.captionFb = m.captionFb;
         if(m.captionIg!=null && !post.captionIg) post.captionIg = m.captionIg;
@@ -2111,30 +2143,32 @@ function toggleCaptionExpand(){
   el.setAttribute("data-expanded", expanded ? "0" : "1");
   btn.textContent = expanded ? "Pokaż więcej" : "Pokaż mniej";
 }
-function renderPostPreviewModal(){
-  closePostPreview();
-  var p = state.posts.filter(function(x){return x.id===__previewPostId;})[0];
-  if(!p) return;
-  var isFbig = p.platform==="fbig";
-  var view = isFbig ? __previewView : "ig";
+function previewPlatformTag(p){
+  return '<div class="ig-preview-platform">'+
+    (p.platform ? '<span class="tag tag-platform-'+p.platform+'">'+POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]+'</span>' : '')+
+    '<span class="tag tag-stage-'+p.stage+'">'+POST_STAGE_LABEL[p.stage]+'</span>'+
+  '</div>';
+}
+function renderFbigPreviewBody(p){
+  var view = __previewView;
   var allImages = p.images && p.images.length ? p.images : [];
   var showImages = view==="fb" ? (p.fbImage ? [p.fbImage] : (allImages.length ? [allImages[0]] : [])) : allImages;
   if(__previewImgIdx >= showImages.length) __previewImgIdx = 0;
   var mainImg = showImages[__previewImgIdx] || null;
   var caption = view==="fb" ? (p.captionFb||"") : (p.captionIg||"");
   var initials = (p.brand||"?").slice(0,2).toUpperCase();
-  var html = '<div class="modal-overlay" id="postPreviewModal" onclick="if(event.target===this) closePostPreview()">'+
-    '<div>'+
-    '<div class="ig-preview-box">'+
-      (isFbig ? '<div class="ig-preview-toggle">'+
+  return '<div class="ig-preview-box">'+
+      '<div class="ig-preview-toggle">'+
         '<button class="'+(view==="ig"?"active":"")+'" onclick="setPreviewView(\'ig\')">📷 Instagram</button>'+
         '<button class="'+(view==="fb"?"active":"")+'" onclick="setPreviewView(\'fb\')">📘 Facebook</button>'+
-      '</div>' : '')+
+      '</div>'+
       '<div class="ig-preview-header">'+
         '<div class="ig-preview-avatar">'+escapeHtml(initials)+'</div>'+
         '<div class="ig-preview-headtext"><b>'+escapeHtml(p.brand)+'</b><span>'+(p.date?fmtDate(p.date):"brak daty")+'</span></div>'+
       '</div>'+
-      (mainImg ?
+      (p.video && view==="ig" ?
+        '<div class="ig-preview-imgwrap"><video class="ig-preview-img" src="'+escapeHtml(p.video)+'" controls></video></div>'
+        : mainImg ?
         '<div class="ig-preview-imgwrap">'+
           (showImages.length>1 ? '<button class="ig-preview-nav prev" onclick="shiftPreviewImg(-1)">‹</button>' : '')+
           '<img src="'+escapeHtml(mainImg)+'" alt="" class="ig-preview-img" onerror="this.parentElement.classList.add(\'ig-preview-broken\')">'+
@@ -2148,11 +2182,87 @@ function renderPostPreviewModal(){
         '<div class="ig-preview-caption-text" id="igPreviewCaptionText" data-expanded="0"><b>'+escapeHtml(p.brand)+'</b> '+escapeHtml(caption || p.title || "")+'</div>'+
         (caption && caption.length>140 ? '<button class="linklike" id="igPreviewCaptionToggle" onclick="toggleCaptionExpand()">Pokaż więcej</button>' : '')+
       '</div>'+
-      '<div class="ig-preview-platform">'+
-        (p.platform ? '<span class="tag tag-platform-'+p.platform+'">'+POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]+'</span>' : '')+
-        '<span class="tag tag-stage-'+p.stage+'">'+POST_STAGE_LABEL[p.stage]+'</span>'+
+      previewPlatformTag(p)+
+    '</div>';
+}
+function renderGenericPreviewBody(p){
+  var images = p.images && p.images.length ? p.images : [];
+  if(__previewImgIdx >= images.length) __previewImgIdx = 0;
+  var mainImg = images[__previewImgIdx] || null;
+  var caption = p.captionIg || p.captionFb || "";
+  var initials = (p.brand||"?").slice(0,2).toUpperCase();
+  return '<div class="ig-preview-box">'+
+      '<div class="ig-preview-header">'+
+        '<div class="ig-preview-avatar">'+escapeHtml(initials)+'</div>'+
+        '<div class="ig-preview-headtext"><b>'+escapeHtml(p.brand)+'</b><span>'+(p.date?fmtDate(p.date):"brak daty")+'</span></div>'+
+      '</div>'+
+      (p.video ?
+        '<div class="ig-preview-imgwrap"><video class="ig-preview-img" src="'+escapeHtml(p.video)+'" controls></video></div>'
+        : mainImg ?
+        '<div class="ig-preview-imgwrap">'+
+          (images.length>1 ? '<button class="ig-preview-nav prev" onclick="shiftPreviewImg(-1)">‹</button>' : '')+
+          '<img src="'+escapeHtml(mainImg)+'" alt="" class="ig-preview-img" onerror="this.parentElement.classList.add(\'ig-preview-broken\')">'+
+          (images.length>1 ? '<button class="ig-preview-nav next" onclick="shiftPreviewImg(1)">›</button>' : '')+
+          (images.length>1 ? '<div class="ig-preview-count">'+(__previewImgIdx+1)+'/'+images.length+'</div>' : '')+
+          '<div class="ig-preview-brokenmsg">Nie udało się załadować zdjęcia spod podanego linku.</div>'+
+        '</div>'
+        : '<div class="ig-preview-imgwrap ig-preview-noimg">Brak zdjęcia</div>')+
+      '<div class="ig-preview-caption">'+
+        '<div class="ig-preview-caption-text" id="igPreviewCaptionText" data-expanded="0"><b>'+escapeHtml(p.brand)+'</b> '+escapeHtml(caption || p.title || "")+'</div>'+
+        (caption && caption.length>140 ? '<button class="linklike" id="igPreviewCaptionToggle" onclick="toggleCaptionExpand()">Pokaż więcej</button>' : '')+
+      '</div>'+
+      previewPlatformTag(p)+
+    '</div>';
+}
+function renderTiktokPreviewBody(p){
+  var caption = p.captionIg || p.captionFb || p.title || "";
+  return '<div>'+
+    '<div class="tt-preview-box tt-preview-wrap">'+
+      (p.video ? '<video class="tt-preview-media" src="'+escapeHtml(p.video)+'" controls onerror="this.parentElement.classList.add(\'tt-preview-broken\')"></video>'
+        : p.images && p.images[0] ? '<img class="tt-preview-media" src="'+escapeHtml(p.images[0])+'" alt="" onerror="this.parentElement.classList.add(\'tt-preview-broken\')"><div class="tt-preview-play">▶</div>'
+        : '<div class="tt-preview-noimg">Brak wideo/zdjęcia</div>')+
+      '<div class="tt-preview-brokenmsg">Nie udało się załadować pliku spod podanego linku.</div>'+
+      '<div class="tt-preview-actions"><div>♡<div>Lubię to</div></div><div>💬<div>0</div></div><div>↗<div>Udostępnij</div></div></div>'+
+      '<div class="tt-preview-bottom">'+
+        '<div class="tt-preview-handle">@'+escapeHtml((p.brand||"").toLowerCase().replace(/[^a-z0-9]/g,""))+'</div>'+
+        '<div class="ig-preview-caption-text" id="igPreviewCaptionText" data-expanded="0" style="color:#fff">'+escapeHtml(caption)+'</div>'+
+        (caption.length>140 ? '<button class="linklike" id="igPreviewCaptionToggle" onclick="toggleCaptionExpand()" style="color:#ddd">Pokaż więcej</button>' : '')+
       '</div>'+
     '</div>'+
+    '<div style="margin-top:10px">'+previewPlatformTag(p)+'</div>'+
+    '</div>';
+}
+function renderYoutubePreviewBody(p){
+  var caption = p.captionFb || p.captionIg || "";
+  var initials = (p.brand||"?").slice(0,2).toUpperCase();
+  return '<div class="yt-preview-box">'+
+      '<div class="yt-preview-thumbwrap">'+
+        (p.video ? '<video class="yt-preview-thumb" src="'+escapeHtml(p.video)+'" controls onerror="this.parentElement.classList.add(\'yt-preview-broken\')"></video>'
+          : p.images && p.images[0] ? '<img class="yt-preview-thumb" src="'+escapeHtml(p.images[0])+'" alt="" onerror="this.parentElement.classList.add(\'yt-preview-broken\')"><div class="yt-preview-play"></div>'
+          : '<div class="yt-preview-noimg">Brak miniatury/wideo</div>')+
+        '<div class="yt-preview-brokenmsg">Nie udało się załadować pliku spod podanego linku.</div>'+
+      '</div>'+
+      '<div class="yt-preview-body">'+
+        '<div class="yt-preview-title">'+escapeHtml(p.title||"")+'</div>'+
+        '<div class="yt-preview-channel"><div class="yt-preview-avatar">'+escapeHtml(initials)+'</div><span>'+escapeHtml(p.brand)+' · '+(p.date?fmtDate(p.date):"brak daty")+'</span></div>'+
+        (caption ? '<div class="yt-preview-desc"><div class="ig-preview-caption-text" id="igPreviewCaptionText" data-expanded="0">'+escapeHtml(caption)+'</div>'+
+          (caption.length>140 ? '<button class="linklike" id="igPreviewCaptionToggle" onclick="toggleCaptionExpand()">Pokaż więcej</button>' : '')+
+        '</div>' : '')+
+        previewPlatformTag(p)+
+      '</div>'+
+    '</div>';
+}
+function renderPostPreviewModal(){
+  closePostPreview();
+  var p = state.posts.filter(function(x){return x.id===__previewPostId;})[0];
+  if(!p) return;
+  var body = p.platform==="fbig" ? renderFbigPreviewBody(p)
+    : p.platform==="tiktok" ? renderTiktokPreviewBody(p)
+    : p.platform==="youtube" ? renderYoutubePreviewBody(p)
+    : renderGenericPreviewBody(p);
+  var html = '<div class="modal-overlay" id="postPreviewModal" onclick="if(event.target===this) closePostPreview()">'+
+    '<div>'+
+    body+
     '<div class="row" style="justify-content:center; gap:8px; margin-top:14px">'+
       '<button class="btn secondary small" onclick="closePostPreview()">Zamknij</button>'+
       '<button class="btn small" onclick="closePostPreview(); openPostModal({id:\''+p.id+'\'})">Edytuj post</button>'+
@@ -2288,9 +2398,17 @@ function ideaItemHtml(p){
       (meta.length ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+meta.join(' · ')+'</div>' : '')+
     '</div>'+
     '<div style="white-space:nowrap; flex:0 0 auto">'+
+      '<button class="btn secondary small" onclick="moveIdeaToSzkic(\''+p.id+'\')">→ Szkic</button> '+
       '<button class="btn secondary small" onclick="openIdeaModal({id:\''+p.id+'\'})">Edytuj</button> '+
       '<button class="btn danger small" onclick="deleteIdea(\''+p.id+'\')">Usuń</button>'+
     '</div></div>';
+}
+function moveIdeaToSzkic(id){
+  var p = state.posts.filter(function(x){return x.id===id;})[0];
+  if(!p) return;
+  p.stage = "szkic";
+  szkicActiveId = id;
+  save(); postySubtab = "szkic"; renderAll();
 }
 function addIdeaCategory(){
   var name = prompt("Nazwa nowej kategorii (marka: "+postyFilter+"):");
@@ -2409,7 +2527,7 @@ function openPostModal(opts){
   if(opts.id){
     var existing = state.posts.filter(function(x){return x.id===opts.id;})[0];
     if(existing){ opts = {id:existing.id, title:existing.title, brand:existing.brand, platform:existing.platform||"", stage:existing.stage, date:existing.date||"",
-      captionFb:existing.captionFb||"", captionIg:existing.captionIg||"", images:(existing.images||[]).join("\n"), isCarousel:!!existing.isCarousel, fbImage:existing.fbImage||""}; }
+      captionFb:existing.captionFb||"", captionIg:existing.captionIg||"", images:(existing.images||[]).join("\n"), isCarousel:!!existing.isCarousel, fbImage:existing.fbImage||"", video:existing.video||""}; }
   }
   var isEdit = !!opts.id;
   var brandOptions = state.brands.map(function(b){
@@ -2434,6 +2552,7 @@ function openPostModal(opts){
     '<div class="field"><label>Opis na Instagramie</label><textarea id="pmCaptionIg" rows="3" placeholder="Treść publikowana pod postem na Instagramie...">'+escapeHtml(opts.captionIg||"")+'</textarea></div>'+
     '<div class="field"><label>Zdjęcia (linki, jeden na linię — pierwszy = główny)</label><textarea id="pmImages" rows="2" placeholder="https://...">'+escapeHtml(opts.images||"")+'</textarea>'+
       '<span style="font-size:11px; color:var(--muted)">Zwykły link "Udostępnij" z Google Drive (drive.google.com/file/d/...) zadziała automatycznie — plik musi mieć ustawione "Każdy, kto ma link". Z Google Zdjęć/Canva wklej bezpośredni link do pliku (kończący się np. na .jpg/.png).</span></div>'+
+    '<div class="field"><label>Wideo (link, opcjonalnie — dla rolki/filmu)</label><input type="text" id="pmVideo" value="'+escapeHtml(opts.video||"")+'" placeholder="https://..."></div>'+
     '<div class="field" id="pmCarouselWrap"><label style="display:flex; align-items:center; gap:8px; cursor:pointer">'+
       '<input type="checkbox" id="pmCarousel" onchange="updatePostModalVisibility()"'+(opts.isCarousel?" checked":"")+'> Karuzela na Instagramie (na Facebooku wrzucę tylko główne zdjęcie + cały tekst)'+
     '</label></div>'+
@@ -2480,13 +2599,14 @@ function savePostModal(){
   var images = document.getElementById("pmImages").value.split("\n").map(function(s){return normalizeImageUrl(s);}).filter(Boolean);
   var isCarousel = platform==="fbig" && document.getElementById("pmCarousel").checked;
   var fbImage = isCarousel ? normalizeImageUrl(document.getElementById("pmFbImage").value) : "";
+  var video = normalizeImageUrl(document.getElementById("pmVideo").value.trim()) || null;
   var ctx = window.__postModalCtx || {};
   if(ctx.id){
     var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
-    if(p){ p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.captionFb=captionFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; }
+    if(p){ p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.captionFb=captionFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; p.video=video; }
   } else {
     state.posts.unshift({id:uid("post"), title:title, brand:brand, stage:stage, category:null, date:date, platform:platform,
-      captionFb:captionFb, captionIg:captionIg, images:images, isCarousel:isCarousel, fbImage:fbImage});
+      captionFb:captionFb, captionIg:captionIg, images:images, isCarousel:isCarousel, fbImage:fbImage, video:video});
   }
   closePostModal();
   save(); renderAll();
@@ -2499,6 +2619,89 @@ function deletePostModal(){
   if(p) p.deletedAt = todayStr();
   closePostModal();
   save(); renderAll();
+}
+var szkicActiveId = null;
+function loadSzkicIntoBox(id){ szkicActiveId = id; renderAll(); }
+function readSzkicFieldsInto(p){
+  p.title = document.getElementById("szkTitle").value.trim() || p.title;
+  p.platform = document.getElementById("szkPlatform").value || null;
+  p.category = document.getElementById("szkCategory").value || null;
+  p.date = document.getElementById("szkDate").value || null;
+  p.captionFb = document.getElementById("szkCaptionFb").value.trim();
+  p.captionIg = document.getElementById("szkCaptionIg").value.trim();
+  p.cta = document.getElementById("szkCta").value.trim();
+  p.images = document.getElementById("szkImages").value.split("\n").map(function(s){return normalizeImageUrl(s);}).filter(Boolean);
+  p.video = normalizeImageUrl(document.getElementById("szkVideo").value.trim()) || null;
+}
+function saveSzkicBox(){
+  var p = state.posts.filter(function(x){return x.id===szkicActiveId;})[0];
+  if(!p) return;
+  readSzkicFieldsInto(p);
+  save(); renderAll();
+}
+function markSzkicReady(){
+  var p = state.posts.filter(function(x){return x.id===szkicActiveId;})[0];
+  if(!p) return;
+  readSzkicFieldsInto(p);
+  if(!p.date){ alert("Ustaw najpierw planowaną datę publikacji, zanim przeniesiesz do Zaplanowanych."); return; }
+  p.stage = "zaplanowany";
+  szkicActiveId = null;
+  save(); renderAll();
+}
+function renderPostySzkic(){
+  var items = state.posts.filter(function(p){ return !p.deletedAt && p.brand===postyFilter && p.stage==="szkic"; });
+  items.sort(function(a,b){
+    if(a.date && b.date) return a.date<b.date?-1:(a.date>b.date?1:0);
+    if(a.date && !b.date) return -1;
+    if(!a.date && b.date) return 1;
+    return 0;
+  });
+  if(szkicActiveId && !items.some(function(p){return p.id===szkicActiveId;})) szkicActiveId = null;
+  if(!szkicActiveId && items.length) szkicActiveId = items[0].id;
+  var active = items.filter(function(p){return p.id===szkicActiveId;})[0];
+
+  var html = '<div class="card" style="margin-bottom:16px">';
+  html += '<h3 style="margin:0 0 12px">Okienko robocze</h3>';
+  if(!active){
+    html += '<div class="empty">Brak szkiców. Przenieś pomysł z Bazy klikając "→ Szkic".</div>';
+  } else {
+    var platformOptions = '<option value=""'+(!active.platform?" selected":"")+'>— bez platformy —</option>'+
+      Object.keys(POST_PLATFORM_LABEL).map(function(p){
+        return '<option value="'+p+'"'+(active.platform===p?" selected":"")+'>'+POST_PLATFORM_LABEL[p]+'</option>';
+      }).join("");
+    html += '<div class="field"><label>Hook / temat</label><input type="text" id="szkTitle" value="'+escapeHtml(active.title||"")+'"></div>';
+    html += '<div class="row" style="gap:14px; flex-wrap:wrap">'+
+      '<div class="field" style="flex:1; min-width:160px"><label>Platforma</label><select id="szkPlatform">'+platformOptions+'</select></div>'+
+      '<div class="field" style="flex:1; min-width:160px"><label>Kategoria</label><select id="szkCategory">'+ideaCategoryOptionsHtml(active.brand, active.category||"")+'</select></div>'+
+      '<div class="field" style="flex:1; min-width:160px"><label>Planowana data publikacji</label><input type="date" id="szkDate" value="'+(active.date||"")+'"></div>'+
+    '</div>';
+    html += '<div class="field"><label>Opis na Facebooku</label><textarea id="szkCaptionFb" rows="4">'+escapeHtml(active.captionFb||"")+'</textarea></div>';
+    html += '<div class="field"><label>Opis na Instagramie</label><textarea id="szkCaptionIg" rows="4">'+escapeHtml(active.captionIg||"")+'</textarea></div>';
+    html += '<div class="field"><label>CTA</label><input type="text" id="szkCta" value="'+escapeHtml(active.cta||"")+'"></div>';
+    html += '<div class="field"><label>Zdjęcia (linki, jeden na linię)</label><textarea id="szkImages" rows="2">'+escapeHtml((active.images||[]).join("\n"))+'</textarea></div>';
+    html += '<div class="field"><label>Wideo (link, opcjonalnie — dla rolki/filmu)</label><input type="text" id="szkVideo" value="'+escapeHtml(active.video||"")+'"></div>';
+    html += '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:10px">'+
+      '<button class="btn danger small" onclick="deleteIdea(\''+active.id+'\')">Usuń</button>'+
+      '<button class="btn secondary small" onclick="saveSzkicBox()">Zapisz</button>'+
+      '<button class="btn small" onclick="markSzkicReady()">Gotowe → Zaplanuj</button>'+
+    '</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="card"><h3 style="margin:0 0 8px">Oczekujące</h3>';
+  if(!items.length){ html += '<div class="empty">Brak.</div>'; }
+  else {
+    html += '<div style="overflow-x:auto"><table><thead><tr><th>Temat</th><th>Data publikacji</th><th></th></tr></thead><tbody>';
+    items.forEach(function(p){
+      html += '<tr style="cursor:pointer'+(p.id===szkicActiveId?'; background:rgba(207,155,74,.08)':'')+'" onclick="loadSzkicIntoBox(\''+p.id+'\')">'+
+        '<td>'+escapeHtml(p.title)+(p.id===szkicActiveId?' <span style="color:var(--accent); font-size:11px">(edytowane)</span>':'')+'</td>'+
+        '<td>'+(p.date?fmtDate(p.date):'<span style="color:var(--muted)">brak terminu</span>')+'</td>'+
+        '<td><button class="linklike danger" onclick="event.stopPropagation(); deleteIdea(\''+p.id+'\')">Usuń</button></td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '</div>';
+  return html;
 }
 function daysLeftInTrash(deletedAt){
   return Math.max(0, 30 - Math.floor((Date.now() - new Date(deletedAt+"T00:00:00").getTime())/86400000));
