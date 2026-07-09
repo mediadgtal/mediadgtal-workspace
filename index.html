@@ -436,6 +436,13 @@
   .ceo-faction-friendly{background:#20302a; color:#63b58a}
   .ceo-faction-neutral{background:var(--admin-bg); color:var(--admin-text)}
   .ceo-faction-locked{background:rgba(209,99,111,.15); color:var(--danger)}
+  .ceo-challenge-list{margin-top:8px; padding-top:8px; border-top:1px dashed var(--border)}
+  .ceo-challenge-item{display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:11.5px; padding:4px 0; color:var(--muted-light)}
+  .ceo-challenge-item.done{color:var(--accent)}
+  .ceo-challenge-auto{color:var(--muted); font-size:10px}
+  .ceo-brand-bar{height:10px; border-radius:6px; overflow:hidden; display:flex; border:1px solid var(--border)}
+  .ceo-brand-bar-mdg{background:var(--pink); height:100%}
+  .ceo-brand-bar-t4a{background:var(--accent); height:100%}
 
   .ideas-box{margin-top:22px}
   .ideas-input-row{display:flex; gap:10px; margin-bottom:10px}
@@ -637,6 +644,114 @@ var CEO_ACHIEVEMENTS = [
   {id:"rev500k", label:"500 000 zł", desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=500000; }},
   {id:"rev1m", label:"1 000 000 zł", desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=1000000; }}
 ];
+var CEO_BRAND_ACHIEVEMENTS = {
+  MediaDGtal: [
+    {id:"mdg_client1", label:"Pierwszy klient MediaDGtal", check:function(){ return ceoTotalUniqueClients()>=1; }},
+    {id:"mdg_client10", label:"10 klientów MediaDGtal", check:function(){ return ceoTotalUniqueClients()>=10; }},
+    {id:"mdg_client50", label:"50 klientów MediaDGtal", check:function(){ return ceoTotalUniqueClients()>=50; }}
+  ],
+  tool4arts: [
+    {id:"t4a_client1", label:"Pierwszy klient Tool4Arts", check:function(){ return (state.ceo.tool4artsClientCount||0)>=1; }},
+    {id:"t4a_client10", label:"10 klientów Tool4Arts", check:function(){ return (state.ceo.tool4artsClientCount||0)>=10; }},
+    {id:"t4a_client50", label:"50 klientów Tool4Arts", check:function(){ return (state.ceo.tool4artsClientCount||0)>=50; }}
+  ]
+};
+var CEO_SKILL_MILESTONES_SEED = {
+  majatek: [
+    {level:25, label:"Śr. przychód 5 000 zł/mc w ostatnich 3 miesiącach", type:"financeAvgRevenue", months:3, target:5000},
+    {level:60, label:"Śr. przychód 15 000 zł/mc w ostatnich 3 miesiącach", type:"financeAvgRevenue", months:3, target:15000},
+    {level:100, label:"Śr. przychód 30 000 zł/mc w ostatnich 3 miesiącach", type:"financeAvgRevenue", months:3, target:30000}
+  ],
+  akcje: [
+    {level:25, label:"Portfel akcji > 10 000 zł", type:"financeField", field:"akcje", target:10000},
+    {level:60, label:"Portfel akcji > 50 000 zł", type:"financeField", field:"akcje", target:50000},
+    {level:100, label:"Portfel akcji > 150 000 zł", type:"financeField", field:"akcje", target:150000}
+  ],
+  marketing: [
+    {level:25, label:"Opublikuj 25 postów", type:"postsPublished", target:25},
+    {level:60, label:"Opublikuj 100 postów", type:"postsPublished", target:100},
+    {level:100, label:"Opublikuj 300 postów", type:"postsPublished", target:300}
+  ],
+  tool4arts: [
+    {level:25, label:"Pierwszy klient Tool4Arts", type:"manual"},
+    {level:60, label:"10 klientów Tool4Arts", type:"manual"},
+    {level:100, label:"MVP Tool4Arts gotowe i sprzedawane", type:"manual"}
+  ],
+  strategie: [
+    {level:25, label:"Spisz roczny plan strategiczny agencji", type:"manual"},
+    {level:60, label:"Zrealizuj 3 duże cele strategiczne z planu", type:"manual"},
+    {level:100, label:"Firma działa wg planu bez Twojej ciągłej ingerencji", type:"manual"}
+  ],
+  automatyzacje: [
+    {level:25, label:"5 zrealizowanych zleceń w Agent AI", type:"agentDone", target:5},
+    {level:60, label:"20 zrealizowanych zleceń w Agent AI", type:"agentDone", target:20},
+    {level:100, label:"50 zrealizowanych zleceń w Agent AI", type:"agentDone", target:50}
+  ],
+  cashflow: [
+    {level:25, label:"Dodatni cashflow 3 miesiące z rzędu", type:"financePositiveMonths", months:3},
+    {level:60, label:"Dodatni cashflow 6 miesięcy z rzędu", type:"financePositiveMonths", months:6},
+    {level:100, label:"Dodatni cashflow 12 miesięcy z rzędu", type:"financePositiveMonths", months:12}
+  ],
+  zycie: [
+    {level:25, label:"30% dni bez alkoholu/fajek w tym roku", type:"habitYearPct", matchSkill:"zycie", target:30},
+    {level:60, label:"60% dni bez alkoholu/fajek w tym roku", type:"habitYearPct", matchSkill:"zycie", target:60},
+    {level:100, label:"90% dni bez alkoholu/fajek w tym roku", type:"habitYearPct", matchSkill:"zycie", target:90}
+  ],
+  cwiczenia: [
+    {level:25, label:"30% dni treningowych w tym roku", type:"habitYearPct", matchSkill:"cwiczenia", target:30},
+    {level:60, label:"60% dni treningowych w tym roku", type:"habitYearPct", matchSkill:"cwiczenia", target:60},
+    {level:100, label:"90% dni treningowych w tym roku", type:"habitYearPct", matchSkill:"cwiczenia", target:90}
+  ],
+  sen: [
+    {level:25, label:"30% dni z dobrym snem w tym roku", type:"habitYearPct", matchSkill:"sen", target:30},
+    {level:60, label:"60% dni z dobrym snem w tym roku", type:"habitYearPct", matchSkill:"sen", target:60},
+    {level:100, label:"90% dni z dobrym snem w tym roku", type:"habitYearPct", matchSkill:"sen", target:90}
+  ],
+  odzywianie: [
+    {level:25, label:"30% dni z dobrym odżywianiem w tym roku", type:"habitYearPct", matchSkill:"odzywianie", target:30},
+    {level:60, label:"60% dni z dobrym odżywianiem w tym roku", type:"habitYearPct", matchSkill:"odzywianie", target:60},
+    {level:100, label:"90% dni z dobrym odżywianiem w tym roku", type:"habitYearPct", matchSkill:"odzywianie", target:90}
+  ],
+  mental: [
+    {level:25, label:"30% dni z medytacją w tym roku", type:"habitYearPct", matchSkill:"mental", target:30},
+    {level:60, label:"60% dni z medytacją w tym roku", type:"habitYearPct", matchSkill:"mental", target:60},
+    {level:100, label:"90% dni z medytacją w tym roku", type:"habitYearPct", matchSkill:"mental", target:90}
+  ],
+  wiedza: [
+    {level:25, label:"Przeczytaj 3 książki branżowe", type:"manual"},
+    {level:60, label:"Przeczytaj 10 książek branżowych", type:"manual"},
+    {level:100, label:"Przeczytaj 25 książek branżowych", type:"manual"}
+  ],
+  komunikacja: [
+    {level:25, label:"Wystąp publicznie / nagraj webinar", type:"manual"},
+    {level:60, label:"Zbuduj rozpoznawalny personal brand w branży", type:"manual"},
+    {level:100, label:"Zapraszany jako ekspert/prelegent", type:"manual"}
+  ],
+  angielski: [
+    {level:25, label:"Swobodna rozmowa biznesowa po angielsku", type:"manual"},
+    {level:60, label:"Prowadzisz sprzedaż/negocjacje po angielsku", type:"manual"},
+    {level:100, label:"Pełna płynność, obsługujesz klientów zagranicznych", type:"manual"}
+  ],
+  rodzicielstwo: [
+    {level:25, label:"Regularny, chroniony czas rodzinny co tydzień", type:"manual"},
+    {level:60, label:"Balans praca/rodzina utrzymany przez 3 miesiące", type:"manual"},
+    {level:100, label:"Wzorcowy balans praca/rodzina na stałe", type:"manual"}
+  ],
+  zwiazek: [
+    {level:25, label:"Regularne randki / wspólny czas z Martą co tydzień", type:"manual"},
+    {level:60, label:"Wspólnie zrealizowany duży cel/plan", type:"manual"},
+    {level:100, label:"Związek jako fundament, nie ofiara biznesu", type:"manual"}
+  ]
+};
+function ceoBuildDefaultMilestones(){
+  var out = {};
+  Object.keys(CEO_SKILL_MILESTONES_SEED).forEach(function(k){
+    out[k] = CEO_SKILL_MILESTONES_SEED[k].map(function(m){
+      return {id:uid("ms"), level:m.level, label:m.label, type:m.type, target:m.target, months:m.months, field:m.field, matchSkill:m.matchSkill, done:false};
+    });
+  });
+  return out;
+}
 var WEEKDAYS_FULL = ["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
 var WEEKDAYS_SHORT = ["PON","WT","ŚR","CZW","PT","SOB","ND"];
 var HABIT_MONTH_ABBR = ["Sty","Lut","Mar","Kwi","Maj","Cze","Lip","Sie","Wrz","Paź","Lis","Gru"];
@@ -770,6 +885,39 @@ function migrateState(s){
     if(c.prestige==null) c.prestige = 0;
     if(c.streak==null) c.streak = 0;
     if(c.lastActiveDate===undefined) c.lastActiveDate = null;
+    if(!c.skillMilestones) c.skillMilestones = {};
+    Object.keys(CEO_SKILL_MILESTONES_SEED).forEach(function(k){
+      if(!c.skillMilestones[k] || !c.skillMilestones[k].length){
+        c.skillMilestones[k] = CEO_SKILL_MILESTONES_SEED[k].map(function(m){
+          return {id:uid("ms"), level:m.level, label:m.label, type:m.type, target:m.target, months:m.months, field:m.field, matchSkill:m.matchSkill, done:false};
+        });
+      }
+    });
+    if(c.tool4artsClientCount==null) c.tool4artsClientCount = 0;
+    if(c.rewardBudgetPct==null) c.rewardBudgetPct = 10;
+    if(!c.rewardLog) c.rewardLog = [];
+    c.rewards.forEach(function(r){ if(r.costPln==null) r.costPln = 0; if(r.brand===undefined) r.brand = null; });
+    if(!c.ceoResetAug2026){
+      c.ceoResetAug2026 = true;
+      Object.keys(CEO_SKILL_DEFS).forEach(function(k){ c.skills[k] = 0; });
+      c.gold = 0;
+      c.streak = 0;
+      c.lastActiveDate = null;
+      c.prestige = 0;
+      c.achievementsUnlocked = [];
+      c.claimedHabitThresholds = {};
+      c.epicQuests = [];
+      c.sideQuests.forEach(function(q){ q.done = false; });
+      c.bonusQuests.forEach(function(q){ q.doneToday = false; q.lastDoneDate = null; });
+      c.talentUnlocked = {};
+      c.monthlyXpHistory = {};
+      c.bosses = {};
+      c.tool4artsClientCount = 0;
+      c.rewardLog = [];
+      Object.keys(c.skillMilestones).forEach(function(k){
+        c.skillMilestones[k].forEach(function(m){ if(m.type==="manual") m.done = false; });
+      });
+    }
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1165,9 +1313,9 @@ function defaultState(){
     achievementsUnlocked: [],
     claimedHabitThresholds: {},
     rewards: [
-      {id:uid("rw"), label:"Wieczór gier / relaksu bez wyrzutów sumienia", cost:200},
-      {id:uid("rw"), label:"Nowy sprzęt do treningu", cost:1000},
-      {id:uid("rw"), label:"Kolacja w dobrej restauracji z Martą", cost:600}
+      {id:uid("rw"), label:"Wieczór gier / relaksu bez wyrzutów sumienia", cost:200, costPln:0, brand:null},
+      {id:uid("rw"), label:"Nowy sprzęt do treningu", cost:1000, costPln:500, brand:null},
+      {id:uid("rw"), label:"Kolacja w dobrej restauracji z Martą", cost:600, costPln:300, brand:null}
     ],
     finance: {akcje:8000, gotowka:90000},
     bosses: {},
@@ -1200,9 +1348,15 @@ function defaultState(){
     monthlyXpHistory: {},
     prestige: 0,
     streak: 0,
-    lastActiveDate: null
+    lastActiveDate: null,
+    skillMilestones: ceoBuildDefaultMilestones(),
+    tool4artsClientCount: 0,
+    rewardBudgetPct: 10,
+    rewardLog: [],
+    ceoResetAug2026: true
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
+  s.ceo.rewards.forEach(function(r){ if(r.costPln==null) r.costPln = 0; if(r.brand===undefined) r.brand = null; });
 
   s.hasla = [];
   syncHaslaFromContentCalendar(s);
@@ -4298,10 +4452,45 @@ function ceoCharLevelInfo(){
   var perLevel = 1000;
   return {level: Math.floor(xp/perLevel)+1, xp:xp, xpInLevel: xp%perLevel, xpForNext: perLevel};
 }
+function ceoMilestoneAchieved(m){
+  if(m.type==="manual") return !!m.done;
+  if(m.type==="financeAvgRevenue"){
+    var months = (state.finance||[]).slice(-m.months);
+    if(months.length<m.months) return false;
+    var avg = months.reduce(function(s,f){return s+(f.revenue||0);},0)/months.length;
+    return avg>=m.target;
+  }
+  if(m.type==="financeField"){
+    return (state.ceo.finance[m.field]||0) >= m.target;
+  }
+  if(m.type==="financePositiveMonths"){
+    var months2 = (state.finance||[]).slice(-m.months);
+    if(months2.length<m.months) return false;
+    return months2.every(function(f){ return (f.revenue||0)-(f.bizCost||0)-(f.personalCost||0) > 0; });
+  }
+  if(m.type==="postsPublished"){
+    return state.posts.filter(function(p){return p.stage==="opublikowany" && !p.deletedAt;}).length >= m.target;
+  }
+  if(m.type==="agentDone"){
+    return state.agentRequests.filter(function(r){return r.status==="gotowe";}).length >= m.target;
+  }
+  if(m.type==="habitYearPct"){
+    var yr = String(new Date().getFullYear());
+    var habit = state.habits.filter(function(h){return ceoHabitMapping(h.name).skill===m.matchSkill;})[0];
+    if(!habit) return false;
+    return habitYearStats(habit, yr).pct >= m.target;
+  }
+  return false;
+}
+function ceoSkillMilestoneLevel(key){
+  var list = state.ceo.skillMilestones[key] || [];
+  var lvl = 0;
+  list.forEach(function(m){ if(ceoMilestoneAchieved(m) && m.level>lvl) lvl = m.level; });
+  return Math.min(100, lvl);
+}
 function ceoSkillLevelInfo(key){
   var xp = state.ceo.skills[key]||0;
-  var perLevel = 200;
-  return {level: Math.floor(xp/perLevel)+1, xp:xp, xpInLevel: xp%perLevel, xpForNext: perLevel};
+  return {level: ceoSkillMilestoneLevel(key), xp:xp, maxLevel:100};
 }
 function ceoRank(level){
   var r = CEO_RANKS[0].name;
@@ -4388,7 +4577,45 @@ function ceoCheckAchievements(){
       changed = true;
     }
   });
+  Object.keys(CEO_BRAND_ACHIEVEMENTS).forEach(function(brand){
+    CEO_BRAND_ACHIEVEMENTS[brand].forEach(function(a){
+      if(state.ceo.achievementsUnlocked.indexOf(a.id)===-1 && a.check()){
+        state.ceo.achievementsUnlocked.push(a.id);
+        changed = true;
+      }
+    });
+  });
   if(changed) save();
+}
+function ceoAdjustTool4artsClients(delta){
+  state.ceo.tool4artsClientCount = Math.max(0, (state.ceo.tool4artsClientCount||0)+delta);
+  ceoCheckAchievements();
+  save(); renderAll();
+}
+function renderCeoBrandTracks(){
+  var mdgXp = state.ceo.skills.marketing||0;
+  var t4aXp = state.ceo.skills.tool4arts||0;
+  var total = mdgXp+t4aXp;
+  var mdgPct = total ? Math.round(mdgXp/total*100) : 50;
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🏢 MediaDGtal vs Tool4Arts</h3>'+
+    '<div class="ceo-brand-bar"><div class="ceo-brand-bar-mdg" style="width:'+mdgPct+'%"></div><div class="ceo-brand-bar-t4a" style="width:'+(100-mdgPct)+'%"></div></div>'+
+    '<div class="row" style="justify-content:space-between; font-size:11px; color:var(--muted); margin-top:4px"><span>MediaDGtal — '+mdgXp+' XP</span><span>Tool4Arts — '+t4aXp+' XP</span></div>';
+
+  html += '<div class="ceo-quest-cols" style="margin-top:14px">';
+  html += '<div><h4>MediaDGtal — klienci: '+ceoTotalUniqueClients()+'</h4>';
+  CEO_BRAND_ACHIEVEMENTS.MediaDGtal.forEach(function(a){
+    var unlocked = state.ceo.achievementsUnlocked.indexOf(a.id)!==-1;
+    html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?"🏆":"🔒")+' '+escapeHtml(a.label)+'</span></div>';
+  });
+  html += '</div>';
+  html += '<div><h4>Tool4Arts — klienci: '+(state.ceo.tool4artsClientCount||0)+' <button class="linklike" onclick="ceoAdjustTool4artsClients(1)">+1</button> <button class="linklike" onclick="ceoAdjustTool4artsClients(-1)">-1</button></h4>';
+  CEO_BRAND_ACHIEVEMENTS.tool4arts.forEach(function(a){
+    var unlocked = state.ceo.achievementsUnlocked.indexOf(a.id)!==-1;
+    html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?"🏆":"🔒")+' '+escapeHtml(a.label)+'</span></div>';
+  });
+  html += '</div>';
+  html += '</div></div>';
+  return html;
 }
 function ceoCurrentMonthFinance(){
   var ym = todayStr().slice(0,7);
@@ -4503,6 +4730,10 @@ function completeCeoEpicTemplate(idx){
   if(!confirm('Zaliczyć "'+t.label+'" (+'+t.xp+' XP)?')) return;
   state.ceo.epicQuests.unshift({id:uid("eq"), label:t.label, xp:t.xp, skill:t.skill, date:todayStr()});
   addCeoXp(t.skill, t.xp);
+  if(t.skill==="tool4arts"){
+    state.ceo.tool4artsClientCount = (state.ceo.tool4artsClientCount||0)+1;
+    ceoCheckAchievements();
+  }
   renderAll();
 }
 function editCeoFinanceField(key){
@@ -4513,23 +4744,65 @@ function editCeoFinanceField(key){
   state.ceo.finance[key] = num;
   save(); renderAll();
 }
+function ceoRewardBudgetPln(){
+  var recent = (state.finance||[]).slice(-1);
+  var revenue = recent.length ? (recent[0].revenue||0) : 0;
+  return Math.round(revenue * (state.ceo.rewardBudgetPct||10) / 100);
+}
+function ceoRewardsSpentThisMonthPln(){
+  var ym = todayStr().slice(0,7);
+  return (state.ceo.rewardLog||[]).filter(function(r){ return r.date && r.date.slice(0,7)===ym; }).reduce(function(s,r){return s+(r.costPln||0);},0);
+}
 function addCeoReward(){
   var label = prompt("Nazwa nagrody:");
   if(!label) return;
   var cost = parseInt(prompt("Koszt w Gold:","200"),10)||100;
-  state.ceo.rewards.push({id:uid("rw"), label:label, cost:cost});
+  var costPln = parseFloat((prompt("Realny koszt w zł (opcjonalnie, wpływa na budżet nagród):","0")||"0").replace(",","."))||0;
+  var brandStr = (prompt('Dla której marki? Wpisz nazwę (dostępne: '+state.brands.join(", ")+") albo zostaw puste dla wspólnej.","")||"").trim();
+  state.ceo.rewards.push({id:uid("rw"), label:label, cost:cost, costPln:costPln, brand:brandStr||null});
+  save(); renderAll();
+}
+function editCeoReward(id){
+  var r = state.ceo.rewards.filter(function(x){return x.id===id;})[0];
+  if(!r) return;
+  var label = prompt("Nazwa nagrody:", r.label);
+  if(label===null) return;
+  var costStr = prompt("Koszt w Gold:", r.cost);
+  var costPlnStr = prompt("Realny koszt w zł:", r.costPln||0);
+  var brandStr = prompt('Marka (puste = wspólna). Dostępne: '+state.brands.join(", "), r.brand||"");
+  r.label = label;
+  var cost = parseInt(costStr,10); if(!isNaN(cost)) r.cost = cost;
+  var costPln = parseFloat((costPlnStr||"0").replace(",",".")); if(!isNaN(costPln)) r.costPln = costPln;
+  r.brand = (brandStr||"").trim() || null;
   save(); renderAll();
 }
 function deleteCeoReward(id){
   state.ceo.rewards = state.ceo.rewards.filter(function(r){return r.id!==id;});
   save(); renderAll();
 }
+function editCeoRewardBudgetPct(){
+  var val = prompt("Ile % przychodu ostatniego miesiąca ma iść na budżet nagród?", state.ceo.rewardBudgetPct||10);
+  if(val===null) return;
+  var num = parseFloat(val.replace(",","."));
+  if(isNaN(num)) return;
+  state.ceo.rewardBudgetPct = num;
+  save(); renderAll();
+}
 function redeemCeoReward(id){
   var r = state.ceo.rewards.filter(function(x){return x.id===id;})[0];
   if(!r) return;
   if(state.ceo.gold<r.cost){ alert("Za mało Gold."); return; }
-  if(!confirm('Odebrać "'+r.label+'" za '+r.cost+' Gold?')) return;
+  var budget = ceoRewardBudgetPln();
+  var spent = ceoRewardsSpentThisMonthPln();
+  var remaining = budget - spent;
+  var msg = 'Odebrać "'+r.label+'" za '+r.cost+' Gold'+(r.costPln?' ('+fmtPln(r.costPln)+')':'')+'?';
+  if(r.costPln && r.costPln>remaining){
+    msg += '\n\nUwaga: to przekracza pozostały budżet nagród w tym miesiącu ('+fmtPln(Math.max(0,remaining))+' z '+fmtPln(budget)+').';
+  }
+  if(!confirm(msg)) return;
   state.ceo.gold -= r.cost;
+  if(!state.ceo.rewardLog) state.ceo.rewardLog = [];
+  state.ceo.rewardLog.push({id:uid("rl"), rewardId:r.id, label:r.label, costPln:r.costPln||0, date:todayStr()});
   save(); renderAll();
 }
 
@@ -4562,6 +4835,7 @@ function renderCEO(el){
   html += renderCeoQuests();
   html += renderCeoEpicQuests();
   html += renderCeoAchievements();
+  html += renderCeoBrandTracks();
   html += renderCeoPrestige(lvl);
   html += renderCeoKpi();
   html += renderCeoEconomy();
@@ -4571,6 +4845,62 @@ function renderCEO(el){
 
   el.innerHTML = html;
 }
+var ceoSkillChallengesOpen = {};
+function toggleCeoSkillChallenges(key){
+  ceoSkillChallengesOpen[key] = !ceoSkillChallengesOpen[key];
+  renderAll();
+}
+function renderCeoSkillChallenges(key){
+  var list = (state.ceo.skillMilestones[key]||[]).slice().sort(function(a,b){return a.level-b.level;});
+  var html = '<div class="ceo-challenge-list">';
+  if(!list.length){ html += '<div class="empty" style="padding:4px 0">Brak wyzwań.</div>'; }
+  list.forEach(function(m){
+    var achieved = ceoMilestoneAchieved(m);
+    var clickable = m.type==="manual";
+    html += '<div class="ceo-challenge-item'+(achieved?" done":"")+'">'+
+      '<span'+(clickable?' onclick="toggleCeoMilestoneManual(\''+key+'\',\''+m.id+'\')" style="cursor:pointer"':'')+'>'+
+        (achieved?"✅":"⬜")+' Lv.'+m.level+' — '+escapeHtml(m.label)+(!clickable?' <span class="ceo-challenge-auto">(auto)</span>':'')+
+      '</span>'+
+      '<span style="white-space:nowrap"><button class="linklike" onclick="editCeoMilestone(\''+key+'\',\''+m.id+'\')">✎</button> <button class="linklike danger" onclick="deleteCeoMilestone(\''+key+'\',\''+m.id+'\')">✕</button></span>'+
+    '</div>';
+  });
+  html += '<button class="linklike" style="margin-top:4px" onclick="addCeoMilestone(\''+key+'\')">+ Dodaj wyzwanie</button>';
+  html += '</div>';
+  return html;
+}
+function toggleCeoMilestoneManual(key, id){
+  var m = (state.ceo.skillMilestones[key]||[]).filter(function(x){return x.id===id;})[0];
+  if(!m || m.type!=="manual") return;
+  m.done = !m.done;
+  save(); renderAll();
+}
+function addCeoMilestone(key){
+  var level = parseInt(prompt("Na jaki poziom (1-100) wskoczy ta umiejętność po zaliczeniu?","25"),10);
+  if(!level || level<1 || level>100) return;
+  var label = prompt("Opis wyzwania:");
+  if(!label) return;
+  if(!state.ceo.skillMilestones[key]) state.ceo.skillMilestones[key] = [];
+  state.ceo.skillMilestones[key].push({id:uid("ms"), level:level, label:label, type:"manual", done:false});
+  ceoSkillChallengesOpen[key] = true;
+  save(); renderAll();
+}
+function editCeoMilestone(key, id){
+  var m = (state.ceo.skillMilestones[key]||[]).filter(function(x){return x.id===id;})[0];
+  if(!m) return;
+  var label = prompt("Opis wyzwania:", m.label);
+  if(label===null) return;
+  var level = parseInt(prompt("Poziom (1-100):", m.level),10);
+  m.label = label;
+  if(level>=1 && level<=100) m.level = level;
+  ceoSkillChallengesOpen[key] = true;
+  save(); renderAll();
+}
+function deleteCeoMilestone(key, id){
+  if(!confirm("Usunąć to wyzwanie?")) return;
+  state.ceo.skillMilestones[key] = (state.ceo.skillMilestones[key]||[]).filter(function(m){return m.id!==id;});
+  ceoSkillChallengesOpen[key] = true;
+  save(); renderAll();
+}
 function renderCeoSkills(){
   var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">Umiejętności</h3>';
   CEO_CAT_ORDER.forEach(function(cat){
@@ -4578,10 +4908,13 @@ function renderCeoSkills(){
     Object.keys(CEO_SKILL_DEFS).filter(function(k){return CEO_SKILL_DEFS[k].cat===cat;}).forEach(function(k){
       var def = CEO_SKILL_DEFS[k];
       var info = ceoSkillLevelInfo(k);
+      var challengeCount = (state.ceo.skillMilestones[k]||[]).length;
       html += '<div class="ceo-skill-card">'+
-        '<div class="ceo-skill-head"><span>'+def.icon+' '+def.label+'</span><span class="ceo-skill-lvl">Lv.'+info.level+'</span></div>'+
-        '<div class="ceo-xpbar small"><div class="ceo-xpbar-fill" style="width:'+Math.round(info.xpInLevel/info.xpForNext*100)+'%"></div></div>'+
-        '<div class="ceo-skill-xp">'+info.xpInLevel+' / '+info.xpForNext+' XP <button class="linklike" onclick="promptCeoManualXp(\''+k+'\')">+XP</button></div>'+
+        '<div class="ceo-skill-head"><span>'+def.icon+' '+def.label+'</span><span class="ceo-skill-lvl">Lv.'+info.level+'/100</span></div>'+
+        '<div class="ceo-xpbar small"><div class="ceo-xpbar-fill" style="width:'+info.level+'%"></div></div>'+
+        '<div class="ceo-skill-xp">XP aktywności: '+info.xp+' <button class="linklike" onclick="promptCeoManualXp(\''+k+'\')">+XP</button></div>'+
+        '<button class="linklike" style="margin-top:4px" onclick="toggleCeoSkillChallenges(\''+k+'\')">Wyzwania ('+challengeCount+')'+(ceoSkillChallengesOpen[k]?" ▲":" ▼")+'</button>'+
+        (ceoSkillChallengesOpen[k] ? renderCeoSkillChallenges(k) : '')+
       '</div>';
     });
     html += '</div>';
@@ -4702,13 +5035,17 @@ function renderCeoEconomy(){
     '<div class="ceo-econ-tile" style="cursor:pointer" onclick="editCeoFinanceField(\'akcje\')"><div class="ceo-econ-label">Akcje ✎</div><div class="ceo-econ-value">'+fmtPln(state.ceo.finance.akcje)+'</div></div>'+
     '<div class="ceo-econ-tile" style="cursor:pointer" onclick="editCeoFinanceField(\'gotowka\')"><div class="ceo-econ-label">Gotówka ✎</div><div class="ceo-econ-value">'+fmtPln(state.ceo.finance.gotowka)+'</div></div>'+
   '</div>';
+  var budget = ceoRewardBudgetPln();
+  var spent = ceoRewardsSpentThisMonthPln();
   html += '<h4 style="margin:16px 0 8px">Sklep z nagrodami</h4>';
+  html += '<div style="font-size:11.5px; color:var(--muted); margin-bottom:10px">Budżet nagród w tym miesiącu: '+fmtPln(budget)+' ('+(state.ceo.rewardBudgetPct||10)+'% z przychodu ostatniego miesiąca) <button class="linklike" onclick="editCeoRewardBudgetPct()">✎</button><br>Wydane: '+fmtPln(spent)+' · Zostało: '+fmtPln(Math.max(0,budget-spent))+'</div>';
   if(!state.ceo.rewards.length){ html += '<div class="empty">Brak nagród.</div>'; }
   state.ceo.rewards.forEach(function(r){
     var canAfford = state.ceo.gold>=r.cost;
-    html += '<div class="ceo-quest-item"><span>'+escapeHtml(r.label)+'</span>'+
-      '<span class="ceo-quest-xp">🪙 '+r.cost+'</span>'+
+    html += '<div class="ceo-quest-item"><span>'+escapeHtml(r.label)+(r.brand?' <span class="tag tag-'+r.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(r.brand)+'</span>':'')+'</span>'+
+      '<span class="ceo-quest-xp">🪙 '+r.cost+(r.costPln?' · '+fmtPln(r.costPln):'')+'</span>'+
       '<button class="btn secondary small"'+(canAfford?"":" disabled")+' onclick="redeemCeoReward(\''+r.id+'\')">Odbierz</button>'+
+      '<button class="linklike" onclick="editCeoReward(\''+r.id+'\')">✎</button>'+
       '<button class="linklike danger" onclick="deleteCeoReward(\''+r.id+'\')">✕</button></div>';
   });
   html += '<button class="linklike" onclick="addCeoReward()">+ Dodaj nagrodę</button>';
@@ -4719,8 +5056,8 @@ function renderCeoEconomy(){
 function ceoWeakestSkill(){
   var weakest = null, min = Infinity;
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){
-    var xp = state.ceo.skills[k]||0;
-    if(xp<min){ min=xp; weakest=k; }
+    var lvl = ceoSkillMilestoneLevel(k);
+    if(lvl<min){ min=lvl; weakest=k; }
   });
   return weakest;
 }
