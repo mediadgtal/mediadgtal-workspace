@@ -322,11 +322,14 @@
   .cal-agenda-row.today .cal-agenda-num{color:var(--accent)}
   .cal-agenda-events{flex:1; display:flex; flex-direction:column; gap:5px; min-width:0}
 
-  .modal-overlay{position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:20px}
+  .modal-overlay{position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:20px; overflow-y:auto}
   .modal-box{width:360px; max-width:100%}
   .modal-box h3{margin:0 0 16px}
 
   .ig-preview-box{width:380px; max-width:100%; background:#fff; border-radius:14px; overflow:hidden; box-shadow:var(--shadow); color:#262626; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .ig-preview-toggle{display:flex; border-bottom:1px solid #efefef}
+  .ig-preview-toggle button{flex:1; padding:10px; border:none; background:transparent; font-size:12.5px; font-weight:600; color:#8e8e8e; cursor:pointer}
+  .ig-preview-toggle button.active{color:#262626; border-bottom:2px solid #262626; margin-bottom:-1px}
   .ig-preview-header{display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #efefef}
   .ig-preview-avatar{width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#dc9d6b,#d38b7d); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:12px; flex:0 0 32px}
   .ig-preview-headtext{flex:1; display:flex; flex-direction:column; line-height:1.25}
@@ -334,13 +337,19 @@
   .ig-preview-headtext span{font-size:11px; color:#8e8e8e}
   .ig-preview-imgwrap{position:relative; width:100%; aspect-ratio:1/1; background:#000; display:flex; align-items:center; justify-content:center}
   .ig-preview-img{width:100%; height:100%; object-fit:cover; display:block}
-  .ig-preview-noimg{color:#8e8e8e; font-size:13px; background:#fafafa}
+  .ig-preview-noimg{color:#8e8e8e; font-size:13px; background:#fafafa; text-align:center; padding:20px}
+  .ig-preview-imgwrap.ig-preview-broken .ig-preview-img{display:none}
+  .ig-preview-brokenmsg{display:none; position:absolute; inset:0; align-items:center; justify-content:center; text-align:center; padding:20px; font-size:12px; line-height:1.4; color:#8e8e8e; background:#fafafa}
+  .ig-preview-imgwrap.ig-preview-broken .ig-preview-brokenmsg{display:flex}
   .ig-preview-count{position:absolute; top:8px; right:10px; background:rgba(0,0,0,.55); color:#fff; font-size:10.5px; padding:2px 8px; border-radius:999px}
   .ig-preview-nav{position:absolute; top:50%; transform:translateY(-50%); background:rgba(255,255,255,.85); border:none; width:26px; height:26px; border-radius:50%; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#262626}
   .ig-preview-nav.prev{left:8px}
   .ig-preview-nav.next{right:8px}
   .ig-preview-actions{padding:10px 12px 2px; font-size:19px; letter-spacing:10px; color:#262626}
-  .ig-preview-caption{padding:6px 12px 10px; font-size:13px; line-height:1.4; white-space:pre-wrap; word-break:break-word}
+  .ig-preview-caption{padding:6px 12px 10px}
+  .ig-preview-caption-text{font-size:13px; line-height:1.4; white-space:pre-wrap; word-break:break-word; max-height:4.2em; overflow:hidden}
+  .ig-preview-caption-text[data-expanded="1"]{max-height:none}
+  .ig-preview-caption .linklike{font-size:12px; margin-top:4px; color:#8e8e8e}
   .ig-preview-platform{padding:0 12px 12px; display:flex; gap:6px}
 
   .ideas-box{margin-top:22px}
@@ -467,10 +476,11 @@ var SOCIAL_TILE_ICON_SVG = {
   facebook: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
   instagram: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/></svg>',
   tiktok: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v10.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M14 7c1.5 1.5 3 2 5 2"/></svg>',
-  youtube: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="4"/><polygon points="10 9 16 12 10 15" fill="currentColor" stroke="none"/></svg>'
+  youtube: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="4"/><polygon points="10 9 16 12 10 15" fill="currentColor" stroke="none"/></svg>',
+  fbig: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/></svg>'
 };
 var SOCIAL_PLATFORM_LABEL = {facebook:"Facebook", instagram:"Instagram", tiktok:"TikTok", youtube:"YouTube"};
-var SOCIAL_PLATFORM_COLOR = {facebook:"#1877F2", instagram:"#C13584", tiktok:"#000000", youtube:"#FF0000"};
+var SOCIAL_PLATFORM_COLOR = {facebook:"#1877F2", instagram:"#C13584", tiktok:"#000000", youtube:"#FF0000", fbig:"#a58fe0"};
 var CATEGORIES = ["MediaDGtal","tool4arts","Rozwoj","Admin"];
 var CATEGORY_LABEL = {MediaDGtal:"MediaDGtal", tool4arts:"tool4arts", Rozwoj:"Rozwój", Admin:"Admin"};
 var WEEKDAYS_FULL = ["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
@@ -547,6 +557,13 @@ function migrateState(s){
       return new Date(t.deletedAt+"T00:00:00").getTime() >= cutoff;
     });
   }
+  (function(){
+    var cutoff = Date.now() - 30*86400000;
+    var notExpired = function(x){ return !x.deletedAt || new Date(x.deletedAt+"T00:00:00").getTime() >= cutoff; };
+    if(s.posts) s.posts = s.posts.filter(notExpired);
+    if(s.contentCalendar) s.contentCalendar = s.contentCalendar.filter(notExpired);
+    if(s.hasla) s.hasla = s.hasla.filter(notExpired);
+  })();
   if(!s.socialStats) s.socialStats = {};
   ["MediaDGtal","tool4arts"].forEach(function(acc){
     if(!s.socialStats[acc]) s.socialStats[acc] = {};
@@ -567,6 +584,11 @@ function migrateState(s){
   syncHaslaFromContentCalendar(s);
   (s.posts||[]).forEach(function(p){
     if(p.platform==="facebook" || p.platform==="instagram") p.platform = "fbig";
+    if(p.caption!=null && p.captionFb==null && p.captionIg==null){
+      p.captionFb = p.caption;
+      p.captionIg = p.caption;
+    }
+    delete p.caption;
   });
   return s;
 }
@@ -1156,9 +1178,9 @@ function renderDashboard(el){
   el.innerHTML = html;
   loadWeather();
 }
-var CONTENT_TILES = [["facebook","FB posty"],["instagram","IG posty"],["tiktok","TikTok posty"],["youtube","YT filmy"]];
+var CONTENT_TILES = [["fbig","FB/IG posty"],["tiktok","TikTok posty"],["youtube","YT filmy"]];
 function computeContentStats(platform){
-  var posts = state.posts.filter(function(p){ return p.platform===platform; });
+  var posts = state.posts.filter(function(p){ return p.platform===platform && !p.deletedAt; });
   var published = posts.filter(function(p){ return p.stage==="opublikowany"; }).length;
   var planned = posts.filter(function(p){ return p.stage==="zaplanowany"; }).length;
   return {published:published, planned:planned, total:published+planned};
@@ -1704,7 +1726,7 @@ function addBrand(){
 }
 function renderPosty(el){
   ensurePostyFilter();
-  setTopActions('<button class="btn" onclick="addPost()">+ Nowy post</button>');
+  setTopActions('');
 
   var html = '<div class="tabsw">'+
     '<button class="'+(postySubtab==="pulpit"?"active":"")+'" onclick="setPostySub(\'pulpit\')">Pulpit</button>'+
@@ -1712,6 +1734,7 @@ function renderPosty(el){
     '<button class="'+(postySubtab==="zaplanowane"?"active":"")+'" onclick="setPostySub(\'zaplanowane\')">Zaplanowane</button>'+
     '<button class="'+(postySubtab==="hasla"?"active":"")+'" onclick="setPostySub(\'hasla\')">Hasła</button>'+
     '<button class="'+(postySubtab==="kategorie"?"active":"")+'" onclick="setPostySub(\'kategorie\')">Baza</button>'+
+    '<button class="'+(postySubtab==="kosz"?"active":"")+'" onclick="setPostySub(\'kosz\')">Kosz</button>'+
     '</div>';
 
   html += '<div class="chiprow">';
@@ -1745,6 +1768,7 @@ function renderPosty(el){
   else if(postySubtab==="zaplanowane"){ html += renderPostyZaplanowane(); }
   else if(postySubtab==="hasla"){ html += renderPostyHasla(); }
   else if(postySubtab==="kategorie"){ html += renderPostyBaza(); }
+  else if(postySubtab==="kosz"){ html += renderPostyKosz(); }
   else { html += renderPostyPulpit(); }
 
   el.innerHTML = html;
@@ -1764,6 +1788,7 @@ function postyDateInFilter(dateStr){
 function renderPostyPulpit(){
   var STAGE_ORDER = {szkic:0, zaplanowany:1, opublikowany:2};
   var filtered = state.posts.filter(function(p){
+    if(p.deletedAt) return false;
     if(p.stage==="pomysl") return false;
     if(p.brand!==postyFilter) return false;
     if(postyPlatformFilter!=="Wszystkie" && p.platform!==postyPlatformFilter) return false;
@@ -1780,10 +1805,11 @@ function renderPostyPulpit(){
     return '<div class="card"><div class="empty">Brak zaplanowanych materiałów. Pomysły bez terminu znajdziesz w zakładce "Baza".</div></div>';
   }
   var html = '<div class="card"><div style="overflow-x:auto"><table><thead><tr>'+
-    '<th>Data</th><th>Platforma</th><th>Marka</th><th>Tytuł</th><th>Etap</th></tr></thead><tbody>';
+    '<th>Data</th><th>Dzień</th><th>Platforma</th><th>Marka</th><th>Tytuł</th><th>Etap</th></tr></thead><tbody>';
   filtered.forEach(function(p){
-    html += '<tr style="cursor:pointer" onclick="openPostModal({id:\''+p.id+'\'})">'+
+    html += '<tr style="cursor:pointer" onclick="openPostPreview(\''+p.id+'\')">'+
       '<td>'+(p.date ? fmtDate(p.date) : '<span style="color:var(--muted)">— brak daty —</span>')+'</td>'+
+      '<td>'+(p.date ? weekdayShortPl(p.date) : '—')+'</td>'+
       '<td>'+(p.platform ? '<span class="tag tag-platform-'+p.platform+'">'+POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]+'</span>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td><span class="tag tag-'+p.brand.replace(/[^a-zA-Z0-9]/g,"")+'">'+escapeHtml(p.brand)+'</span></td>'+
       '<td>'+escapeHtml(p.title)+'</td>'+
@@ -1794,7 +1820,7 @@ function renderPostyPulpit(){
   return html;
 }
 function renderPostyKalendarz(){
-  var rows = state.contentCalendar.filter(function(c){ return c.brand===postyFilter; })
+  var rows = state.contentCalendar.filter(function(c){ return c.brand===postyFilter && !c.deletedAt; })
     .slice().sort(function(a,b){ return a.date<b.date?-1:(a.date>b.date?1:0); });
   var html = '<div class="card">'+
     '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">'+
@@ -1868,8 +1894,9 @@ function saveCCModal(){
 function deleteCCModal(){
   var ctx = window.__ccModalCtx;
   if(!ctx || !ctx.id) return;
-  if(!confirm("Usunąć ten wpis z planu?")) return;
-  state.contentCalendar = state.contentCalendar.filter(function(c){ return c.id!==ctx.id; });
+  if(!confirm("Usunąć ten wpis z planu? Trafi do Kosza na 30 dni.")) return;
+  var c = state.contentCalendar.filter(function(x){return x.id===ctx.id;})[0];
+  if(c) c.deletedAt = todayStr();
   closeCCModal();
   save(); renderAll();
 }
@@ -1886,7 +1913,7 @@ function renderPostyZaplanowane(){
   var now = new Date();
   if(zapMonth===undefined){ zapMonth = now.getMonth(); zapYear = now.getFullYear(); }
   var items = state.posts.filter(function(p){
-    return p.brand===postyFilter && p.stage!=="pomysl" && p.date &&
+    return !p.deletedAt && p.brand===postyFilter && p.stage!=="pomysl" && p.date &&
       (postyPlatformFilter==="Wszystkie" || p.platform===postyPlatformFilter);
   });
   var byDate = {};
@@ -1919,31 +1946,72 @@ function renderPostyZaplanowane(){
   return html;
 }
 var __previewImgIdx = 0;
+var __previewView = "ig"; // "ig" albo "fb"
+var __previewPostId = null;
 function openPostPreview(id){
-  closePostPreview();
-  var p = state.posts.filter(function(x){return x.id===id;})[0];
-  if(!p) return;
+  __previewPostId = id;
+  __previewView = "ig";
   __previewImgIdx = 0;
-  var images = p.images && p.images.length ? p.images : [];
-  var mainImg = images[0] || null;
+  renderPostPreviewModal();
+}
+function setPreviewView(v){
+  __previewView = v;
+  __previewImgIdx = 0;
+  renderPostPreviewModal();
+}
+function shiftPreviewImg(delta){
+  var p = state.posts.filter(function(x){return x.id===__previewPostId;})[0];
+  if(!p) return;
+  var images = p.images||[];
+  if(!images.length) return;
+  __previewImgIdx = (__previewImgIdx + delta + images.length) % images.length;
+  renderPostPreviewModal();
+}
+function toggleCaptionExpand(){
+  var el = document.getElementById("igPreviewCaptionText");
+  var btn = document.getElementById("igPreviewCaptionToggle");
+  if(!el || !btn) return;
+  var expanded = el.getAttribute("data-expanded")==="1";
+  el.setAttribute("data-expanded", expanded ? "0" : "1");
+  btn.textContent = expanded ? "Pokaż więcej" : "Pokaż mniej";
+}
+function renderPostPreviewModal(){
+  closePostPreview();
+  var p = state.posts.filter(function(x){return x.id===__previewPostId;})[0];
+  if(!p) return;
+  var isFbig = p.platform==="fbig";
+  var view = isFbig ? __previewView : "ig";
+  var allImages = p.images && p.images.length ? p.images : [];
+  var showImages = view==="fb" ? (p.fbImage ? [p.fbImage] : (allImages.length ? [allImages[0]] : [])) : allImages;
+  if(__previewImgIdx >= showImages.length) __previewImgIdx = 0;
+  var mainImg = showImages[__previewImgIdx] || null;
+  var caption = view==="fb" ? (p.captionFb||"") : (p.captionIg||"");
   var initials = (p.brand||"?").slice(0,2).toUpperCase();
-  var html = '<div class="modal-overlay" id="postPreviewModal" data-post-id="'+p.id+'" onclick="if(event.target===this) closePostPreview()">'+
+  var html = '<div class="modal-overlay" id="postPreviewModal" onclick="if(event.target===this) closePostPreview()">'+
     '<div>'+
     '<div class="ig-preview-box">'+
+      (isFbig ? '<div class="ig-preview-toggle">'+
+        '<button class="'+(view==="ig"?"active":"")+'" onclick="setPreviewView(\'ig\')">📷 Instagram</button>'+
+        '<button class="'+(view==="fb"?"active":"")+'" onclick="setPreviewView(\'fb\')">📘 Facebook</button>'+
+      '</div>' : '')+
       '<div class="ig-preview-header">'+
         '<div class="ig-preview-avatar">'+escapeHtml(initials)+'</div>'+
         '<div class="ig-preview-headtext"><b>'+escapeHtml(p.brand)+'</b><span>'+(p.date?fmtDate(p.date):"brak daty")+'</span></div>'+
       '</div>'+
       (mainImg ?
         '<div class="ig-preview-imgwrap">'+
-          (images.length>1 ? '<button class="ig-preview-nav prev" onclick="shiftPreviewImg(-1)">‹</button>' : '')+
-          '<img src="'+escapeHtml(mainImg)+'" alt="" class="ig-preview-img">'+
-          (images.length>1 ? '<button class="ig-preview-nav next" onclick="shiftPreviewImg(1)">›</button>' : '')+
-          (images.length>1 ? '<div class="ig-preview-count">1/'+images.length+' — karuzela</div>' : '')+
+          (showImages.length>1 ? '<button class="ig-preview-nav prev" onclick="shiftPreviewImg(-1)">‹</button>' : '')+
+          '<img src="'+escapeHtml(mainImg)+'" alt="" class="ig-preview-img" onerror="this.parentElement.classList.add(\'ig-preview-broken\')">'+
+          (showImages.length>1 ? '<button class="ig-preview-nav next" onclick="shiftPreviewImg(1)">›</button>' : '')+
+          (showImages.length>1 ? '<div class="ig-preview-count">'+(__previewImgIdx+1)+'/'+showImages.length+' — karuzela</div>' : '')+
+          '<div class="ig-preview-brokenmsg">Nie udało się załadować zdjęcia spod podanego linku. Sprawdź, czy to bezpośredni link do pliku (kończy się np. na .jpg/.png) — linki do udostępniania z Google Drive/Zdjęć/Canva zwykle nie działają wprost.</div>'+
         '</div>'
-        : '<div class="ig-preview-imgwrap ig-preview-noimg">Brak zdjęcia</div>')+
+        : '<div class="ig-preview-imgwrap ig-preview-noimg">Brak zdjęcia'+(view==="fb"?" dla Facebooka":"")+'</div>')+
       '<div class="ig-preview-actions">♡ 💬 ➤</div>'+
-      '<div class="ig-preview-caption"><b>'+escapeHtml(p.brand)+'</b> '+escapeHtml(p.caption || p.title || "")+'</div>'+
+      '<div class="ig-preview-caption">'+
+        '<div class="ig-preview-caption-text" id="igPreviewCaptionText" data-expanded="0"><b>'+escapeHtml(p.brand)+'</b> '+escapeHtml(caption || p.title || "")+'</div>'+
+        (caption && caption.length>140 ? '<button class="linklike" id="igPreviewCaptionToggle" onclick="toggleCaptionExpand()">Pokaż więcej</button>' : '')+
+      '</div>'+
       '<div class="ig-preview-platform">'+
         (p.platform ? '<span class="tag tag-platform-'+p.platform+'">'+POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]+'</span>' : '')+
         '<span class="tag tag-stage-'+p.stage+'">'+POST_STAGE_LABEL[p.stage]+'</span>'+
@@ -1956,29 +2024,16 @@ function openPostPreview(id){
     '</div></div>';
   document.body.insertAdjacentHTML("beforeend", html);
 }
-function shiftPreviewImg(delta){
-  var m = document.getElementById("postPreviewModal");
-  if(!m) return;
-  var id = m.getAttribute("data-post-id");
-  var p = state.posts.filter(function(x){return x.id===id;})[0];
-  if(!p || !p.images || !p.images.length) return;
-  var n = p.images.length;
-  __previewImgIdx = (__previewImgIdx + delta + n) % n;
-  var img = m.querySelector(".ig-preview-img");
-  var count = m.querySelector(".ig-preview-count");
-  if(img) img.src = p.images[__previewImgIdx];
-  if(count) count.textContent = (__previewImgIdx+1)+"/"+n+" — karuzela";
-}
 function closePostPreview(){
   var m = document.getElementById("postPreviewModal");
   if(m) m.remove();
 }
 function renderPostyHasla(){
   var b = postyFilter;
-  var items = state.hasla.filter(function(h){ return h.brand===b; });
+  var items = state.hasla.filter(function(h){ return h.brand===b && !h.deletedAt; });
   var usedSet = {};
   state.contentCalendar.forEach(function(c){
-    if(c.brand===b && c.haslo && c.haslo!=="-") usedSet[c.haslo.trim().toLowerCase()] = true;
+    if(c.brand===b && !c.deletedAt && c.haslo && c.haslo!=="-") usedSet[c.haslo.trim().toLowerCase()] = true;
   });
   var html = '<div class="card">'+
     '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">'+
@@ -2023,15 +2078,16 @@ function editHaslo(id){
   save(); renderAll();
 }
 function deleteHaslo(id){
-  if(!confirm("Usunąć to hasło z listy?")) return;
-  state.hasla = state.hasla.filter(function(h){ return h.id!==id; });
+  if(!confirm("Usunąć to hasło z listy? Trafi do Kosza na 30 dni.")) return;
+  var h = state.hasla.filter(function(x){return x.id===id;})[0];
+  if(h) h.deletedAt = todayStr();
   save(); renderAll();
 }
 function gotoHasloInKalendarz(hasloId){
   var h = state.hasla.filter(function(x){return x.id===hasloId;})[0];
   if(!h) return;
   var target = state.contentCalendar.filter(function(c){
-    return c.brand===h.brand && c.haslo && c.haslo.trim().toLowerCase()===h.text.trim().toLowerCase();
+    return !c.deletedAt && c.brand===h.brand && c.haslo && c.haslo.trim().toLowerCase()===h.text.trim().toLowerCase();
   })[0];
   postyFilter = h.brand;
   postySubtab = "kalendarz";
@@ -2046,17 +2102,26 @@ function gotoHasloInKalendarz(hasloId){
     setTimeout(function(){ row.style.outline=""; row.style.background=""; }, 3000);
   }, 60);
 }
+var bazaCategoryFilter = "Wszystkie";
+function setBazaCategoryFilter(c){ bazaCategoryFilter = c; renderAll(); }
 function renderPostyBaza(){
   var b = postyFilter;
   var cats = (state.ideaCategories && state.ideaCategories[b]) || [];
+  if(bazaCategoryFilter!=="Wszystkie" && bazaCategoryFilter!=="Pozostałe" && cats.indexOf(bazaCategoryFilter)===-1) bazaCategoryFilter = "Wszystkie";
   var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">'+
     '<h3 style="margin:0">Baza pomysłów — '+escapeHtml(b)+'</h3>'+
     '<div class="row" style="gap:8px">'+
       '<button class="btn secondary small" onclick="addIdeaCategory()">+ Kategoria</button>'+
       '<button class="btn small" onclick="openIdeaModal({brand:\''+jsAttrStr(b)+'\'})">+ Dodaj pomysł</button>'+
     '</div></div>';
+  html += '<div class="chiprow">';
+  ["Wszystkie"].concat(cats).concat(["Pozostałe"]).forEach(function(c){
+    html += '<span class="chip'+(bazaCategoryFilter===c?" active":"")+'" onclick="setBazaCategoryFilter(\''+jsAttrStr(c)+'\')">'+escapeHtml(c)+'</span>';
+  });
+  html += '</div>';
   cats.forEach(function(cat){
-    var items = state.posts.filter(function(p){ return p.brand===b && p.stage==="pomysl" && p.category===cat; });
+    if(bazaCategoryFilter!=="Wszystkie" && bazaCategoryFilter!==cat) return;
+    var items = state.posts.filter(function(p){ return !p.deletedAt && p.brand===b && p.stage==="pomysl" && p.category===cat; });
     html += '<div class="card" style="margin-bottom:16px">'+
       '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px">'+
       '<h3 style="margin:0">'+escapeHtml(cat)+'</h3>'+
@@ -2067,11 +2132,13 @@ function renderPostyBaza(){
     else{ items.forEach(function(p){ html += ideaItemHtml(p); }); }
     html += '</div>';
   });
-  var rest = state.posts.filter(function(p){ return p.brand===b && p.stage==="pomysl" && cats.indexOf(p.category)===-1; });
-  html += '<div class="card"><h3 style="margin:0 0 8px">Pozostałe pomysły</h3>';
-  if(!rest.length){ html += '<div class="empty">Brak zapisanych pomysłów.</div>'; }
-  else{ rest.forEach(function(p){ html += ideaItemHtml(p); }); }
-  html += '</div>';
+  if(bazaCategoryFilter==="Wszystkie" || bazaCategoryFilter==="Pozostałe"){
+    var rest = state.posts.filter(function(p){ return !p.deletedAt && p.brand===b && p.stage==="pomysl" && cats.indexOf(p.category)===-1; });
+    html += '<div class="card"><h3 style="margin:0 0 8px">Pozostałe pomysły</h3>';
+    if(!rest.length){ html += '<div class="empty">Brak zapisanych pomysłów.</div>'; }
+    else{ rest.forEach(function(p){ html += ideaItemHtml(p); }); }
+    html += '</div>';
+  }
   return html;
 }
 function ideaItemHtml(p){
@@ -2080,7 +2147,8 @@ function ideaItemHtml(p){
   if(p.cta) meta.push('CTA: '+escapeHtml(p.cta));
   return '<div class="idea-item" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
     '<div><b>'+escapeHtml(p.title)+'</b>'+
-      (p.caption ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">'+escapeHtml(p.caption)+'</div>' : '')+
+      (p.captionFb ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">FB: '+escapeHtml(p.captionFb)+'</div>' : '')+
+      (p.captionIg ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">IG: '+escapeHtml(p.captionIg)+'</div>' : '')+
       (meta.length ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+meta.join(' · ')+'</div>' : '')+
     '</div>'+
     '<div style="white-space:nowrap; flex:0 0 auto">'+
@@ -2139,7 +2207,7 @@ function openIdeaModal(opts){
   closeIdeaModal();
   if(opts.id){
     var existing = state.posts.filter(function(x){return x.id===opts.id;})[0];
-    if(existing){ opts = {id:existing.id, title:existing.title, caption:existing.caption||"", cta:existing.cta||"", brand:existing.brand, platform:existing.platform||"", category:existing.category||""}; }
+    if(existing){ opts = {id:existing.id, title:existing.title, captionFb:existing.captionFb||"", captionIg:existing.captionIg||"", cta:existing.cta||"", brand:existing.brand, platform:existing.platform||"", category:existing.category||""}; }
   }
   var isEdit = !!opts.id;
   var brandOptions = state.brands.map(function(b){
@@ -2153,7 +2221,8 @@ function openIdeaModal(opts){
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj pomysł":"Nowy pomysł")+'</h3>'+
     '<div class="field"><label>Hook</label><input type="text" id="imHook" value="'+escapeHtml(opts.title||"")+'" placeholder="Chwytliwe zdanie otwierające..."></div>'+
-    '<div class="field"><label>Opis</label><textarea id="imOpis" rows="3" placeholder="Rozwinięcie pomysłu...">'+escapeHtml(opts.caption||"")+'</textarea></div>'+
+    '<div class="field"><label>Opis na Facebooku</label><textarea id="imOpisFb" rows="3" placeholder="Rozwinięcie pomysłu na FB...">'+escapeHtml(opts.captionFb||"")+'</textarea></div>'+
+    '<div class="field"><label>Opis na Instagramie</label><textarea id="imOpisIg" rows="3" placeholder="Rozwinięcie pomysłu na IG...">'+escapeHtml(opts.captionIg||"")+'</textarea></div>'+
     '<div class="field"><label>CTA</label><input type="text" id="imCta" value="'+escapeHtml(opts.cta||"")+'" placeholder="np. Napisz DM „STUDIO”"></div>'+
     '<div class="field"><label>Marka</label><select id="imBrand" onchange="updateIdeaCategoryOptions()">'+brandOptions+'</select></div>'+
     '<div class="field"><label>Platforma</label><select id="imPlatform">'+platformOptions+'</select></div>'+
@@ -2173,7 +2242,8 @@ function closeIdeaModal(){
 function saveIdeaModal(){
   var title = document.getElementById("imHook").value.trim();
   if(!title) return;
-  var caption = document.getElementById("imOpis").value.trim();
+  var captionFb = document.getElementById("imOpisFb").value.trim();
+  var captionIg = document.getElementById("imOpisIg").value.trim();
   var cta = document.getElementById("imCta").value.trim();
   var brand = document.getElementById("imBrand").value;
   var platform = document.getElementById("imPlatform").value || null;
@@ -2181,31 +2251,29 @@ function saveIdeaModal(){
   var ctx = window.__ideaModalCtx || {};
   if(ctx.id){
     var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
-    if(p){ p.title=title; p.caption=caption; p.cta=cta; p.brand=brand; p.platform=platform; p.category=category; }
+    if(p){ p.title=title; p.captionFb=captionFb; p.captionIg=captionIg; p.cta=cta; p.brand=brand; p.platform=platform; p.category=category; }
   } else {
-    state.posts.unshift({id:uid("post"), title:title, caption:caption, cta:cta, brand:brand, platform:platform, category:category, stage:"pomysl", date:null});
+    state.posts.unshift({id:uid("post"), title:title, captionFb:captionFb, captionIg:captionIg, cta:cta, brand:brand, platform:platform, category:category, stage:"pomysl", date:null});
   }
   closeIdeaModal();
   save(); renderAll();
 }
 function deleteIdea(id){
-  if(!confirm("Usunąć ten pomysł?")) return;
-  state.posts = state.posts.filter(function(p){ return p.id!==id; });
+  if(!confirm("Usunąć ten pomysł? Trafi do Kosza na 30 dni.")) return;
+  var p = state.posts.filter(function(x){return x.id===id;})[0];
+  if(p) p.deletedAt = todayStr();
   closeIdeaModal();
   save(); renderAll();
 }
 var POST_PLATFORM_LABEL = {fbig:"FB/IG", tiktok:"TikTok", youtube:"YouTube"};
 var POST_PLATFORM_ICON = {fbig:"📘📷", tiktok:"🎵", youtube:"▶️"};
 var POST_STAGE_LABEL = {pomysl:"Pomysł", szkic:"Szkic", zaplanowany:"Zaplanowany", opublikowany:"Opublikowany"};
-function addPost(){
-  openPostModal({brand: postyFilter});
-}
 function openPostModal(opts){
   closePostModal();
   if(opts.id){
     var existing = state.posts.filter(function(x){return x.id===opts.id;})[0];
     if(existing){ opts = {id:existing.id, title:existing.title, brand:existing.brand, platform:existing.platform||"", stage:existing.stage, date:existing.date||"",
-      caption:existing.caption||"", images:(existing.images||[]).join("\n"), isCarousel:!!existing.isCarousel, fbImage:existing.fbImage||""}; }
+      captionFb:existing.captionFb||"", captionIg:existing.captionIg||"", images:(existing.images||[]).join("\n"), isCarousel:!!existing.isCarousel, fbImage:existing.fbImage||""}; }
   }
   var isEdit = !!opts.id;
   var brandOptions = state.brands.map(function(b){
@@ -2226,8 +2294,10 @@ function openPostModal(opts){
     '<div class="field"><label>Platforma</label><select id="pmPlatform" onchange="updatePostModalVisibility()">'+platformOptions+'</select></div>'+
     '<div class="field"><label>Etap</label><select id="pmStage">'+stageOptions+'</select></div>'+
     '<div class="field"><label>Data (opcjonalnie)</label><input type="date" id="pmDate" value="'+(opts.date||"")+'"></div>'+
-    '<div class="field"><label>Opis / treść posta</label><textarea id="pmCaption" rows="4" placeholder="Pełny opis publikowany pod postem...">'+escapeHtml(opts.caption||"")+'</textarea></div>'+
-    '<div class="field"><label>Zdjęcia (linki, jeden na linię — pierwszy = główny)</label><textarea id="pmImages" rows="2" placeholder="https://...">'+escapeHtml(opts.images||"")+'</textarea></div>'+
+    '<div class="field"><label>Opis na Facebooku</label><textarea id="pmCaptionFb" rows="3" placeholder="Treść publikowana pod postem na Facebooku...">'+escapeHtml(opts.captionFb||"")+'</textarea></div>'+
+    '<div class="field"><label>Opis na Instagramie</label><textarea id="pmCaptionIg" rows="3" placeholder="Treść publikowana pod postem na Instagramie...">'+escapeHtml(opts.captionIg||"")+'</textarea></div>'+
+    '<div class="field"><label>Zdjęcia (linki, jeden na linię — pierwszy = główny)</label><textarea id="pmImages" rows="2" placeholder="https://...">'+escapeHtml(opts.images||"")+'</textarea>'+
+      '<span style="font-size:11px; color:var(--muted)">Wklej bezpośredni link do pliku (np. kończący się na .jpg/.png) — link do udostępniania z Google Drive/Zdjęć/Canva zwykle nie zadziała wprost.</span></div>'+
     '<div class="field" id="pmCarouselWrap"><label style="display:flex; align-items:center; gap:8px; cursor:pointer">'+
       '<input type="checkbox" id="pmCarousel" onchange="updatePostModalVisibility()"'+(opts.isCarousel?" checked":"")+'> Karuzela na Instagramie (na Facebooku wrzucę tylko główne zdjęcie + cały tekst)'+
     '</label></div>'+
@@ -2260,17 +2330,18 @@ function savePostModal(){
   var platform = document.getElementById("pmPlatform").value || null;
   var stage = document.getElementById("pmStage").value;
   var date = document.getElementById("pmDate").value || null;
-  var caption = document.getElementById("pmCaption").value.trim();
+  var captionFb = document.getElementById("pmCaptionFb").value.trim();
+  var captionIg = document.getElementById("pmCaptionIg").value.trim();
   var images = document.getElementById("pmImages").value.split("\n").map(function(s){return s.trim();}).filter(Boolean);
   var isCarousel = platform==="fbig" && document.getElementById("pmCarousel").checked;
   var fbImage = isCarousel ? document.getElementById("pmFbImage").value.trim() : "";
   var ctx = window.__postModalCtx || {};
   if(ctx.id){
     var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
-    if(p){ p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.caption=caption; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; }
+    if(p){ p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.captionFb=captionFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; }
   } else {
     state.posts.unshift({id:uid("post"), title:title, brand:brand, stage:stage, category:null, date:date, platform:platform,
-      caption:caption, images:images, isCarousel:isCarousel, fbImage:fbImage});
+      captionFb:captionFb, captionIg:captionIg, images:images, isCarousel:isCarousel, fbImage:fbImage});
   }
   closePostModal();
   save(); renderAll();
@@ -2278,10 +2349,92 @@ function savePostModal(){
 function deletePostModal(){
   var ctx = window.__postModalCtx;
   if(!ctx || !ctx.id) return;
-  if(!confirm('Usunąć post "'+ctx.title+'"?')) return;
-  state.posts = state.posts.filter(function(p){ return p.id!==ctx.id; });
+  if(!confirm('Usunąć post "'+ctx.title+'"? Trafi do Kosza na 30 dni.')) return;
+  var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
+  if(p) p.deletedAt = todayStr();
   closePostModal();
   save(); renderAll();
+}
+function daysLeftInTrash(deletedAt){
+  return Math.max(0, 30 - Math.floor((Date.now() - new Date(deletedAt+"T00:00:00").getTime())/86400000));
+}
+function restorePost(id){
+  var p = state.posts.filter(function(x){return x.id===id;})[0];
+  if(p) p.deletedAt = null;
+  save(); renderAll();
+}
+function purgePostNow(id){
+  if(!confirm("Usunąć na stałe? Tego nie można cofnąć.")) return;
+  state.posts = state.posts.filter(function(p){return p.id!==id;});
+  save(); renderAll();
+}
+function restoreCC(id){
+  var c = state.contentCalendar.filter(function(x){return x.id===id;})[0];
+  if(c) c.deletedAt = null;
+  save(); renderAll();
+}
+function purgeCCNow(id){
+  if(!confirm("Usunąć na stałe? Tego nie można cofnąć.")) return;
+  state.contentCalendar = state.contentCalendar.filter(function(c){return c.id!==id;});
+  save(); renderAll();
+}
+function restoreHasloTrash(id){
+  var h = state.hasla.filter(function(x){return x.id===id;})[0];
+  if(h) h.deletedAt = null;
+  save(); renderAll();
+}
+function purgeHasloNow(id){
+  if(!confirm("Usunąć na stałe? Tego nie można cofnąć.")) return;
+  state.hasla = state.hasla.filter(function(h){return h.id!==id;});
+  save(); renderAll();
+}
+function purgeAllPostyTrash(){
+  var count = state.posts.filter(function(p){return p.deletedAt;}).length +
+    state.contentCalendar.filter(function(c){return c.deletedAt;}).length +
+    state.hasla.filter(function(h){return h.deletedAt;}).length;
+  if(!count) return;
+  if(!confirm("Trwale usunąć wszystko ("+count+") z kosza Postów? Tego nie można cofnąć.")) return;
+  state.posts = state.posts.filter(function(p){return !p.deletedAt;});
+  state.contentCalendar = state.contentCalendar.filter(function(c){return !c.deletedAt;});
+  state.hasla = state.hasla.filter(function(h){return !h.deletedAt;});
+  save(); renderAll();
+}
+function renderPostyKosz(){
+  var posts = state.posts.filter(function(p){return p.deletedAt;}).sort(function(a,b){return a.deletedAt<b.deletedAt?1:-1;});
+  var ccs = state.contentCalendar.filter(function(c){return c.deletedAt;}).sort(function(a,b){return a.deletedAt<b.deletedAt?1:-1;});
+  var haslaTrash = state.hasla.filter(function(h){return h.deletedAt;}).sort(function(a,b){return a.deletedAt<b.deletedAt?1:-1;});
+  var total = posts.length + ccs.length + haslaTrash.length;
+
+  var html = '<div class="stub-note">Usunięte elementy trafiają tutaj na 30 dni, potem znikają na stałe.</div>';
+  if(total){
+    html += '<div style="text-align:right; margin-bottom:10px"><button class="btn danger small" onclick="purgeAllPostyTrash()">Wyczyść cały kosz</button></div>';
+  }
+
+  html += '<div class="card" style="margin-bottom:16px"><h3>Posty i pomysły</h3><table><thead><tr><th>Tytuł</th><th>Marka</th><th>Usunięto</th><th>Zostało dni</th><th></th></tr></thead><tbody>';
+  if(!posts.length){ html += '<tr><td colspan="5"><div class="empty">Brak.</div></td></tr>'; }
+  posts.forEach(function(p){
+    html += '<tr><td>'+escapeHtml(p.title)+'</td><td>'+escapeHtml(p.brand)+'</td><td>'+fmtDate(p.deletedAt)+'</td><td>'+daysLeftInTrash(p.deletedAt)+'</td>'+
+      '<td><button class="linklike" onclick="restorePost(\''+p.id+'\')">Przywróć</button> <button class="linklike danger" onclick="purgePostNow(\''+p.id+'\')">Usuń na stałe</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  html += '<div class="card" style="margin-bottom:16px"><h3>Wpisy w planie publikacji</h3><table><thead><tr><th>Temat</th><th>Marka</th><th>Usunięto</th><th>Zostało dni</th><th></th></tr></thead><tbody>';
+  if(!ccs.length){ html += '<tr><td colspan="5"><div class="empty">Brak.</div></td></tr>'; }
+  ccs.forEach(function(c){
+    html += '<tr><td>'+escapeHtml(c.topic||"—")+'</td><td>'+escapeHtml(c.brand)+'</td><td>'+fmtDate(c.deletedAt)+'</td><td>'+daysLeftInTrash(c.deletedAt)+'</td>'+
+      '<td><button class="linklike" onclick="restoreCC(\''+c.id+'\')">Przywróć</button> <button class="linklike danger" onclick="purgeCCNow(\''+c.id+'\')">Usuń na stałe</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  html += '<div class="card"><h3>Hasła</h3><table><thead><tr><th>Hasło</th><th>Marka</th><th>Usunięto</th><th>Zostało dni</th><th></th></tr></thead><tbody>';
+  if(!haslaTrash.length){ html += '<tr><td colspan="5"><div class="empty">Brak.</div></td></tr>'; }
+  haslaTrash.forEach(function(h){
+    html += '<tr><td>'+escapeHtml(h.text)+'</td><td>'+escapeHtml(h.brand)+'</td><td>'+fmtDate(h.deletedAt)+'</td><td>'+daysLeftInTrash(h.deletedAt)+'</td>'+
+      '<td><button class="linklike" onclick="restoreHasloTrash(\''+h.id+'\')">Przywróć</button> <button class="linklike danger" onclick="purgeHasloNow(\''+h.id+'\')">Usuń na stałe</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  return html;
 }
 
 /* ================= INSTAGRAM / FACEBOOK ================= */
@@ -2356,7 +2509,7 @@ function renderSocial(el, platform){
 
   var brand = accBrand(acc);
   var weekDates = currentWeekDates();
-  var weekPlan = state.contentCalendar.filter(function(c){ return c.brand===brand && weekDates.indexOf(c.date)!==-1; })
+  var weekPlan = state.contentCalendar.filter(function(c){ return !c.deletedAt && c.brand===brand && weekDates.indexOf(c.date)!==-1; })
     .sort(function(a,b){ return a.date<b.date?-1:1; });
   html += '<div class="card" style="margin-top:16px"><h3>Plan publikacji w tym tygodniu</h3>';
   if(!weekPlan.length){ html += '<div class="empty">Brak zaplanowanych publikacji w tym tygodniu.</div>'; }
@@ -3869,10 +4022,10 @@ function renderStatystyki(el){
       '</table></div>';
   }
   if(showAll || statCats["Posty"]){
-    var periodPosts = state.posts.filter(function(p){ return matchesPeriod(p.date); });
+    var periodPosts = state.posts.filter(function(p){ return !p.deletedAt && matchesPeriod(p.date); });
     html += '<div class="card"><h3>Posty</h3><table>'+
       '<tr><td>Opublikowane w okresie</td><td style="text-align:right">'+periodPosts.filter(function(p){return p.stage==="opublikowany";}).length+'</td></tr>'+
-      '<tr><td>Wszystkie pomysły</td><td style="text-align:right">'+state.posts.filter(function(p){return p.stage==="pomysl";}).length+'</td></tr>'+
+      '<tr><td>Wszystkie pomysły</td><td style="text-align:right">'+state.posts.filter(function(p){return !p.deletedAt && p.stage==="pomysl";}).length+'</td></tr>'+
       '</table></div>';
   }
   if(showAll || statCats["Instagram"]){
