@@ -572,6 +572,7 @@ function migrateState(s){
     });
   });
   if(!s.brands || !s.brands.length) s.brands = ["MediaDGtal","tool4arts"];
+  if(!s.driveMonthFolders) s.driveMonthFolders = {};
   (function(){
     var wasMissing = !s.ideaCategories;
     if(!s.ideaCategories) s.ideaCategories = {};
@@ -940,6 +941,8 @@ function defaultState(){
   s.brands = ["MediaDGtal","tool4arts"];
 
   s.ideaCategories = {MediaDGtal:[], tool4arts:["Edukacyjne","Uderzające w ból","Do kursantów"]};
+
+  s.driveMonthFolders = {};
 
   s.hasla = [];
   syncHaslaFromContentCalendar(s);
@@ -1919,7 +1922,8 @@ function renderPostyZaplanowane(){
   var byDate = {};
   items.forEach(function(p){ (byDate[p.date] = byDate[p.date]||[]).push(p); });
 
-  var html = '<div class="card">';
+  var html = renderDriveImportPanel();
+  html += '<div class="card">';
   html += '<div class="cal-header"><button class="btn secondary small" onclick="changeZapMonth(-1)">←</button>'+
     '<h2>'+monthName(zapMonth)+' '+zapYear+'</h2>'+
     '<button class="btn secondary small" onclick="changeZapMonth(1)">→</button></div>';
@@ -1944,6 +1948,126 @@ function renderPostyZaplanowane(){
   }
   html += '</div></div></div>';
   return html;
+}
+function zapMonthKey(){
+  var now = new Date();
+  var y = zapYear===undefined ? now.getFullYear() : zapYear;
+  var m = zapMonth===undefined ? now.getMonth() : zapMonth;
+  return y+"-"+String(m+1).padStart(2,"0");
+}
+function renderDriveImportPanel(){
+  if(!window.__gcalToken){
+    return '<div class="stub-note">Import grafik z Dysku Google wyłączony. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby go włączyć.</div>';
+  }
+  var ym = zapMonthKey();
+  var saved = (state.driveMonthFolders[postyFilter] && state.driveMonthFolders[postyFilter][ym]) || "";
+  return '<div class="card" style="margin-bottom:16px">'+
+    '<div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">'+
+      '<input type="text" id="driveMonthFolderUrl" placeholder="Link do folderu Dysku z podfolderami dla '+monthName(zapMonth===undefined?new Date().getMonth():zapMonth)+'..." value="'+escapeHtml(saved)+'" style="flex:1; min-width:220px">'+
+      '<button class="btn secondary small" onclick="importDriveMonthFolder()" id="driveImportBtn">Zaciągnij z Dysku</button>'+
+    '</div>'+
+    '<div style="font-size:11px; color:var(--muted); margin-top:6px">Podfoldery muszą mieć w nazwie datę (np. "10.07 Karuzela" albo "2026-07-10") — po niej dopasowujemy do publikacji. Zdjęcia z podfolderu trafią jako galeria posta, plik tekstowy z "fb"/"ig" w nazwie jako opis odpowiednio dla Facebooka/Instagrama (jeden plik bez oznaczenia = ten sam opis dla obu).</div>'+
+    '<div id="driveImportStatus" style="font-size:12.5px; color:var(--muted-light); margin-top:8px"></div>'+
+    '</div>';
+}
+function extractDriveFolderId(url){
+  var m = (url||"").match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if(m) return m[1];
+  m = (url||"").match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+function extractDateFromFolderName(name, year){
+  var m = name.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0");
+  m = name.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if(m) return m[3]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");
+  m = name.match(/(\d{1,2})\.(\d{1,2})(?!\d)/);
+  if(m) return year+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");
+  return null;
+}
+function driveApiListChildren(folderId){
+  var q = "'"+folderId+"' in parents and trashed=false";
+  var url = "https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields="+encodeURIComponent("files(id,name,mimeType)")+"&pageSize=1000";
+  return fetch(url, {headers:{Authorization:"Bearer "+window.__gcalToken}}).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+    return r.json();
+  }).then(function(j){ return j.files||[]; });
+}
+function driveFetchTextContent(file){
+  var url = file.mimeType==="application/vnd.google-apps.document"
+    ? "https://www.googleapis.com/drive/v3/files/"+file.id+"/export?mimeType=text/plain"
+    : "https://www.googleapis.com/drive/v3/files/"+file.id+"?alt=media";
+  return fetch(url, {headers:{Authorization:"Bearer "+window.__gcalToken}}).then(function(r){ return r.text(); });
+}
+function importDriveMonthFolder(){
+  var input = document.getElementById("driveMonthFolderUrl");
+  var statusEl = document.getElementById("driveImportStatus");
+  var btn = document.getElementById("driveImportBtn");
+  var url = input.value.trim();
+  var folderId = extractDriveFolderId(url);
+  if(!folderId){ statusEl.textContent = "To nie wygląda na link do folderu Google Drive."; return; }
+  var ym = zapMonthKey();
+  var year = ym.split("-")[0];
+  if(!state.driveMonthFolders[postyFilter]) state.driveMonthFolders[postyFilter] = {};
+  state.driveMonthFolders[postyFilter][ym] = url;
+  save();
+  btn.disabled = true;
+  statusEl.textContent = "Wczytywanie listy podfolderów...";
+  driveApiListChildren(folderId).then(function(children){
+    var subfolders = children.filter(function(f){ return f.mimeType==="application/vnd.google-apps.folder"; });
+    if(!subfolders.length){ statusEl.textContent = "Brak podfolderów w tym folderze."; btn.disabled=false; return; }
+    statusEl.textContent = "Znaleziono "+subfolders.length+" podfolderów, wczytuję zawartość...";
+    var matched = [], unmatched = [];
+    subfolders.forEach(function(f){
+      var date = extractDateFromFolderName(f.name, year);
+      if(date) matched.push({folder:f, date:date}); else unmatched.push(f.name);
+    });
+    Promise.all(matched.map(function(m){
+      return driveApiListChildren(m.folder.id).then(function(files){
+        var images = files.filter(function(f){ return f.mimeType.indexOf("image/")===0; })
+          .sort(function(a,b){ return a.name<b.name?-1:(a.name>b.name?1:0); })
+          .map(function(f){ return "https://drive.google.com/uc?export=view&id="+f.id; });
+        var textFiles = files.filter(function(f){ return f.mimeType==="text/plain" || f.mimeType==="application/vnd.google-apps.document" || /\.txt$/i.test(f.name); });
+        var fbFile = textFiles.filter(function(f){ return /fb|facebook/i.test(f.name); })[0];
+        var igFile = textFiles.filter(function(f){ return /ig|insta/i.test(f.name); })[0];
+        var soloFile = (!fbFile && !igFile) ? textFiles[0] : null;
+        var textPromises = [];
+        if(fbFile) textPromises.push(driveFetchTextContent(fbFile).then(function(t){ m.captionFb = t; }));
+        if(igFile) textPromises.push(driveFetchTextContent(igFile).then(function(t){ m.captionIg = t; }));
+        if(soloFile) textPromises.push(driveFetchTextContent(soloFile).then(function(t){ m.captionFb = t; m.captionIg = t; }));
+        return Promise.all(textPromises).then(function(){
+          m.images = images;
+          m.folderName = m.folder.name;
+        });
+      });
+    })).then(function(){
+      var created = 0, updated = 0;
+      matched.forEach(function(m){
+        var post = state.posts.filter(function(p){ return !p.deletedAt && p.brand===postyFilter && p.date===m.date; })[0];
+        if(!post){
+          post = {id:uid("post"), title:m.folderName, brand:postyFilter, stage:"zaplanowany", category:null, date:m.date, platform:"fbig", isCarousel:m.images.length>1, fbImage:"", captionFb:"", captionIg:""};
+          state.posts.unshift(post);
+          created++;
+        } else {
+          updated++;
+        }
+        post.images = m.images;
+        if(post.platform==="fbig") post.isCarousel = m.images.length>1;
+        if(m.captionFb!=null && !post.captionFb) post.captionFb = m.captionFb;
+        if(m.captionIg!=null && !post.captionIg) post.captionIg = m.captionIg;
+      });
+      save(); renderAll();
+      var msg = "Gotowe — dopasowano "+matched.length+" ("+created+" nowych, "+updated+" zaktualizowanych).";
+      if(unmatched.length) msg += " Bez daty w nazwie (pominięte): "+unmatched.join(", ")+".";
+      var el2 = document.getElementById("driveImportStatus");
+      if(el2) el2.textContent = msg;
+      var btn2 = document.getElementById("driveImportBtn");
+      if(btn2) btn2.disabled = false;
+    });
+  }).catch(function(e){
+    statusEl.textContent = e.message==="401" ? "Sesja Google wygasła — kliknij ponownie \"Połącz z Google\" i spróbuj jeszcze raz." : "Coś poszło nie tak przy wczytywaniu z Dysku.";
+    btn.disabled = false;
+  });
 }
 var __previewImgIdx = 0;
 var __previewView = "ig"; // "ig" albo "fb"
@@ -4094,6 +4218,7 @@ var db = getFirestore(app);
 var provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/calendar');
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+provider.addScope('https://www.googleapis.com/auth/drive.readonly');
 
 var gate = document.getElementById("authGate");
 var gateTitle = document.getElementById("gateTitle");
