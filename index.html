@@ -3808,7 +3808,8 @@ function renderNawykiMonth(ym){
   state.habits.forEach(function(h){
     var st = habitMonthStats(h, ym);
     html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
-      escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span></td>';
+      escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span>'+
+      ' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="setHabitReps(\''+h.id+'\')" title="Ustaw powtórzeń dziennie (do raportu miesiąca)">⚙</span></td>';
     for(var d=1; d<=dim; d++){
       var key = ym+"-"+String(d).padStart(2,"0");
       var wd2 = dowShort(y,m,d);
@@ -3836,8 +3837,20 @@ function normalizeHabitReport(ym){
   return r;
 }
 function renderHabitReportBox(ym){
-  var rows = normalizeHabitReport(ym);
   var html = '<div class="card" style="margin-top:16px"><h3>Raport miesiąca — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>';
+  html += '<table><thead><tr><th style="width:70px">Dni</th><th>Raport miesiąca</th></tr></thead><tbody>';
+  if(!state.habits.length){ html += '<tr><td colspan="2" style="color:var(--muted)">Brak śledzonych nawyków.</td></tr>'; }
+  state.habits.forEach(function(h){
+    var days = habitMonthStats(h, ym).done;
+    var label = h.name;
+    if(h.repsPerDay){ label += ' ('+(days*h.repsPerDay)+' '+(h.repsUnit||"razy")+')'; }
+    html += '<tr><td style="text-align:center">'+days+'</td><td>'+escapeHtml(label)+'</td></tr>';
+  });
+  html += '</tbody></table>';
+  html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Liczone automatycznie z odhaczonych dni w tym miesiącu. Kliknij ⚙ przy nawyku w tabeli powyżej, żeby ustawić powtórzeń dziennie.</div>';
+
+  var rows = normalizeHabitReport(ym);
+  html += '<h4 style="margin:16px 0 8px">Dodatkowe wpisy</h4>';
   html += '<table><thead><tr><th style="width:70px">Dni</th><th>Raport miesiąca</th><th></th></tr></thead><tbody>';
   if(!rows.length){ html += '<tr><td colspan="3" style="color:var(--muted)">Brak wpisów.</td></tr>'; }
   rows.forEach(function(r, idx){
@@ -3912,6 +3925,20 @@ function renameHabit(id){
   if(!name || name===h.name) return;
   pushNawykiUndo({type:"rename", habitId:id, prevName:h.name});
   h.name = name;
+  save(); renderAllKeepScroll("nawykiScrollBox");
+}
+function setHabitReps(id){
+  var h = state.habits.filter(function(x){return x.id===id;})[0];
+  if(!h) return;
+  var repsStr = prompt('Ile powtórzeń dziennie robisz przy tym nawyku (dla raportu miesiąca, np. "20")? Zostaw puste, żeby wyłączyć.', h.repsPerDay||"");
+  if(repsStr===null) return;
+  repsStr = repsStr.trim();
+  if(!repsStr){ h.repsPerDay = null; h.repsUnit = null; save(); renderAllKeepScroll("nawykiScrollBox"); return; }
+  var reps = parseInt(repsStr, 10);
+  if(!reps || reps<=0){ alert("Podaj liczbę większą od zera."); return; }
+  var unit = prompt('Jak nazwać sumę w raporcie (np. "brzuszków", "pompek", "łącznie")?', h.repsUnit||"razy");
+  h.repsPerDay = reps;
+  h.repsUnit = (unit||"razy").trim();
   save(); renderAllKeepScroll("nawykiScrollBox");
 }
 function addHabit(){
