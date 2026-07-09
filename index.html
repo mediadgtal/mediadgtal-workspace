@@ -555,6 +555,13 @@ function migrateState(s){
     });
   });
   if(!s.brands || !s.brands.length) s.brands = ["MediaDGtal","tool4arts"];
+  (function(){
+    var wasMissing = !s.ideaCategories;
+    if(!s.ideaCategories) s.ideaCategories = {};
+    s.brands.forEach(function(b){
+      if(!s.ideaCategories[b]) s.ideaCategories[b] = (wasMissing && b==="tool4arts") ? ["Edukacyjne","Uderzające w ból","Do kursantów"] : [];
+    });
+  })();
   (s.contentCalendar||[]).forEach(function(c){ if(!c.id) c.id = uid("cc"); });
   if(!s.hasla) s.hasla = [];
   syncHaslaFromContentCalendar(s);
@@ -909,6 +916,8 @@ function defaultState(){
   s.contentCalendar.forEach(function(c){ c.id = uid("cc"); });
 
   s.brands = ["MediaDGtal","tool4arts"];
+
+  s.ideaCategories = {MediaDGtal:[], tool4arts:["Edukacyjne","Uderzające w ból","Do kursantów"]};
 
   s.hasla = [];
   syncHaslaFromContentCalendar(s);
@@ -1688,6 +1697,8 @@ function addBrand(){
   if(!name) return;
   if(state.brands.indexOf(name)!==-1){ alert("Taka marka już istnieje."); return; }
   state.brands.push(name);
+  if(!state.ideaCategories) state.ideaCategories = {};
+  state.ideaCategories[name] = [];
   postyFilter = name;
   save(); renderAll();
 }
@@ -1700,7 +1711,7 @@ function renderPosty(el){
     '<button class="'+(postySubtab==="kalendarz"?"active":"")+'" onclick="setPostySub(\'kalendarz\')">Kalendarz publikacji</button>'+
     '<button class="'+(postySubtab==="zaplanowane"?"active":"")+'" onclick="setPostySub(\'zaplanowane\')">Zaplanowane</button>'+
     '<button class="'+(postySubtab==="hasla"?"active":"")+'" onclick="setPostySub(\'hasla\')">Hasła</button>'+
-    '<button class="'+(postySubtab==="kategorie"?"active":"")+'" onclick="setPostySub(\'kategorie\')">Pomysły wg kategorii</button>'+
+    '<button class="'+(postySubtab==="kategorie"?"active":"")+'" onclick="setPostySub(\'kategorie\')">Baza</button>'+
     '</div>';
 
   html += '<div class="chiprow">';
@@ -1730,18 +1741,10 @@ function renderPosty(el){
     html += '</div>';
   }
 
-  html += '<div class="ideas-input-row" style="margin-bottom:18px">'+
-    '<input type="text" id="postIdeaInput" placeholder="Nowy pomysł na post / rolkę / relację...">'+
-    '<select id="postIdeaBrand" style="width:150px; flex:0 0 auto">'+
-      state.brands.map(function(b){ return '<option value="'+escapeHtml(b)+'"'+(b===postyFilter?" selected":"")+'>'+escapeHtml(b)+'</option>'; }).join("")+
-    '</select>'+
-    '<button class="btn" onclick="addPostIdea()" style="flex:0 0 auto">+ Dodaj pomysł</button>'+
-    '</div>';
-
   if(postySubtab==="kalendarz"){ html += renderPostyKalendarz(); }
   else if(postySubtab==="zaplanowane"){ html += renderPostyZaplanowane(); }
   else if(postySubtab==="hasla"){ html += renderPostyHasla(); }
-  else if(postySubtab==="kategorie"){ html += renderPostyKategorie(); }
+  else if(postySubtab==="kategorie"){ html += renderPostyBaza(); }
   else { html += renderPostyPulpit(); }
 
   el.innerHTML = html;
@@ -1774,7 +1777,7 @@ function renderPostyPulpit(){
     return (STAGE_ORDER[a.stage]||0) - (STAGE_ORDER[b.stage]||0);
   });
   if(!filtered.length){
-    return '<div class="card"><div class="empty">Brak zaplanowanych materiałów. Pomysły bez terminu znajdziesz w zakładce "Pomysły wg kategorii".</div></div>';
+    return '<div class="card"><div class="empty">Brak zaplanowanych materiałów. Pomysły bez terminu znajdziesz w zakładce "Baza".</div></div>';
   }
   var html = '<div class="card"><div style="overflow-x:auto"><table><thead><tr>'+
     '<th>Data</th><th>Platforma</th><th>Marka</th><th>Tytuł</th><th>Etap</th></tr></thead><tbody>';
@@ -2043,25 +2046,74 @@ function gotoHasloInKalendarz(hasloId){
     setTimeout(function(){ row.style.outline=""; row.style.background=""; }, 3000);
   }, 60);
 }
-var BRAND_IDEA_CATEGORIES = {tool4arts:["Edukacyjne","Uderzające w ból","Do kursantów"]};
-function renderPostyKategorie(){
+function renderPostyBaza(){
   var b = postyFilter;
-  var cats = BRAND_IDEA_CATEGORIES[b] || [];
-  var html = '';
+  var cats = (state.ideaCategories && state.ideaCategories[b]) || [];
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">'+
+    '<h3 style="margin:0">Baza pomysłów — '+escapeHtml(b)+'</h3>'+
+    '<div class="row" style="gap:8px">'+
+      '<button class="btn secondary small" onclick="addIdeaCategory()">+ Kategoria</button>'+
+      '<button class="btn small" onclick="openIdeaModal({brand:\''+jsAttrStr(b)+'\'})">+ Dodaj pomysł</button>'+
+    '</div></div>';
   cats.forEach(function(cat){
     var items = state.posts.filter(function(p){ return p.brand===b && p.stage==="pomysl" && p.category===cat; });
-    html += '<div class="card" style="margin-bottom:16px"><h3>'+escapeHtml(b)+' — '+escapeHtml(cat)+'</h3>';
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px">'+
+      '<h3 style="margin:0">'+escapeHtml(cat)+'</h3>'+
+      '<div><button class="linklike" onclick="renameIdeaCategory(\''+jsAttrStr(cat)+'\')">Zmień nazwę</button> '+
+        '<button class="linklike danger" onclick="deleteIdeaCategory(\''+jsAttrStr(cat)+'\')">Usuń kategorię</button></div>'+
+      '</div>';
     if(!items.length){ html += '<div class="empty">Brak pomysłów w tej kategorii jeszcze.</div>'; }
-    else{ items.forEach(function(p){ html += '<div class="idea-item">'+escapeHtml(p.title)+'</div>'; }); }
+    else{ items.forEach(function(p){ html += ideaItemHtml(p); }); }
     html += '</div>';
   });
-  var catNames = cats;
-  var rest = state.posts.filter(function(p){ return p.brand===b && p.stage==="pomysl" && (catNames.indexOf(p.category)===-1); });
-  html += '<div class="card"><h3>'+escapeHtml(b)+' — pozostałe pomysły</h3>';
+  var rest = state.posts.filter(function(p){ return p.brand===b && p.stage==="pomysl" && cats.indexOf(p.category)===-1; });
+  html += '<div class="card"><h3 style="margin:0 0 8px">Pozostałe pomysły</h3>';
   if(!rest.length){ html += '<div class="empty">Brak zapisanych pomysłów.</div>'; }
-  else{ rest.forEach(function(p){ html += '<div class="idea-item">'+escapeHtml(p.title)+'</div>'; }); }
+  else{ rest.forEach(function(p){ html += ideaItemHtml(p); }); }
   html += '</div>';
   return html;
+}
+function ideaItemHtml(p){
+  var meta = [];
+  if(p.platform) meta.push(POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]);
+  if(p.cta) meta.push('CTA: '+escapeHtml(p.cta));
+  return '<div class="idea-item" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
+    '<div><b>'+escapeHtml(p.title)+'</b>'+
+      (p.caption ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">'+escapeHtml(p.caption)+'</div>' : '')+
+      (meta.length ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+meta.join(' · ')+'</div>' : '')+
+    '</div>'+
+    '<div style="white-space:nowrap; flex:0 0 auto">'+
+      '<button class="btn secondary small" onclick="openIdeaModal({id:\''+p.id+'\'})">Edytuj</button> '+
+      '<button class="btn danger small" onclick="deleteIdea(\''+p.id+'\')">Usuń</button>'+
+    '</div></div>';
+}
+function addIdeaCategory(){
+  var name = prompt("Nazwa nowej kategorii (marka: "+postyFilter+"):");
+  if(!name) return;
+  name = name.trim();
+  if(!name) return;
+  if(!state.ideaCategories[postyFilter]) state.ideaCategories[postyFilter] = [];
+  if(state.ideaCategories[postyFilter].indexOf(name)!==-1){ alert("Taka kategoria już istnieje."); return; }
+  state.ideaCategories[postyFilter].push(name);
+  save(); renderAll();
+}
+function renameIdeaCategory(oldName){
+  var newName = prompt("Nowa nazwa kategorii:", oldName);
+  if(!newName) return;
+  newName = newName.trim();
+  if(!newName || newName===oldName) return;
+  var list = state.ideaCategories[postyFilter] || [];
+  var idx = list.indexOf(oldName);
+  if(idx!==-1) list[idx] = newName;
+  state.posts.forEach(function(p){ if(p.brand===postyFilter && p.category===oldName) p.category = newName; });
+  save(); renderAll();
+}
+function deleteIdeaCategory(name){
+  if(!confirm('Usunąć kategorię "'+name+'"? Pomysły z tej kategorii trafią do "Pozostałe pomysły".')) return;
+  state.ideaCategories[postyFilter] = (state.ideaCategories[postyFilter]||[]).filter(function(c){ return c!==name; });
+  state.posts.forEach(function(p){ if(p.brand===postyFilter && p.category===name) p.category = null; });
+  save(); renderAll();
 }
 function setPostySub(v){ postySubtab = v; renderAll(); }
 function setPostyFilter(b){ postyFilter = b; renderAll(); }
@@ -2072,12 +2124,74 @@ function setPostyDateRange(which, val){
   postyDateFilter = "zakres";
   renderAll();
 }
-function addPostIdea(){
-  var input = document.getElementById("postIdeaInput");
-  var brandSel = document.getElementById("postIdeaBrand");
-  var val = input.value.trim();
-  if(!val) return;
-  state.posts.unshift({id:uid("post"), title:val, brand:brandSel.value, stage:"pomysl", category:null, date:null});
+function ideaCategoryOptionsHtml(brand, selected){
+  var cats = (state.ideaCategories && state.ideaCategories[brand]) || [];
+  var html = '<option value=""'+(!selected?" selected":"")+'>— bez kategorii —</option>';
+  cats.forEach(function(c){ html += '<option value="'+escapeHtml(c)+'"'+(selected===c?" selected":"")+'>'+escapeHtml(c)+'</option>'; });
+  return html;
+}
+function updateIdeaCategoryOptions(){
+  var brand = document.getElementById("imBrand").value;
+  var sel = document.getElementById("imCategory");
+  sel.innerHTML = ideaCategoryOptionsHtml(brand, sel.value);
+}
+function openIdeaModal(opts){
+  closeIdeaModal();
+  if(opts.id){
+    var existing = state.posts.filter(function(x){return x.id===opts.id;})[0];
+    if(existing){ opts = {id:existing.id, title:existing.title, caption:existing.caption||"", cta:existing.cta||"", brand:existing.brand, platform:existing.platform||"", category:existing.category||""}; }
+  }
+  var isEdit = !!opts.id;
+  var brandOptions = state.brands.map(function(b){
+    return '<option value="'+escapeHtml(b)+'"'+(opts.brand===b?" selected":"")+'>'+escapeHtml(b)+'</option>';
+  }).join("");
+  var platformOptions = '<option value=""'+(!opts.platform?" selected":"")+'>— bez platformy —</option>'+
+    Object.keys(POST_PLATFORM_LABEL).map(function(p){
+      return '<option value="'+p+'"'+(opts.platform===p?" selected":"")+'>'+POST_PLATFORM_LABEL[p]+'</option>';
+    }).join("");
+  var html = '<div class="modal-overlay" id="ideaModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj pomysł":"Nowy pomysł")+'</h3>'+
+    '<div class="field"><label>Hook</label><input type="text" id="imHook" value="'+escapeHtml(opts.title||"")+'" placeholder="Chwytliwe zdanie otwierające..."></div>'+
+    '<div class="field"><label>Opis</label><textarea id="imOpis" rows="3" placeholder="Rozwinięcie pomysłu...">'+escapeHtml(opts.caption||"")+'</textarea></div>'+
+    '<div class="field"><label>CTA</label><input type="text" id="imCta" value="'+escapeHtml(opts.cta||"")+'" placeholder="np. Napisz DM „STUDIO”"></div>'+
+    '<div class="field"><label>Marka</label><select id="imBrand" onchange="updateIdeaCategoryOptions()">'+brandOptions+'</select></div>'+
+    '<div class="field"><label>Platforma</label><select id="imPlatform">'+platformOptions+'</select></div>'+
+    '<div class="field"><label>Kategoria</label><select id="imCategory">'+ideaCategoryOptionsHtml(opts.brand||postyFilter, opts.category||"")+'</select></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteIdea(\''+opts.id+'\')">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeIdeaModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveIdeaModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__ideaModalCtx = opts;
+}
+function closeIdeaModal(){
+  var m = document.getElementById("ideaModal");
+  if(m) m.remove();
+}
+function saveIdeaModal(){
+  var title = document.getElementById("imHook").value.trim();
+  if(!title) return;
+  var caption = document.getElementById("imOpis").value.trim();
+  var cta = document.getElementById("imCta").value.trim();
+  var brand = document.getElementById("imBrand").value;
+  var platform = document.getElementById("imPlatform").value || null;
+  var category = document.getElementById("imCategory").value || null;
+  var ctx = window.__ideaModalCtx || {};
+  if(ctx.id){
+    var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
+    if(p){ p.title=title; p.caption=caption; p.cta=cta; p.brand=brand; p.platform=platform; p.category=category; }
+  } else {
+    state.posts.unshift({id:uid("post"), title:title, caption:caption, cta:cta, brand:brand, platform:platform, category:category, stage:"pomysl", date:null});
+  }
+  closeIdeaModal();
+  save(); renderAll();
+}
+function deleteIdea(id){
+  if(!confirm("Usunąć ten pomysł?")) return;
+  state.posts = state.posts.filter(function(p){ return p.id!==id; });
+  closeIdeaModal();
   save(); renderAll();
 }
 var POST_PLATFORM_LABEL = {fbig:"FB/IG", tiktok:"TikTok", youtube:"YouTube"};
