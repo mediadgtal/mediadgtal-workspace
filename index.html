@@ -5664,7 +5664,7 @@ var crmT4ASyncStatus = {};
 var crmT4ACreating = {};
 function t4aBlockA_H(c){
   var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
-  function hyperlink(url){ return url ? '=HYPERLINK("'+url.replace(/"/g,'""')+'","Link")' : ""; }
+  function hyperlink(url){ return url ? '=HYPERLINK("'+url.replace(/"/g,'""')+'";"Link")' : ""; }
   return [c.name||"", c.contactPerson||"", c.category||"", c.city||"", c.email||"", hyperlink(igUrl), hyperlink(fbUrl), hyperlink(webUrl)];
 }
 function t4aBlockJ_P(c){
@@ -6929,6 +6929,7 @@ function init(){
   document.getElementById("brandLogo").src = "data:image/png;base64,"+LOGO_B64;
   load();
   renderAll();
+  setInterval(function(){ crmT4ALastPull = Date.now(); crmPullT4AStatuses(); }, 45000);
 }
 init();
 </script>
