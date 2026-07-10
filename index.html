@@ -552,6 +552,7 @@ var TABS = [
   {id:"facebook", label:"Facebook", group:"Social Media"},
   {id:"nawyki", label:"Nawyki", group:"Narzędzia"},
   {id:"klienci", label:"Klienci", group:"Narzędzia"},
+  {id:"crm", label:"CRM Reaktywacja", group:"Narzędzia"},
   {id:"agent", label:"Agent AI", group:"Narzędzia"},
   {id:"statystyki", label:"Statystyki", group:"Narzędzia"}
 ];
@@ -567,6 +568,7 @@ var TAB_ICON_SVG = {
   kalendarz: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  crm: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>',
   agent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.8 4.4L18 8l-4.2 1.6L12 14l-1.8-4.4L6 8l4.2-1.6z"/><path d="M19 15l.9 2.2L22 18l-2.1.8L19 21l-.9-2.2L16 18l2.1-.8z"/></svg>'
 };
 var SOCIAL_TILE_ICON_SVG = {
@@ -845,6 +847,8 @@ function migrateState(s){
   if(!s.brands || !s.brands.length) s.brands = ["MediaDGtal","tool4arts"];
   if(!s.driveMonthFolders) s.driveMonthFolders = {};
   if(!s.agentRequests) s.agentRequests = [];
+  if(!s.crmContacts) s.crmContacts = [];
+  if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
   (function(){
     if(!s.ceo) s.ceo = {};
     var c = s.ceo;
@@ -1453,6 +1457,9 @@ function defaultState(){
     tool4arts: {facebook:{history:[]}, instagram:{history:[]}, tiktok:{history:[]}, youtube:{history:[]}}
   };
 
+  s.crmContacts = [];
+  s.crmMeta = {reviewIndex:0, filter:"all"};
+
   return s;
 }
 
@@ -1508,11 +1515,12 @@ var RENDERERS = {
   kalendarz: renderKalendarz,
   nawyki: renderNawyki,
   klienci: renderKlienci,
+  crm: renderCRM,
   agent: renderAgentAI,
   ceo: renderCEO
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", wiadomosci:"Wiadomości", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", agent:"Agent AI", ceo:"CEO"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", crm:"CRM Reaktywacja", agent:"Agent AI", ceo:"CEO"};
 
 function renderAll(){
   renderNav();
@@ -5579,6 +5587,309 @@ function flushClientsBackupPush(){
     if(r.status===401){ window.__gcalToken=null; }
     clientsBackupStatus = r.ok ? "ok" : "error";
   }).catch(function(){ clientsBackupStatus = "error"; });
+}
+
+/* ================= CRM REAKTYWACJA ================= */
+var crmSubview = "przeglad"; // przeglad | import
+var crmImportPending = null; // {headerRow, dataRows, map, fileName}
+
+var CRM_STATUSES = [
+  {id:"brak_odpowiedzi", label:"Brak odpowiedzi", color:"#c5bec3", bg:"#2a2830"},
+  {id:"ucichlo", label:"Odpisali - ucichło", color:"#e0954a", bg:"#322419"},
+  {id:"w_rozmowie", label:"W rozmowie", color:"#cf9b4a", bg:"#342c1f"},
+  {id:"odrzucili", label:"Odrzucili", color:"#d1636f", bg:"#33222a"},
+  {id:"klient", label:"Klient", color:"#63b58a", bg:"#20302a"}
+];
+var CRM_COL_ALIASES = {
+  name:["nazwa studia","nazwa","studio","firma","name","klient"],
+  ig:["ig","instagram","link ig","link instagram","insta"],
+  fb:["fb","facebook","link fb","link facebook"],
+  email:["mail","e-mail","email"],
+  phone:["telefon","tel","phone","numer telefonu","nr telefonu"],
+  notes:["notatki","notatka","uwagi","notes","opis"]
+};
+
+function crmNormHeader(h){
+  return (h||"").toString().trim().toLowerCase()
+    .replace(/ą/g,"a").replace(/ć/g,"c").replace(/ę/g,"e").replace(/ł/g,"l").replace(/ń/g,"n")
+    .replace(/ó/g,"o").replace(/ś/g,"s").replace(/ź/g,"z").replace(/ż/g,"z");
+}
+function crmParseCSV(text){
+  if(text.charCodeAt(0)===0xFEFF) text = text.slice(1);
+  var firstLine = text.split("\n")[0] || "";
+  var delim = (firstLine.split(";").length > firstLine.split(",").length) ? ";" : ",";
+  var rows = []; var row = []; var field = ""; var inQuotes = false;
+  for(var i=0;i<text.length;i++){
+    var ch = text[i];
+    if(inQuotes){
+      if(ch === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else {
+      if(ch === '"') inQuotes = true;
+      else if(ch === delim){ row.push(field); field = ""; }
+      else if(ch === '\n'){ row.push(field); rows.push(row); row = []; field = ""; }
+      else if(ch === '\r'){ /* skip */ }
+      else field += ch;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(function(r){ return r.some(function(f){ return f && f.trim() !== ""; }); });
+}
+function crmMapColumns(headerRow){
+  var map = {};
+  var norm = headerRow.map(crmNormHeader);
+  Object.keys(CRM_COL_ALIASES).forEach(function(field){
+    var aliases = CRM_COL_ALIASES[field].map(crmNormHeader);
+    for(var i=0;i<norm.length;i++){
+      if(aliases.indexOf(norm[i]) > -1){ map[field] = i; return; }
+    }
+  });
+  if(map.name === undefined) map.name = 0;
+  return map;
+}
+function crmHandleFile(ev){
+  var file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e){
+    var rows = crmParseCSV(String(e.target.result || ""));
+    if(!rows.length){ crmImportPending = null; renderAll(); return; }
+    var headerRow = rows[0];
+    var dataRows = rows.slice(1);
+    crmImportPending = {headerRow:headerRow, dataRows:dataRows, map:crmMapColumns(headerRow), fileName:file.name};
+    renderAll();
+  };
+  reader.readAsText(file, "UTF-8");
+  ev.target.value = "";
+}
+function crmCancelImport(){ crmImportPending = null; renderAll(); }
+function crmConfirmImport(){
+  if(!crmImportPending) return;
+  var map = crmImportPending.map;
+  crmImportPending.dataRows.forEach(function(r){
+    var name = (r[map.name]||"").toString().trim();
+    if(!name) return;
+    state.crmContacts.push({
+      id: uid("crmc"),
+      name: name,
+      ig: (map.ig!=null ? (r[map.ig]||"").toString().trim() : ""),
+      fb: (map.fb!=null ? (r[map.fb]||"").toString().trim() : ""),
+      email: (map.email!=null ? (r[map.email]||"").toString().trim() : ""),
+      phone: (map.phone!=null ? (r[map.phone]||"").toString().trim() : ""),
+      notes: (map.notes!=null ? (r[map.notes]||"").toString().trim() : ""),
+      status: null,
+      lastContact: "",
+      taggedAt: null,
+      importedAt: todayStr()
+    });
+  });
+  crmImportPending = null;
+  crmSubview = "przeglad";
+  save(); renderAll();
+}
+function crmResetAll(){
+  if(!state.crmContacts.length) return;
+  if(!confirm("Na pewno usunąć wszystkie "+state.crmContacts.length+" kontaktów z bazy CRM Reaktywacja? Tej operacji nie można cofnąć.")) return;
+  state.crmContacts = [];
+  state.crmMeta = {reviewIndex:0, filter:"all"};
+  save(); renderAll();
+}
+function crmSetSubview(v){ crmSubview = v; renderAll(); }
+function crmFilterMatch(c, filter){
+  if(!c) return false;
+  if(filter==="all") return true;
+  if(filter==="untagged") return !c.status;
+  return c.status === filter;
+}
+function crmFindIndex(fromIndex, dir, filter){
+  var list = state.crmContacts;
+  var n = list.length;
+  if(!n) return -1;
+  var i = fromIndex;
+  for(var steps=0; steps<n; steps++){
+    i += dir;
+    if(i<0) i = n-1;
+    if(i>=n) i = 0;
+    if(crmFilterMatch(list[i], filter)) return i;
+  }
+  return crmFilterMatch(list[fromIndex], filter) ? fromIndex : -1;
+}
+function crmSetFilter(f){
+  state.crmMeta.filter = f;
+  if(!crmFilterMatch(state.crmContacts[state.crmMeta.reviewIndex], f)){
+    var idx = crmFindIndex(state.crmMeta.reviewIndex, 1, f);
+    if(idx > -1) state.crmMeta.reviewIndex = idx;
+  }
+  save(); renderAll();
+}
+function crmGoto(dir){
+  var idx = crmFindIndex(state.crmMeta.reviewIndex, dir, state.crmMeta.filter||"all");
+  if(idx > -1) state.crmMeta.reviewIndex = idx;
+  save(); renderAll();
+}
+function crmJumpFirstUntagged(){
+  var idx = crmFindIndex(-1, 1, "untagged");
+  if(idx > -1) state.crmMeta.reviewIndex = idx;
+  save(); renderAll();
+}
+function crmSetStatus(id, statusId){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.status = statusId;
+  c.taggedAt = todayStr();
+  var filter = state.crmMeta.filter || "all";
+  var curIdx = state.crmContacts.indexOf(c);
+  var next;
+  if(filter==="all"){
+    next = curIdx+1 < state.crmContacts.length ? curIdx+1 : 0;
+  } else {
+    next = crmFindIndex(curIdx, 1, filter);
+    if(next===-1) next = curIdx;
+  }
+  state.crmMeta.reviewIndex = next;
+  save(); renderAll();
+}
+function crmSetLastContact(id, val){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.lastContact = val;
+  save();
+}
+function crmStatusTag(statusId){
+  var s = CRM_STATUSES.filter(function(x){ return x.id===statusId; })[0];
+  if(!s) return "";
+  return '<span class="tag" style="background:'+s.bg+'; color:'+s.color+'">'+s.label+'</span>';
+}
+function crmUrl(v, kind){
+  v = (v||"").trim();
+  if(!v) return "";
+  if(/^https?:\/\//i.test(v)) return v;
+  if(kind==="ig") return "https://instagram.com/"+encodeURIComponent(v.replace(/^@/,""));
+  if(kind==="fb") return "https://facebook.com/"+encodeURIComponent(v);
+  return v;
+}
+function renderCRM(el){
+  if(!state.crmMeta) state.crmMeta = {reviewIndex:0, filter:"all"};
+  setTopActions("");
+  var html = '<div class="tabsw">'+
+    '<button class="'+(crmSubview==="przeglad"?"active":"")+'" onclick="crmSetSubview(\'przeglad\')">Przegląd</button>'+
+    '<button class="'+(crmSubview==="import"?"active":"")+'" onclick="crmSetSubview(\'import\')">Import</button>'+
+    '</div>';
+
+  var total = state.crmContacts.length;
+  var tagged = state.crmContacts.filter(function(c){ return !!c.status; }).length;
+  var pct = total ? Math.round(tagged/total*100) : 0;
+  html += '<div class="card" style="margin-bottom:16px">'+
+    '<div class="progress-label"><span>Otagowane kontakty</span><span>'+tagged+' / '+total+' ('+pct+'%)</span></div>'+
+    '<div class="habit-bar" style="margin-bottom:0"><div style="width:'+pct+'%"></div></div>'+
+    (total ? '' : '<div class="empty" style="margin-top:10px; padding:0">Baza jest pusta — zaimportuj kontakty w zakładce "Import".</div>')+
+    '</div>';
+
+  html += (crmSubview==="import") ? renderCrmImport() : renderCrmPrzeglad();
+  el.innerHTML = html;
+}
+function renderCrmImport(){
+  var html = '<div class="card" style="margin-bottom:16px">'+
+    '<h3>Import z pliku CSV</h3>'+
+    '<div class="stub-note">Eksportuj arkusz z Excela jako <b>CSV UTF-8 (rozdzielany przecinkami)</b> (Plik → Zapisz jako). Rozpoznawane kolumny (w dowolnej kolejności): nazwa/studio, IG, FB, mail, telefon, notatki. Jeśli po imporcie zobaczysz krzaki zamiast polskich znaków, zapisz plik ponownie jako "CSV UTF-8".</div>'+
+    '<input type="file" accept=".csv,text/csv" onchange="crmHandleFile(event)">'+
+    '</div>';
+
+  if(crmImportPending){
+    var p = crmImportPending;
+    var map = p.map;
+    var fieldLabels = {name:"Nazwa", ig:"IG", fb:"FB", email:"Mail", phone:"Telefon", notes:"Notatki"};
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<h3>Podgląd — '+escapeHtml(p.fileName)+'</h3>'+
+      '<div style="margin-bottom:10px; font-size:12.5px; color:var(--muted-light)">Znaleziono <b>'+p.dataRows.length+'</b> wierszy. Rozpoznane kolumny: '+
+      Object.keys(fieldLabels).map(function(f){
+        return fieldLabels[f]+(map[f]!=null ? ' <span style="color:#63b58a">✓</span>' : ' <span style="color:var(--muted)">— brak</span>');
+      }).join(", ")+
+      '</div>'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>Nazwa</th><th>IG</th><th>FB</th><th>Mail</th><th>Telefon</th><th>Notatki</th></tr></thead><tbody>'+
+      p.dataRows.slice(0,5).map(function(r){
+        return '<tr><td>'+escapeHtml(r[map.name]||"")+'</td><td>'+escapeHtml(r[map.ig]||"")+'</td><td>'+escapeHtml(r[map.fb]||"")+'</td><td>'+escapeHtml(r[map.email]||"")+'</td><td>'+escapeHtml(r[map.phone]||"")+'</td><td>'+escapeHtml((r[map.notes]||"").toString().slice(0,60))+'</td></tr>';
+      }).join("")+
+      '</tbody></table></div>'+
+      (p.dataRows.length>5 ? '<div class="empty">…i '+(p.dataRows.length-5)+' więcej</div>' : '')+
+      '<div class="row" style="margin-top:14px">'+
+      '<button class="btn" onclick="crmConfirmImport()">Importuj '+p.dataRows.length+' kontaktów</button>'+
+      '<button class="btn secondary" onclick="crmCancelImport()">Anuluj</button>'+
+      '</div>'+
+      '</div>';
+  }
+
+  if(state.crmContacts.length){
+    html += '<div class="card"><div class="row" style="justify-content:space-between; align-items:center">'+
+      '<span style="font-size:12.5px; color:var(--muted-light)">W bazie: <b>'+state.crmContacts.length+'</b> kontaktów.</span>'+
+      '<button class="btn danger small" onclick="crmResetAll()">Wyczyść całą bazę</button>'+
+      '</div></div>';
+  }
+  return html;
+}
+function renderCrmPrzeglad(){
+  if(!state.crmContacts.length){
+    return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę z CSV.</div></div>';
+  }
+  var filter = state.crmMeta.filter || "all";
+  if(!crmFilterMatch(state.crmContacts[state.crmMeta.reviewIndex], filter)){
+    var fixIdx = crmFindIndex(state.crmMeta.reviewIndex, 1, filter);
+    if(fixIdx > -1) state.crmMeta.reviewIndex = fixIdx;
+  }
+  var idx = Math.min(Math.max(state.crmMeta.reviewIndex||0, 0), state.crmContacts.length-1);
+  var c = state.crmContacts[idx];
+
+  var counts = {untagged:0};
+  CRM_STATUSES.forEach(function(s){ counts[s.id] = 0; });
+  state.crmContacts.forEach(function(x){
+    if(!x.status) counts.untagged++; else counts[x.status] = (counts[x.status]||0) + 1;
+  });
+
+  var html = '<div class="chiprow">';
+  html += '<span class="chip'+(filter==="all"?" active":"")+'" onclick="crmSetFilter(\'all\')">Wszystkie ('+state.crmContacts.length+')</span>';
+  html += '<span class="chip'+(filter==="untagged"?" active":"")+'" onclick="crmSetFilter(\'untagged\')">Nieotagowane ('+counts.untagged+')</span>';
+  CRM_STATUSES.forEach(function(s){
+    html += '<span class="chip'+(filter===s.id?" active":"")+'" onclick="crmSetFilter(\''+s.id+'\')">'+s.label+' ('+(counts[s.id]||0)+')</span>';
+  });
+  html += '</div>';
+
+  html += '<div class="card" style="max-width:560px">';
+  html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">'+
+    '<span style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em">Kontakt '+(idx+1)+' z '+state.crmContacts.length+'</span>'+
+    (c.status ? crmStatusTag(c.status) : '')+
+    '</div>';
+
+  html += '<h3 style="font-size:19px; color:#fff; text-transform:none; letter-spacing:0; margin:0 0 12px">'+escapeHtml(c.name||"(bez nazwy)")+'</h3>';
+
+  var links = "";
+  if(c.ig) links += '<a href="'+escapeHtml(crmUrl(c.ig,"ig"))+'" target="_blank" rel="noopener" class="linklike" style="margin-right:14px">📷 Instagram</a>';
+  if(c.fb) links += '<a href="'+escapeHtml(crmUrl(c.fb,"fb"))+'" target="_blank" rel="noopener" class="linklike" style="margin-right:14px">👍 Facebook</a>';
+  if(c.email) links += '<a href="mailto:'+escapeHtml(c.email)+'" class="linklike" style="margin-right:14px">✉️ '+escapeHtml(c.email)+'</a>';
+  if(c.phone) links += '<a href="tel:'+escapeHtml(c.phone.replace(/\s+/g,""))+'" class="linklike">📞 '+escapeHtml(c.phone)+'</a>';
+  if(links) html += '<div style="margin-bottom:14px">'+links+'</div>';
+
+  html += '<div class="field"><label>Notatka</label><div style="background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; min-height:20px">'+
+    (c.notes ? escapeHtml(c.notes) : '<span style="color:var(--muted)">brak notatki</span>')+'</div></div>';
+
+  html += '<div class="field"><label>Data ostatniego kontaktu (opcjonalnie)</label><input type="date" value="'+escapeHtml(c.lastContact||"")+'" onchange="crmSetLastContact(\''+c.id+'\', this.value)"></div>';
+
+  html += '<div class="field"><label>Status</label><div class="chiprow" style="margin-bottom:0">';
+  CRM_STATUSES.forEach(function(s){
+    var active = c.status===s.id;
+    html += '<button class="chip'+(active?" active":"")+'"'+(active?(' style="background:'+s.color+'; border-color:'+s.color+'; color:#1a1418; font-weight:700"'):'')+' onclick="crmSetStatus(\''+c.id+'\',\''+s.id+'\')">'+s.label+'</button>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="row" style="margin-top:16px; justify-content:space-between">'+
+    '<button class="btn secondary" onclick="crmGoto(-1)">‹ Poprzedni</button>'+
+    '<button class="btn secondary" onclick="crmJumpFirstUntagged()">Pierwszy nieotagowany</button>'+
+    '<button class="btn secondary" onclick="crmGoto(1)">Następny ›</button>'+
+    '</div>';
+
+  html += '</div>';
+  return html;
 }
 
 /* ================= STATYSTYKI ================= */
