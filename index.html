@@ -6193,7 +6193,7 @@ function renderCrmPrzeglad(){
 
   html += '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px">'+
     '<h3 style="font-size:19px; color:#fff; text-transform:none; letter-spacing:0; margin:0">'+escapeHtml(c.name||"(bez nazwy)")+'</h3>'+
-    '<div style="flex:0 0 auto; white-space:nowrap"><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button> <button class="linklike" onclick="openCrmNoteModal(\''+c.id+'\')">Notatka</button> <button class="linklike danger" onclick="crmDeleteContact(\''+c.id+'\')">Usuń</button></div>'+
+    '<div style="flex:0 0 auto; white-space:nowrap"><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button> <button class="linklike danger" onclick="crmDeleteContact(\''+c.id+'\')">Usuń</button></div>'+
     '</div>';
 
   var links = "";
@@ -6204,7 +6204,7 @@ function renderCrmPrzeglad(){
   if(c.phone) links += '<a href="tel:'+escapeHtml(c.phone.replace(/\s+/g,""))+'" class="linklike">📞 '+escapeHtml(c.phone)+'</a>';
   if(links) html += '<div style="margin-bottom:14px">'+links+'</div>';
 
-  html += '<div class="field"><label>Notatka</label><div style="background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; min-height:20px">'+
+  html += '<div class="field"><label>Notatka</label><div onclick="openCrmNoteModal(\''+c.id+'\')" title="Kliknij, aby edytować" style="cursor:pointer; background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; min-height:20px">'+
     (c.notes ? escapeHtml(c.notes) : '<span style="color:var(--muted)">brak notatki</span>')+'</div></div>';
 
   html += '<div class="row" style="gap:14px">'+
@@ -6333,7 +6333,7 @@ function renderCrmBaza(){
       '<td>'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.statusT4A?crmStatusTag(c.statusT4A):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.lastContact?fmtDate(c.lastContact):'<span style="color:var(--muted)">—</span>')+'</td>'+
-      '<td style="white-space:nowrap"><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button> <button class="linklike" onclick="openCrmNoteModal(\''+c.id+'\')">Notatka</button></td>'+
+      '<td><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button></td>'+
       '</tr>';
   });
   html += '</tbody></table></div></div>';
@@ -6401,11 +6401,12 @@ function crmPriorityRow(c){
       '<span style="color:var(--muted); font-size:11.5px; margin-left:8px">Ostatni kontakt: '+daysLabel+'</span></div>'+
       '<div style="white-space:nowrap">'+
         '<button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button> '+
-        '<button class="linklike" onclick="openCrmNoteModal(\''+c.id+'\')">Notatka</button> '+
         '<button class="linklike" style="font-size:16px; vertical-align:middle" title="Blisko zamknięcia" onclick="crmToggleHot(\''+c.id+'\')">'+(c.hot?'🔥':'🤍')+'</button>'+
       '</div>'+
     '</div>'+
-    (c.notes ? '<div style="font-size:12.5px; color:var(--muted-light)">'+escapeHtml(c.notes.slice(0,140))+(c.notes.length>140?'…':'')+'</div>' : '')+
+    '<div onclick="openCrmNoteModal(\''+c.id+'\')" title="Kliknij, aby edytować notatkę" style="cursor:pointer; width:100%; font-size:12.5px; color:var(--muted-light)">'+
+      (c.notes ? escapeHtml(c.notes.slice(0,140))+(c.notes.length>140?'…':'') : '<span style="color:var(--muted)">brak notatki</span>')+
+    '</div>'+
     '<div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-top:2px">'+
       '<div>'+links+'</div>'+
       '<div class="row" style="gap:8px">'+
