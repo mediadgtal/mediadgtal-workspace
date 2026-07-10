@@ -5793,8 +5793,27 @@ function crmAppendT4ARow(c, targetRow){
 function crmPushT4ARow(c){
   crmT4ASyncStatus[c.id] = "syncing";
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
-  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
   var rn = c.t4aSheetRow;
+  fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A"+rn), {headers:headers})
+    .then(function(r){
+      if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+      if(!r.ok) throw new Error("http"+r.status);
+      return r.json();
+    }).then(function(data){
+      var cell = ((data.values && data.values[0] && data.values[0][0]) || "").toString().trim().toLowerCase();
+      var expected = (c.name||"").trim().toLowerCase();
+      if(cell !== expected){
+        c.t4aSheetRow = null;
+        crmSyncT4ARow(c);
+        return;
+      }
+      crmPushT4ARowActual(c, rn);
+    }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+}
+function crmPushT4ARowActual(c, rn){
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
   fetch(base+"/values:batchUpdate", {
     method:"POST", headers:headers,
     body: JSON.stringify({valueInputOption:"USER_ENTERED", data:[
