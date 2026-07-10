@@ -5682,6 +5682,7 @@ function crmConfirmImport(){
       status: null,
       lastContact: "",
       taggedAt: null,
+      hot: false,
       importedAt: todayStr()
     });
   });
@@ -5774,6 +5775,7 @@ function renderCRM(el){
   if(!state.crmMeta) state.crmMeta = {reviewIndex:0, filter:"all"};
   setTopActions("");
   var html = '<div class="tabsw">'+
+    '<button class="'+(crmSubview==="priorytety"?"active":"")+'" onclick="crmSetSubview(\'priorytety\')">Priorytety</button>'+
     '<button class="'+(crmSubview==="przeglad"?"active":"")+'" onclick="crmSetSubview(\'przeglad\')">Przegląd</button>'+
     '<button class="'+(crmSubview==="import"?"active":"")+'" onclick="crmSetSubview(\'import\')">Import</button>'+
     '</div>';
@@ -5787,7 +5789,7 @@ function renderCRM(el){
     (total ? '' : '<div class="empty" style="margin-top:10px; padding:0">Baza jest pusta — zaimportuj kontakty w zakładce "Import".</div>')+
     '</div>';
 
-  html += (crmSubview==="import") ? renderCrmImport() : renderCrmPrzeglad();
+  html += (crmSubview==="import") ? renderCrmImport() : (crmSubview==="priorytety" ? renderCrmPriorytety() : renderCrmPrzeglad());
   el.innerHTML = html;
 }
 function renderCrmImport(){
@@ -5858,7 +5860,8 @@ function renderCrmPrzeglad(){
   html += '<div class="card" style="max-width:560px">';
   html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">'+
     '<span style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em">Kontakt '+(idx+1)+' z '+state.crmContacts.length+'</span>'+
-    (c.status ? crmStatusTag(c.status) : '')+
+    '<span>'+(c.status ? crmStatusTag(c.status) : '')+
+    ' <button class="linklike" style="font-size:16px; vertical-align:middle" title="Blisko zamknięcia" onclick="crmToggleHot(\''+c.id+'\')">'+(c.hot?'🔥':'🤍')+'</button></span>'+
     '</div>';
 
   html += '<h3 style="font-size:19px; color:#fff; text-transform:none; letter-spacing:0; margin:0 0 12px">'+escapeHtml(c.name||"(bez nazwy)")+'</h3>';
@@ -5889,6 +5892,96 @@ function renderCrmPrzeglad(){
     '</div>';
 
   html += '</div>';
+  return html;
+}
+
+function crmToggleHot(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.hot = !c.hot;
+  save(); renderAll();
+}
+function crmMarkContactedToday(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.lastContact = todayStr();
+  save(); renderAll();
+}
+function crmDaysSince(c){
+  var base = c.lastContact || c.taggedAt || c.importedAt;
+  if(!base) return Infinity;
+  var d = new Date(base+"T00:00:00");
+  if(isNaN(d)) return Infinity;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+function crmPriorityBuckets(){
+  var buckets = {hot:[], reaktywacja:[], followup:[], nowe:[]};
+  state.crmContacts.forEach(function(c){
+    if(c.status==="klient" || c.status==="odrzucili") return;
+    if(c.hot){ buckets.hot.push(c); return; }
+    if(!c.status){ buckets.nowe.push(c); return; }
+    if(c.status==="w_rozmowie"){ buckets.followup.push(c); return; }
+    if(c.status==="ucichlo" || c.status==="brak_odpowiedzi"){ buckets.reaktywacja.push(c); return; }
+  });
+  buckets.nowe.sort(function(a,b){ return (a.importedAt||"").localeCompare(b.importedAt||"") || a.name.localeCompare(b.name); });
+  buckets.followup.sort(function(a,b){ return crmDaysSince(b) - crmDaysSince(a); });
+  buckets.hot.sort(function(a,b){ return crmDaysSince(b) - crmDaysSince(a); });
+  buckets.reaktywacja.sort(function(a,b){
+    var rank = {ucichlo:0, brak_odpowiedzi:1};
+    var ra = rank[a.status], rb = rank[b.status];
+    if(ra !== rb) return ra - rb;
+    return crmDaysSince(b) - crmDaysSince(a);
+  });
+  return buckets;
+}
+var crmDraftNoticeFor = null;
+function crmGenerateDraftStub(id){
+  crmDraftNoticeFor = (crmDraftNoticeFor===id) ? null : id;
+  renderAll();
+}
+function crmPriorityRow(c){
+  var days = crmDaysSince(c);
+  var daysLabel = (days===Infinity) ? "brak danych o kontakcie" : (days===0 ? "dziś" : days+" dni temu");
+  var links = "";
+  if(c.ig) links += '<a href="'+escapeHtml(crmUrl(c.ig,"ig"))+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">📷</a>';
+  if(c.fb) links += '<a href="'+escapeHtml(crmUrl(c.fb,"fb"))+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">👍</a>';
+  if(c.email) links += '<a href="mailto:'+escapeHtml(c.email)+'" class="linklike" style="margin-right:10px">✉️</a>';
+  if(c.phone) links += '<a href="tel:'+escapeHtml(c.phone.replace(/\s+/g,""))+'" class="linklike">📞</a>';
+  return '<div class="taskitem" style="align-items:flex-start; flex-direction:column; gap:6px; padding:12px 4px">'+
+    '<div style="display:flex; justify-content:space-between; width:100%; align-items:center">'+
+      '<div><b style="color:#fff">'+escapeHtml(c.name)+'</b> '+(c.status ? crmStatusTag(c.status) : '')+
+      '<span style="color:var(--muted); font-size:11.5px; margin-left:8px">Ostatni kontakt: '+daysLabel+'</span></div>'+
+      '<button class="linklike" style="font-size:16px" title="Blisko zamknięcia" onclick="crmToggleHot(\''+c.id+'\')">'+(c.hot?'🔥':'🤍')+'</button>'+
+    '</div>'+
+    (c.notes ? '<div style="font-size:12.5px; color:var(--muted-light)">'+escapeHtml(c.notes.slice(0,140))+(c.notes.length>140?'…':'')+'</div>' : '')+
+    '<div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-top:2px">'+
+      '<div>'+links+'</div>'+
+      '<div class="row" style="gap:8px">'+
+        '<button class="btn secondary small" onclick="crmGenerateDraftStub(\''+c.id+'\')">✍️ Szkic wiadomości</button>'+
+        '<button class="btn small" onclick="crmMarkContactedToday(\''+c.id+'\')">Skontaktowano dziś</button>'+
+      '</div>'+
+    '</div>'+
+    (crmDraftNoticeFor===c.id ? '<div class="stub-note" style="margin-top:4px">Generowanie szkiców przez Anthropic API jeszcze nie jest podłączone (do ustalenia klucz API) — na razie napisz wiadomość ręcznie, opierając się na notatce powyżej.</div>' : '')+
+  '</div>';
+}
+function renderCrmPriorytety(){
+  if(!state.crmContacts.length){
+    return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę z CSV.</div></div>';
+  }
+  var b = crmPriorityBuckets();
+  var sections = [
+    {label:"🔥 Bliskie zamknięcia", list:b.hot, empty:"Brak kontaktów oznaczonych jako bliskie zamknięcia."},
+    {label:"Reaktywacje", list:b.reaktywacja, empty:"Brak kontaktów do reaktywacji."},
+    {label:"Follow-upy", list:b.followup, empty:"Brak rozmów czekających na follow-up."},
+    {label:"Nowe kontakty", list:b.nowe, empty:"Brak nowych, nieotagowanych kontaktów."}
+  ];
+  var html = "";
+  sections.forEach(function(s){
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<h3>'+s.label+' ('+s.list.length+')</h3>'+
+      (s.list.length ? s.list.map(crmPriorityRow).join("") : '<div class="empty">'+s.empty+'</div>')+
+      '</div>';
+  });
   return html;
 }
 
