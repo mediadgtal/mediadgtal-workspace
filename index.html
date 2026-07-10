@@ -561,6 +561,7 @@ var TABS = [
   {id:"nawyki", label:"Nawyki", group:"Narzędzia"},
   {id:"klienci", label:"Klienci", group:"Narzędzia"},
   {id:"crm", label:"Baza kontaktów", group:"Narzędzia"},
+  {id:"clientops", label:"Obsługa Klientów", group:"Narzędzia"},
   {id:"agent", label:"Agent AI", group:"Narzędzia"},
   {id:"statystyki", label:"Statystyki", group:"Narzędzia"}
 ];
@@ -576,6 +577,7 @@ var TAB_ICON_SVG = {
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   crm: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>',
+  clientops: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v3h8V3"/><polyline points="8 13 10.5 15.5 16 10"/></svg>',
   agent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.8 4.4L18 8l-4.2 1.6L12 14l-1.8-4.4L6 8l4.2-1.6z"/><path d="M19 15l.9 2.2L22 18l-2.1.8L19 21l-.9-2.2L16 18l2.1-.8z"/></svg>'
 };
 var SOCIAL_TILE_ICON_SVG = {
@@ -857,6 +859,10 @@ function migrateState(s){
   if(!s.agentRequests) s.agentRequests = [];
   if(!s.crmContacts) s.crmContacts = [];
   if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
+  if(!s.clientOps) s.clientOps = {clients:[], tasks:[], screenshots:[]};
+  if(!s.clientOps.clients) s.clientOps.clients = [];
+  if(!s.clientOps.tasks) s.clientOps.tasks = [];
+  if(!s.clientOps.screenshots) s.clientOps.screenshots = [];
   if(!s.crmCategories || !s.crmCategories.length) s.crmCategories = ["Studio Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
   if(s.crmCategories.indexOf("Akrobatyka")===-1){
     var pdIdx = s.crmCategories.indexOf("Pole Dance");
@@ -1488,6 +1494,8 @@ function defaultState(){
   s.crmMeta = {reviewIndex:0, filter:"all"};
   s.crmCategories = ["Studio Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
 
+  s.clientOps = {clients:[], tasks:[], screenshots:[]};
+
   return s;
 }
 
@@ -1543,11 +1551,12 @@ var RENDERERS = {
   nawyki: renderNawyki,
   klienci: renderKlienci,
   crm: renderCRM,
+  clientops: renderClientOps,
   agent: renderAgentAI,
   ceo: renderCEO
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", agent:"Agent AI", ceo:"CEO"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO"};
 
 function renderAll(){
   renderNav();
@@ -4395,6 +4404,346 @@ function undoKlienci(){
   save(); renderAllKeepScroll("klienciScrollBox");
 }
 
+/* ================= OBSŁUGA KLIENTÓW ================= */
+var clientOpsSubview = "dzis"; // dzis | klienci
+var clientOpsExpandedId = null;
+var clientOpsUndoStack = [];
+var CLIENT_OPS_FREQ_LABEL = {once:"Jednorazowe", weekly:"Co tydzień", monthly:"Co miesiąc"};
+var CLIENT_SHOT_PROMPT = "Jesteś doświadczonym specjalistą od reklam Meta Ads, pomagasz właścicielowi agencji marketingowej szybko ocenić zrzut ekranu z Meta Ads Managera. Oceń widoczne metryki (koszt wyniku/leada, zasięg, wydany budżet, CTR jeśli widoczny, liczba wyników) na tle typowych benchmarków dla reklam w social media dla małych/średnich firm lokalnych. Zwróć uwagę na sygnały ostrzegawcze: rosnący koszt leada, malejący zasięg, szybko wyczerpujący się budżet, spadający CTR. Odpowiedz PO POLSKU, krótko (maks. 6 zdań): zacznij od jednego zdania podsumowania (dobrze/przeciętnie/źle), potem 2-4 punkty z konkretnymi liczbami widocznymi na tym zrzucie. To ma być pomocnicza sugestia do weryfikacji przez człowieka, nie ostateczna ocena — nie udawaj większej pewności niż faktycznie masz z jednego zrzutu.";
+
+function pushClientOpsUndo(a){ clientOpsUndoStack.push(a); if(clientOpsUndoStack.length>50) clientOpsUndoStack.shift(); }
+function undoClientOps(){
+  var a = clientOpsUndoStack.pop();
+  if(!a) return;
+  if(a.type==="addClient"){
+    state.clientOps.clients = state.clientOps.clients.filter(function(x){return x.id!==a.id;});
+  } else if(a.type==="deleteClient"){
+    state.clientOps.clients.splice(a.index, 0, a.client);
+    state.clientOps.tasks = state.clientOps.tasks.concat(a.tasks||[]);
+  } else if(a.type==="field"){
+    var c = state.clientOps.clients.filter(function(x){return x.id===a.id;})[0];
+    if(c) c[a.field] = a.prevValue;
+  } else if(a.type==="addTask"){
+    state.clientOps.tasks = state.clientOps.tasks.filter(function(x){return x.id!==a.id;});
+  } else if(a.type==="deleteTask"){
+    state.clientOps.tasks.splice(a.index, 0, a.task);
+  } else if(a.type==="toggleTask"){
+    var t = state.clientOps.tasks.filter(function(x){return x.id===a.id;})[0];
+    if(t){ t.nextDue = a.prevNextDue; t.done = a.prevDone; t.lastDoneAt = a.prevLastDoneAt; }
+  }
+  save(); renderAll();
+}
+function setClientOpsSubview(v){ clientOpsSubview = v; renderAll(); }
+function renderClientOps(el){
+  var topBtns = '<button class="btn secondary" onclick="undoClientOps()">↺ Cofnij</button>';
+  if(clientOpsSubview==="klienci") topBtns += ' <button class="btn" onclick="addClientOpsClient()">+ Dodaj klienta</button>';
+  setTopActions(topBtns);
+  var html = '<div class="tabsw">'+
+    '<button class="'+(clientOpsSubview==="dzis"?"active":"")+'" onclick="setClientOpsSubview(\'dzis\')">Dziś / Tydzień</button>'+
+    '<button class="'+(clientOpsSubview==="klienci"?"active":"")+'" onclick="setClientOpsSubview(\'klienci\')">Klienci</button>'+
+    '</div>';
+  html += (clientOpsSubview==="klienci") ? renderClientOpsKlienci() : renderClientOpsDzisTydzien();
+  el.innerHTML = html;
+}
+function clientOpsClientName(clientId){
+  var c = state.clientOps.clients.filter(function(x){return x.id===clientId;})[0];
+  return c ? (c.nazwa||"(bez nazwy)") : "(usunięty klient)";
+}
+function clientOpsFreqLabel(t){
+  return t.freq==="custom" ? ("Co "+(t.customDays||1)+" dni") : (CLIENT_OPS_FREQ_LABEL[t.freq]||t.freq);
+}
+function renderClientOpsDzisTydzien(){
+  var today = todayStr();
+  var horizon = new Date(today+"T00:00:00"); horizon.setDate(horizon.getDate()+7);
+  var horizonStr = isoLocal(horizon);
+  var items = state.clientOps.tasks.filter(function(t){
+    if(t.freq==="once" && t.done) return false;
+    if(!t.nextDue) return false;
+    return t.nextDue <= horizonStr;
+  }).sort(function(a,b){ return (a.nextDue||"").localeCompare(b.nextDue||""); });
+  if(!items.length) return '<div class="card"><div class="empty">Brak zadań klientów na najbliższy tydzień — dobra robota.</div></div>';
+  var html = '<div class="card">';
+  items.forEach(function(t){
+    var overdue = t.nextDue < today;
+    var isToday = t.nextDue === today;
+    html += '<div class="taskitem">'+
+      '<input type="checkbox" onchange="toggleClientOpsTask(\''+t.id+'\')">'+
+      '<span class="dot" style="background:'+(overdue?"var(--danger)":isToday?"var(--accent)":"var(--muted)")+'"></span>'+
+      '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span>'+
+      ' <span style="font-size:11px; color:var(--accent); font-weight:700">— '+escapeHtml(clientOpsClientName(t.clientId))+'</span><br>'+
+      '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted)">'+clientOpsFreqLabel(t)+'</span> '+
+      '<span style="font-size:11px; color:'+(overdue?"var(--danger)":"var(--muted)")+'">'+(overdue?"zaległe — ":"")+fmtDate(t.nextDue)+'</span>'+
+      '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+function renderClientOpsChecklist(clientId){
+  var tasks = state.clientOps.tasks.filter(function(t){ return t.clientId===clientId; })
+    .sort(function(a,b){ return (a.nextDue||"9999").localeCompare(b.nextDue||"9999"); });
+  var html = '<div style="margin-top:16px"><label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Zadania</label>';
+  if(!tasks.length){ html += '<div class="empty" style="margin-top:6px">Brak zadań.</div>'; }
+  tasks.forEach(function(t){
+    var checked = t.freq==="once" && t.done;
+    html += '<div class="taskitem">'+
+      '<input type="checkbox" '+(checked?"checked":"")+' onchange="toggleClientOpsTask(\''+t.id+'\')">'+
+      '<span class="dot"></span>'+
+      '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span><br>'+
+      '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted)">'+clientOpsFreqLabel(t)+'</span>'+
+      (t.freq!=="once" ? ' <span style="font-size:11px; color:var(--muted)">następne: '+fmtDate(t.nextDue)+'</span>' : '')+
+      '</div>'+
+      '<button class="linklike danger" onclick="deleteClientOpsTask(\''+t.id+'\')">Usuń</button>'+
+      '</div>';
+  });
+  html += '<div class="row" style="gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center">'+
+    '<input type="text" id="coNewTaskTitle_'+clientId+'" placeholder="Nowe zadanie…" style="flex:1; min-width:160px" onkeydown="if(event.key===\'Enter\'){ addClientOpsTask(\''+clientId+'\'); }">'+
+    '<select id="coNewTaskFreq_'+clientId+'" onchange="clientOpsToggleCustomDaysInput(\''+clientId+'\')" style="width:auto">'+
+      '<option value="once">Jednorazowe</option><option value="weekly">Co tydzień</option><option value="monthly">Co miesiąc</option><option value="custom">Co N dni</option>'+
+    '</select>'+
+    '<input type="number" id="coNewTaskDays_'+clientId+'" min="1" value="3" style="width:60px; display:none">'+
+    '<button class="btn small" onclick="addClientOpsTask(\''+clientId+'\')">+ Dodaj</button>'+
+    '</div></div>';
+  return html;
+}
+function clientOpsToggleCustomDaysInput(clientId){
+  var freqSel = document.getElementById("coNewTaskFreq_"+clientId);
+  var daysInput = document.getElementById("coNewTaskDays_"+clientId);
+  if(freqSel && daysInput) daysInput.style.display = freqSel.value==="custom" ? "" : "none";
+}
+function renderClientOpsScreenshots(clientId){
+  var shots = state.clientOps.screenshots.filter(function(s){ return s.clientId===clientId; })
+    .sort(function(a,b){ return (b.uploadedAt||"").localeCompare(a.uploadedAt||""); });
+  var html = '<div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border)">'+
+    '<label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Analiza kampanii (screenshoty)</label>';
+  html += '<div class="stub-note" style="margin-top:8px; background:rgba(207,155,74,.1); border-color:rgba(207,155,74,.3); color:var(--accent)">⚠️ Sugestia AI do weryfikacji — nie automatyczna decyzja. Zawsze oceń wynik samodzielnie.</div>';
+  if(!localStorage.getItem("mdgtal_anthropic_key")){
+    html += '<div class="stub-note" style="margin-top:8px">Brak klucza API Anthropic — ustaw go w sekcji "Ustawienia AI" na dole listy klientów, żeby włączyć analizę.</div>';
+  }
+  html += '<div class="row" style="gap:8px; margin:10px 0; align-items:center">'+
+    '<input type="file" accept="image/*" id="coShotInput_'+clientId+'" style="display:none" onchange="uploadClientOpsScreenshot(\''+clientId+'\', this)">'+
+    '<button class="btn small" onclick="document.getElementById(\'coShotInput_'+clientId+'\').click()">+ Wgraj screenshot</button>'+
+    '<span id="coShotStatus_'+clientId+'" style="font-size:12px; color:var(--muted)"></span>'+
+    '</div>';
+  if(!shots.length){ html += '<div class="empty">Brak wgranych screenshotów.</div>'; }
+  shots.forEach(function(s){
+    html += '<div class="card" style="margin-bottom:10px; display:flex; gap:12px; align-items:flex-start">'+
+      (s.url ? '<img src="'+escapeHtml(s.url)+'" style="width:120px; height:auto; border-radius:6px; flex:0 0 120px; cursor:pointer" onclick="window.open(\''+escapeHtml(s.url)+'\',\'_blank\')">' : '')+
+      '<div style="flex:1">'+
+      '<div style="font-size:11px; color:var(--muted); margin-bottom:4px">'+fmtDate((s.uploadedAt||"").slice(0,10))+'</div>'+
+      (s.analysisStatus==="pending" ? '<div style="font-size:13px; color:var(--muted)">Analizuję…</div>' :
+       s.analysisStatus==="error" ? '<div style="font-size:13px; color:var(--danger)">'+escapeHtml(s.analysis||"Błąd analizy.")+'</div>' :
+       '<div style="font-size:13px; white-space:pre-wrap">'+escapeHtml(s.analysis||"")+'</div>')+
+      '</div>'+
+      '<button class="linklike danger" onclick="deleteClientOpsScreenshot(\''+s.id+'\')">Usuń</button>'+
+      '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+function renderClientOpsApiKeySettings(){
+  var hasKey = !!localStorage.getItem("mdgtal_anthropic_key");
+  return '<div class="card" style="margin-top:16px">'+
+    '<h3 style="margin-bottom:8px">Ustawienia AI</h3>'+
+    '<div class="field"><label>Klucz API Anthropic'+(hasKey?' <span style="color:#63b58a">✓ ustawiony</span>':'')+'</label>'+
+    '<input type="password" id="coApiKeyInput" placeholder="sk-ant-..." style="width:100%; max-width:400px"></div>'+
+    '<button class="btn small" onclick="saveClientOpsApiKey()">Zapisz klucz</button>'+
+    (hasKey ? ' <button class="btn secondary small" onclick="clearClientOpsApiKey()">Usuń klucz</button>' : '')+
+    '<div style="font-size:11px; color:var(--muted); margin-top:8px">Klucz zapisuje się WYŁĄCZNIE w tej przeglądarce (localStorage), nigdy nie trafia do bazy danych ani na serwer. To rozwiązanie tymczasowe na czas prototypu — przy wywołaniu do Anthropic API klucz jest widoczny w ruchu sieciowym przeglądarki (np. w narzędziach deweloperskich). Docelowo do przeniesienia za bezpieczny backend proxy, żeby klucz nigdy nie leżał w przeglądarce.</div>'+
+    '</div>';
+}
+function saveClientOpsApiKey(){
+  var el = document.getElementById("coApiKeyInput");
+  if(!el) return;
+  var val = el.value.trim();
+  if(!val) return;
+  localStorage.setItem("mdgtal_anthropic_key", val);
+  renderAll();
+}
+function clearClientOpsApiKey(){
+  if(!confirm("Usunąć zapisany klucz API?")) return;
+  localStorage.removeItem("mdgtal_anthropic_key");
+  renderAll();
+}
+function renderClientOpsKlienci(){
+  var clients = state.clientOps.clients.filter(function(c){ return !c.archived; });
+  var html = '';
+  if(!clients.length){
+    html += '<div class="card"><div class="empty">Brak klientów. Dodaj przyciskiem "+ Dodaj klienta".</div></div>';
+  } else {
+    clients.forEach(function(c){
+      var expanded = clientOpsExpandedId===c.id;
+      var koniec = computeKoniecDate(c);
+      var kColor = resolvedDateColor(c, "koniecKampanii");
+      html += '<div class="card" style="margin-bottom:12px">';
+      html += '<div class="row" style="justify-content:space-between; align-items:center; gap:10px">'+
+        '<input type="text" value="'+escapeHtml(c.nazwa||"")+'" placeholder="Nazwa klienta" onchange="updateClientOpsField(\''+c.id+'\',\'nazwa\',this.value)" style="font-weight:700; font-size:14.5px; flex:1; min-width:160px">'+
+        '<span style="font-size:11px; color:var(--muted); white-space:nowrap">'+(koniec?('koniec: '+fmtDate(koniec)):'')+'</span>'+
+        '<button class="linklike" onclick="toggleClientOpsExpand(\''+c.id+'\')">'+(expanded?"Zwiń ▲":"Rozwiń ▼")+'</button>'+
+        '</div>';
+      if(expanded){
+        html += '<div style="margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">';
+        html += '<div class="field"><label>Typ oferty</label><input type="text" value="'+escapeHtml(c.typOferty||"")+'" onchange="updateClientOpsField(\''+c.id+'\',\'typOferty\',this.value)"></div>';
+        html += '<div class="field"><label>Start współpracy</label><input type="date" value="'+(c.startKampanii||"")+'" onchange="updateClientOpsField(\''+c.id+'\',\'startKampanii\',this.value)"></div>';
+        html += '<div class="field"><label>Okres (dni)</label><input type="number" value="'+(c.okresDni||0)+'" onchange="updateClientOpsField(\''+c.id+'\',\'okresDni\',this.value)"></div>';
+        html += '<div class="field"><label>Koniec (auto)</label><div style="padding:9px 6px; border-radius:8px; border:1px solid '+(kColor||"var(--border)")+'; background:'+(kColor||"var(--sidebar-bg)")+'; color:'+(kColor?"#fff":"var(--text)")+'">'+(koniec||"—")+'</div></div>';
+        html += '</div>';
+        html += '<div class="field" style="margin-top:10px"><label style="display:flex; align-items:center; gap:6px"><input type="checkbox" style="width:auto" '+(c.obslugaKampanii?"checked":"")+' onchange="updateClientOpsField(\''+c.id+'\',\'obslugaKampanii\',this.checked)"> Obsługa kampanii reklamowych (odblokowuje analizę screenshotów)</label></div>';
+        html += '<div style="margin-top:6px"><button class="linklike danger" onclick="deleteClientOpsClient(\''+c.id+'\')">Usuń klienta</button></div>';
+        html += renderClientOpsChecklist(c.id);
+        if(c.obslugaKampanii){ html += renderClientOpsScreenshots(c.id); }
+      }
+      html += '</div>';
+    });
+  }
+  html += renderClientOpsApiKeySettings();
+  return html;
+}
+function addClientOpsClient(){
+  var c = {id:uid("co"), nazwa:"", typOferty:"", startKampanii:todayStr(), okresDni:30, koniecKampanii:"", obslugaKampanii:false, archived:false, createdAt:todayStr()};
+  state.clientOps.clients.push(c);
+  pushClientOpsUndo({type:"addClient", id:c.id});
+  clientOpsExpandedId = c.id;
+  save(); renderAll();
+}
+function updateClientOpsField(id, field, value){
+  var c = state.clientOps.clients.filter(function(x){return x.id===id;})[0];
+  if(!c) return;
+  var prev = c[field];
+  var val = (field==="okresDni") ? (+value||0) : (field==="obslugaKampanii") ? !!value : value;
+  if(prev===val) return;
+  pushClientOpsUndo({type:"field", id:id, field:field, prevValue:prev});
+  c[field] = val;
+  save(); renderAll();
+}
+function deleteClientOpsClient(id){
+  if(!confirm("Na pewno usunąć tego klienta wraz z jego zadaniami? Historia screenshotów zostanie (dane w Storage), ale zniknie z widoku. Można cofnąć przyciskiem \"Cofnij\".")) return;
+  var idx = state.clientOps.clients.findIndex(function(x){return x.id===id;});
+  if(idx===-1) return;
+  var client = state.clientOps.clients[idx];
+  var tasks = state.clientOps.tasks.filter(function(t){ return t.clientId===id; });
+  state.clientOps.clients.splice(idx,1);
+  state.clientOps.tasks = state.clientOps.tasks.filter(function(t){ return t.clientId!==id; });
+  pushClientOpsUndo({type:"deleteClient", index:idx, client:client, tasks:tasks});
+  if(clientOpsExpandedId===id) clientOpsExpandedId=null;
+  save(); renderAll();
+}
+function toggleClientOpsExpand(id){ clientOpsExpandedId = (clientOpsExpandedId===id) ? null : id; renderAll(); }
+function addClientOpsTask(clientId){
+  var titleEl = document.getElementById("coNewTaskTitle_"+clientId);
+  var freqEl = document.getElementById("coNewTaskFreq_"+clientId);
+  var daysEl = document.getElementById("coNewTaskDays_"+clientId);
+  var title = titleEl ? titleEl.value.trim() : "";
+  if(!title) return;
+  var freq = freqEl ? freqEl.value : "once";
+  var customDays = freq==="custom" ? Math.max(1, +((daysEl&&daysEl.value)||1)) : null;
+  var t = {id:uid("cot"), clientId:clientId, title:title, freq:freq, customDays:customDays, nextDue:todayStr(), done:false, lastDoneAt:null, createdAt:todayStr()};
+  state.clientOps.tasks.push(t);
+  pushClientOpsUndo({type:"addTask", id:t.id});
+  save(); renderAll();
+}
+function toggleClientOpsTask(id){
+  var t = state.clientOps.tasks.filter(function(x){return x.id===id;})[0];
+  if(!t) return;
+  var prevNextDue = t.nextDue, prevDone = t.done, prevLastDoneAt = t.lastDoneAt;
+  if(t.freq==="once"){
+    t.done = !t.done;
+  } else {
+    var d = new Date();
+    if(t.freq==="weekly") d.setDate(d.getDate()+7);
+    else if(t.freq==="monthly") d.setMonth(d.getMonth()+1);
+    else d.setDate(d.getDate()+Math.max(1, t.customDays||1));
+    t.nextDue = isoLocal(d);
+    t.lastDoneAt = todayStr();
+  }
+  pushClientOpsUndo({type:"toggleTask", id:id, prevNextDue:prevNextDue, prevDone:prevDone, prevLastDoneAt:prevLastDoneAt});
+  save(); renderAll();
+}
+function deleteClientOpsTask(id){
+  var idx = state.clientOps.tasks.findIndex(function(x){return x.id===id;});
+  if(idx===-1) return;
+  var task = state.clientOps.tasks[idx];
+  state.clientOps.tasks.splice(idx,1);
+  pushClientOpsUndo({type:"deleteTask", index:idx, task:task});
+  save(); renderAll();
+}
+function fileToBase64(file){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onload = function(){ resolve(reader.result.split(",")[1]); };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function uploadClientOpsScreenshot(clientId, inputEl){
+  var file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  var statusEl = document.getElementById("coShotStatus_"+clientId);
+  if(statusEl) statusEl.textContent = "Wgrywam…";
+  if(!window.uploadClientScreenshot){
+    if(statusEl) statusEl.textContent = "Błąd: brak połączenia z Firebase Storage.";
+    return;
+  }
+  var shotId = uid("shot");
+  var ext = (file.type.split("/")[1]||"jpg").replace(/[^a-z0-9]/gi,"");
+  var path = "clientScreens/"+clientId+"/"+shotId+"."+ext;
+  window.uploadClientScreenshot(file, path).then(function(url){
+    var rec = {id:shotId, clientId:clientId, storagePath:path, url:url, uploadedAt:new Date().toISOString(), analysis:"", analysisStatus:"pending"};
+    state.clientOps.screenshots.push(rec);
+    save(); renderAll();
+    fileToBase64(file).then(function(b64){
+      return analyzeClientScreenshot(b64, file.type||"image/jpeg");
+    }).then(function(text){
+      rec.analysis = text;
+      rec.analysisStatus = "ok";
+      save(); renderAll();
+    }).catch(function(err){
+      rec.analysis = (err && err.message) ? err.message : "Nie udało się przeanalizować screenshota.";
+      rec.analysisStatus = "error";
+      save(); renderAll();
+    });
+  }).catch(function(){
+    if(statusEl) statusEl.textContent = "Błąd wgrywania do Firebase Storage.";
+  });
+  inputEl.value = "";
+}
+function analyzeClientScreenshot(base64, mediaType){
+  var key = localStorage.getItem("mdgtal_anthropic_key");
+  if(!key) return Promise.reject(new Error("Brak klucza API Anthropic — ustaw go w Ustawieniach AI."));
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{
+      "x-api-key": key,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true",
+      "content-type":"application/json"
+    },
+    body: JSON.stringify({
+      model:"claude-sonnet-4-5",
+      max_tokens:500,
+      messages:[{role:"user", content:[
+        {type:"image", source:{type:"base64", media_type:mediaType, data:base64}},
+        {type:"text", text: CLIENT_SHOT_PROMPT}
+      ]}]
+    })
+  }).then(function(r){
+    if(!r.ok){
+      return r.json().catch(function(){return null;}).then(function(errBody){
+        var msg = (errBody && errBody.error && errBody.error.message) || ("HTTP "+r.status);
+        throw new Error("Anthropic API: "+msg);
+      });
+    }
+    return r.json();
+  }).then(function(data){
+    var text = (data.content||[]).map(function(b){ return b.text||""; }).join("\n").trim();
+    return text || "Brak odpowiedzi od modelu.";
+  });
+}
+function deleteClientOpsScreenshot(id){
+  if(!confirm("Usunąć ten screenshot i jego analizę?")) return;
+  state.clientOps.screenshots = state.clientOps.screenshots.filter(function(x){return x.id!==id;});
+  save(); renderAll();
+}
+
 /* ================= CEO — logika ================= */
 function ceoTotalXp(){
   var sum = 0;
@@ -6916,6 +7265,9 @@ import {
 import {
   getFirestore, doc, setDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import {
+  getStorage, ref, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
 var firebaseConfig = {
   apiKey: "AIzaSyD7vHSihsO2MYO-mNycfq5Tt6Zxf92ZbGs",
@@ -6930,6 +7282,11 @@ var ALLOWED_EMAIL = "kontakt.mediadgtal@gmail.com";
 var app = initializeApp(firebaseConfig);
 var auth = getAuth(app);
 var db = getFirestore(app);
+var storage = getStorage(app);
+window.uploadClientScreenshot = function(file, path){
+  var r = ref(storage, path);
+  return uploadBytes(r, file).then(function(){ return getDownloadURL(r); });
+};
 var provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/calendar');
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
