@@ -854,7 +854,7 @@ function migrateState(s){
   if(!s.agentRequests) s.agentRequests = [];
   if(!s.crmContacts) s.crmContacts = [];
   if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
-  if(!s.crmCategories || !s.crmCategories.length) s.crmCategories = ["Studia Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
+  if(!s.crmCategories || !s.crmCategories.length) s.crmCategories = ["Studio Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
   if(s.crmCategories.indexOf("Akrobatyka")===-1){
     var pdIdx = s.crmCategories.indexOf("Pole Dance");
     if(pdIdx>-1) s.crmCategories.splice(pdIdx+1, 0, "Akrobatyka");
@@ -1470,7 +1470,7 @@ function defaultState(){
 
   s.crmContacts = [];
   s.crmMeta = {reviewIndex:0, filter:"all"};
-  s.crmCategories = ["Studia Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
+  s.crmCategories = ["Studio Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
 
   return s;
 }
@@ -5900,7 +5900,7 @@ var CRM_CATEGORY_RULES = [
   {cat:"Sztuki Walki", re:/karate|kick ?box|taekwon|ju[- ]?jitsu|jujitsu|\bjudo\b|\bboks\b|\bmma\b|capoeira|aikido|sztuk[il]? walki|martial/i},
   {cat:"Joga", re:/\bjoga\b|\byoga\b/i},
   {cat:"Pilates", re:/pilates/i},
-  {cat:"Studia Tańca", re:/szko[łl]a ta[nń]ca|studio ta[nń]ca|dance studio|szko[łl]a baletu|\bbalet\b|\btaniec\b|dance school|\bdance\b/i}
+  {cat:"Studio Tańca", re:/szko[łl]a ta[nń]ca|studio ta[nń]ca|dance studio|szko[łl]a baletu|\bbalet\b|\btaniec\b|dance school|\bdance\b/i}
 ];
 function crmGuessCategory(name){
   for(var i=0;i<CRM_CATEGORY_RULES.length;i++){
@@ -6352,7 +6352,7 @@ function crmUrl(v, kind){
 }
 function renderCRM(el){
   if(!state.crmMeta) state.crmMeta = {reviewIndex:0, filter:"all"};
-  if(!state.crmCategories) state.crmCategories = ["Studia Tańca","Pole Dance","Joga","Pilates","Sztuki Walki"];
+  if(!state.crmCategories) state.crmCategories = ["Studio Tańca","Pole Dance","Joga","Pilates","Sztuki Walki"];
   if(window.__gcalToken && Date.now()-crmT4ALastPull>45000){ crmT4ALastPull = Date.now(); crmPullT4AStatuses(); }
   setTopActions('<button class="btn secondary" onclick="crmUndo()">↺ Cofnij</button> <button class="btn secondary" onclick="crmAddCategory()">+ Dodaj kategorię</button> <button class="btn" onclick="openCrmModal()">+ Dodaj klienta</button>');
   var koszCount = state.crmContacts.filter(function(c){ return c.deletedAt; }).length;
