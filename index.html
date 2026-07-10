@@ -5618,6 +5618,7 @@ var CRM_COL_ALIASES = {
   city:["miasto","city","lokalizacja"],
   ig:["ig","instagram","link ig","link instagram","insta"],
   fb:["fb","facebook","link fb","link facebook"],
+  website:["strona","www","strona internetowa","website","link do strony","strona www"],
   email:["mail","e-mail","email"],
   phone:["telefon","tel","phone","numer telefonu","nr telefonu","numer"],
   notes:["notatki","notatka","uwagi","notes","opis"]
@@ -5660,7 +5661,7 @@ function crmUndo(){
     state.crmContacts = state.crmContacts.filter(function(c){ return c.id!==a.id; });
   } else if(a.type==="edit"){
     var c = state.crmContacts.filter(function(x){ return x.id===a.id; })[0];
-    if(c){ c.name=a.prev.name; c.city=a.prev.city; c.ig=a.prev.ig; c.fb=a.prev.fb; c.email=a.prev.email; c.phone=a.prev.phone; c.notes=a.prev.notes; c.category=a.prev.category; c.system=a.prev.system; c.statusT4A=a.prev.statusT4A; }
+    if(c){ c.name=a.prev.name; c.city=a.prev.city; c.ig=a.prev.ig; c.fb=a.prev.fb; c.website=a.prev.website; c.email=a.prev.email; c.phone=a.prev.phone; c.notes=a.prev.notes; c.category=a.prev.category; c.system=a.prev.system; c.statusT4A=a.prev.statusT4A; }
   } else if(a.type==="softdelete" || a.type==="restore"){
     var c2 = state.crmContacts.filter(function(x){ return x.id===a.id; })[0];
     if(c2) c2.deletedAt = a.prevDeletedAt;
@@ -5764,7 +5765,7 @@ function openCrmModal(id){
   var opts = {};
   if(id){
     var existing = state.crmContacts.filter(function(x){ return x.id===id; })[0];
-    if(existing) opts = {id:existing.id, name:existing.name, city:existing.city, ig:existing.ig, fb:existing.fb, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category, system:existing.system, statusT4A:existing.statusT4A};
+    if(existing) opts = {id:existing.id, name:existing.name, city:existing.city, ig:existing.ig, fb:existing.fb, website:existing.website, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category, system:existing.system, statusT4A:existing.statusT4A};
   }
   var isEdit = !!opts.id;
   var html = '<div class="modal-overlay" id="crmContactModal">'+
@@ -5777,6 +5778,7 @@ function openCrmModal(id){
     '<div class="field"><label>Status — tool4arts</label><select id="cmStatusT4A">'+crmStatusOptions(opts.statusT4A)+'</select></div>'+
     '<div class="field"><label>Instagram (link lub @login)</label><input type="text" id="cmIg" value="'+escapeHtml(opts.ig||"")+'"></div>'+
     '<div class="field"><label>Facebook (link)</label><input type="text" id="cmFb" value="'+escapeHtml(opts.fb||"")+'"></div>'+
+    '<div class="field"><label>Strona www</label><input type="text" id="cmWebsite" value="'+escapeHtml(opts.website||"")+'"></div>'+
     '<div class="field"><label>Mail</label><input type="text" id="cmEmail" value="'+escapeHtml(opts.email||"")+'"></div>'+
     '<div class="field"><label>Telefon</label><input type="text" id="cmPhone" value="'+escapeHtml(opts.phone||"")+'"></div>'+
     '<div class="field"><label>Notatki</label><textarea id="cmNotes" rows="4">'+escapeHtml(opts.notes||"")+'</textarea></div>'+
@@ -5799,6 +5801,7 @@ function saveCrmModal(){
   var statusT4A = document.getElementById("cmStatusT4A").value || null;
   var ig = document.getElementById("cmIg").value.trim();
   var fb = document.getElementById("cmFb").value.trim();
+  var website = document.getElementById("cmWebsite").value.trim();
   var email = document.getElementById("cmEmail").value.trim();
   var phone = document.getElementById("cmPhone").value.trim();
   var notes = document.getElementById("cmNotes").value.trim();
@@ -5806,11 +5809,11 @@ function saveCrmModal(){
   if(ctx.id){
     var c = state.crmContacts.filter(function(x){ return x.id===ctx.id; })[0];
     if(c){
-      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, statusT4A:c.statusT4A}});
-      c.name=name; c.city=city; c.ig=ig; c.fb=fb; c.email=email; c.phone=phone; c.notes=notes; c.category=category; c.system=system; c.statusT4A=statusT4A;
+      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, website:c.website, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, statusT4A:c.statusT4A}});
+      c.name=name; c.city=city; c.ig=ig; c.fb=fb; c.website=website; c.email=email; c.phone=phone; c.notes=notes; c.category=category; c.system=system; c.statusT4A=statusT4A;
     }
   } else {
-    var newC = {id:uid("crmc"), name:name, city:city, ig:ig, fb:fb, email:email, phone:phone, notes:notes, category:category, system:system, statusT4A:statusT4A, status:null, lastContact:"", taggedAt:null, hot:false, deletedAt:null, importedAt:todayStr()};
+    var newC = {id:uid("crmc"), name:name, city:city, ig:ig, fb:fb, website:website, email:email, phone:phone, notes:notes, category:category, system:system, statusT4A:statusT4A, status:null, lastContact:"", taggedAt:null, hot:false, deletedAt:null, importedAt:todayStr()};
     state.crmContacts.push(newC);
     pushCrmUndo({type:"add", id:newC.id});
     state.crmMeta.reviewIndex = state.crmContacts.indexOf(newC);
@@ -5851,7 +5854,7 @@ function saveCrmNoteModal(id){
   if(!c) return;
   var el = document.getElementById("cnText");
   if(!el) return;
-  pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, statusT4A:c.statusT4A}});
+  pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, website:c.website, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, statusT4A:c.statusT4A}});
   c.notes = el.value.trim();
   closeCrmNoteModal();
   save(); renderAll();
@@ -5968,6 +5971,7 @@ function crmConfirmImport(){
       city: (map.city!=null ? (r[map.city]||"").toString().trim() : ""),
       ig: (map.ig!=null ? (r[map.ig]||"").toString().trim() : ""),
       fb: (map.fb!=null ? (r[map.fb]||"").toString().trim() : ""),
+      website: (map.website!=null ? (r[map.website]||"").toString().trim() : ""),
       email: (map.email!=null ? (r[map.email]||"").toString().trim() : ""),
       phone: (map.phone!=null ? (r[map.phone]||"").toString().trim() : ""),
       notes: (map.notes!=null ? (r[map.notes]||"").toString().trim() : ""),
@@ -6079,6 +6083,10 @@ function crmUrl(v, kind){
   if(/^https?:\/\//i.test(v)) return v;
   if(kind==="ig") return "https://instagram.com/"+encodeURIComponent(v.replace(/^@/,""));
   if(kind==="fb") return "https://facebook.com/"+encodeURIComponent(v);
+  if(kind==="website"){
+    if(/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(v)) return "https://"+v.replace(/^\/+/, "");
+    return "";
+  }
   return v;
 }
 function renderCRM(el){
@@ -6129,7 +6137,7 @@ function renderCrmImport(){
   if(crmImportPending){
     var p = crmImportPending;
     var map = p.map;
-    var fieldLabels = {name:"Nazwa", city:"Miasto", ig:"IG", fb:"FB", email:"Mail", phone:"Telefon", notes:"Notatki"};
+    var fieldLabels = {name:"Nazwa", city:"Miasto", ig:"IG", fb:"FB", website:"Strona", email:"Mail", phone:"Telefon", notes:"Notatki"};
     html += '<div class="card" style="margin-bottom:16px">'+
       '<h3>Podgląd — '+escapeHtml(p.fileName)+'</h3>'+
       '<div style="margin-bottom:10px; font-size:12.5px; color:var(--muted-light)">Znaleziono <b>'+p.dataRows.length+'</b> wierszy. Rozpoznane kolumny: '+
@@ -6137,9 +6145,9 @@ function renderCrmImport(){
         return fieldLabels[f]+(map[f]!=null ? ' <span style="color:#63b58a">✓</span>' : ' <span style="color:var(--muted)">— brak</span>');
       }).join(", ")+
       '</div>'+
-      '<div style="overflow-x:auto"><table><thead><tr><th>Nazwa</th><th>Miasto</th><th>IG</th><th>FB</th><th>Mail</th><th>Telefon</th><th>Notatki</th></tr></thead><tbody>'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>Nazwa</th><th>Miasto</th><th>IG</th><th>FB</th><th>Strona</th><th>Mail</th><th>Telefon</th><th>Notatki</th></tr></thead><tbody>'+
       p.dataRows.slice(0,5).map(function(r){
-        return '<tr><td>'+escapeHtml(r[map.name]||"")+'</td><td>'+escapeHtml(r[map.city]||"")+'</td><td>'+escapeHtml(r[map.ig]||"")+'</td><td>'+escapeHtml(r[map.fb]||"")+'</td><td>'+escapeHtml(r[map.email]||"")+'</td><td>'+escapeHtml(r[map.phone]||"")+'</td><td>'+escapeHtml((r[map.notes]||"").toString().slice(0,60))+'</td></tr>';
+        return '<tr><td>'+escapeHtml(r[map.name]||"")+'</td><td>'+escapeHtml(r[map.city]||"")+'</td><td>'+escapeHtml(r[map.ig]||"")+'</td><td>'+escapeHtml(r[map.fb]||"")+'</td><td>'+escapeHtml(r[map.website]||"")+'</td><td>'+escapeHtml(r[map.email]||"")+'</td><td>'+escapeHtml(r[map.phone]||"")+'</td><td>'+escapeHtml((r[map.notes]||"").toString().slice(0,60))+'</td></tr>';
       }).join("")+
       '</tbody></table></div>'+
       (p.dataRows.length>5 ? '<div class="empty">…i '+(p.dataRows.length-5)+' więcej</div>' : '')+
@@ -6201,9 +6209,10 @@ function renderCrmPrzeglad(){
     '</div>';
 
   var links = "";
-  var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb");
+  var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
   if(igUrl) links += '<a href="'+escapeHtml(igUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:14px">📷 Instagram</a>';
   if(fbUrl) links += '<a href="'+escapeHtml(fbUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:14px">👍 Facebook</a>';
+  if(webUrl) links += '<a href="'+escapeHtml(webUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:14px">🌐 Strona</a>';
   if(c.email) links += '<a href="mailto:'+escapeHtml(c.email)+'" class="linklike" style="margin-right:14px">✉️ '+escapeHtml(c.email)+'</a>';
   if(c.phone) links += '<a href="tel:'+escapeHtml(c.phone.replace(/\s+/g,""))+'" class="linklike">📞 '+escapeHtml(c.phone)+'</a>';
   if(links) html += '<div style="margin-bottom:14px">'+links+'</div>';
@@ -6247,6 +6256,9 @@ var crmSortDir = "asc";
 var crmCategoryFilter = "all";
 var crmSystemFilter = "all";
 var crmT4AFilter = "all";
+var crmWebsiteFilter = "all";
+var crmCityFilter = "all";
+var crmStatusFilter = "all";
 var CRM_TABLE_COLS = [
   {key:"name", label:"Nazwa"},
   {key:"city", label:"Miasto"},
@@ -6254,6 +6266,7 @@ var CRM_TABLE_COLS = [
   {key:"system", label:"System"},
   {key:"ig", label:"IG"},
   {key:"fb", label:"FB"},
+  {key:"website", label:"Strona"},
   {key:"email", label:"Mail"},
   {key:"phone", label:"Telefon"},
   {key:"status", label:"Status — marketing"},
@@ -6268,6 +6281,9 @@ function crmSetSort(col){
 function crmSetCategoryFilter(cat){ crmCategoryFilter = cat; renderAll(); }
 function crmSetSystemFilter(v){ crmSystemFilter = v; renderAll(); }
 function crmSetT4AFilter(v){ crmT4AFilter = v; renderAll(); }
+function crmSetWebsiteFilter(v){ crmWebsiteFilter = v; renderAll(); }
+function crmSetCityFilter(v){ crmCityFilter = v; renderAll(); }
+function crmSetStatusFilter(v){ crmStatusFilter = v; renderAll(); }
 function crmSortValue(c, col){
   if(col==="status" || col==="statusT4A"){
     var s = CRM_STATUSES.filter(function(x){ return x.id===c[col]; })[0];
@@ -6275,6 +6291,7 @@ function crmSortValue(c, col){
   }
   if(col==="ig") return crmUrl(c.ig,"ig") ? "tak" : "nie";
   if(col==="fb") return crmUrl(c.fb,"fb") ? "tak" : "nie";
+  if(col==="website") return crmUrl(c.website,"website") ? "tak" : "nie";
   if(col==="lastContact") return c.lastContact || "";
   var v = c[col];
   return (v||"").toString().toLowerCase();
@@ -6287,12 +6304,23 @@ function renderCrmBaza(){
   var catFilter = (crmCategoryFilter==null) ? "all" : crmCategoryFilter;
   var sysFilter = (crmSystemFilter==null) ? "all" : crmSystemFilter;
   var t4aFilter = (crmT4AFilter==null) ? "all" : crmT4AFilter;
+  var webFilter = (crmWebsiteFilter==null) ? "all" : crmWebsiteFilter;
+  var cityFilter = (crmCityFilter==null) ? "all" : crmCityFilter;
+  var statusFilter = (crmStatusFilter==null) ? "all" : crmStatusFilter;
   var filtered = activeList.filter(function(c){
     if(catFilter!=="all" && (c.category||"")!==catFilter) return false;
     if(sysFilter!=="all" && (c.system||"")!==sysFilter) return false;
     if(t4aFilter!=="all" && (c.statusT4A||"")!==t4aFilter) return false;
+    if(cityFilter!=="all" && (c.city||"")!==cityFilter) return false;
+    if(statusFilter!=="all" && (c.status||"")!==statusFilter) return false;
+    if(webFilter!=="all"){
+      var hasWeb = !!crmUrl(c.website,"website");
+      if(webFilter==="tak" && !hasWeb) return false;
+      if(webFilter==="nie" && hasWeb) return false;
+    }
     return true;
   });
+  var citiesPresent = Array.from(new Set(activeList.map(function(c){ return (c.city||"").trim(); }).filter(Boolean))).sort(function(a,b){ return a.localeCompare(b,"pl"); });
   var sorted = filtered.slice().sort(function(a,b){
     var va = crmSortValue(a, crmSortCol), vb = crmSortValue(b, crmSortCol);
     var cmp = String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
@@ -6310,28 +6338,43 @@ function renderCrmBaza(){
   html += '</div>';
 
   html += '<div class="row" style="margin-bottom:14px; gap:10px; flex-wrap:wrap">';
+  html += '<select onchange="crmSetCityFilter(this.value)" style="width:auto">'+
+    '<option value="all"'+(cityFilter==="all"?" selected":"")+'>Miasto: wszystkie</option>'+
+    '<option value=""'+(cityFilter===""?" selected":"")+'>Miasto: brak</option>'+
+    citiesPresent.map(function(city){ return '<option value="'+escapeHtml(city)+'"'+(cityFilter===city?" selected":"")+'>Miasto: '+escapeHtml(city)+'</option>'; }).join("")+
+    '</select>';
   html += '<select onchange="crmSetSystemFilter(this.value)" style="width:auto">'+
     '<option value="all"'+(sysFilter==="all"?" selected":"")+'>System: wszystkie</option>'+
     '<option value=""'+(sysFilter===""?" selected":"")+'>System: nie wybrano</option>'+
     CRM_SYSTEMS.map(function(s){ return '<option value="'+s+'"'+(sysFilter===s?" selected":"")+'>System: '+s+'</option>'; }).join("")+
+    '</select>';
+  html += '<select onchange="crmSetStatusFilter(this.value)" style="width:auto">'+
+    '<option value="all"'+(statusFilter==="all"?" selected":"")+'>Status marketing: wszystkie</option>'+
+    '<option value=""'+(statusFilter===""?" selected":"")+'>Status marketing: brak</option>'+
+    CRM_STATUSES.map(function(s){ return '<option value="'+s.id+'"'+(statusFilter===s.id?" selected":"")+'>Status marketing: '+s.label+'</option>'; }).join("")+
     '</select>';
   html += '<select onchange="crmSetT4AFilter(this.value)" style="width:auto">'+
     '<option value="all"'+(t4aFilter==="all"?" selected":"")+'>Tool4arts: wszystkie</option>'+
     '<option value=""'+(t4aFilter===""?" selected":"")+'>Tool4arts: brak statusu</option>'+
     CRM_STATUSES.map(function(s){ return '<option value="'+s.id+'"'+(t4aFilter===s.id?" selected":"")+'>Tool4arts: '+s.label+'</option>'; }).join("")+
     '</select>';
+  html += '<select onchange="crmSetWebsiteFilter(this.value)" style="width:auto">'+
+    '<option value="all"'+(webFilter==="all"?" selected":"")+'>Strona: wszystkie</option>'+
+    '<option value="tak"'+(webFilter==="tak"?" selected":"")+'>Strona: TAK</option>'+
+    '<option value="nie"'+(webFilter==="nie"?" selected":"")+'>Strona: NIE</option>'+
+    '</select>';
   html += '</div>';
 
   var TRUNC = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap";
-  var NAME_CLAMP = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word";
+  var CLAMP2 = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word; line-height:1.3";
   html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1000px">'+
-    '<colgroup><col style="width:20%"><col style="width:8%"><col style="width:8%"><col style="width:7%">'+
-    '<col style="width:5%"><col style="width:5%"><col style="width:12%"><col style="width:8%">'+
-    '<col style="width:9%"><col style="width:9%"><col style="width:6%"><col style="width:4%"></colgroup>'+
+    '<colgroup><col style="width:18%"><col style="width:7%"><col style="width:7%"><col style="width:6%">'+
+    '<col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:10%"><col style="width:7%">'+
+    '<col style="width:8%"><col style="width:8%"><col style="width:5%"><col style="width:4%"></colgroup>'+
     '<thead><tr>';
   CRM_TABLE_COLS.forEach(function(col){
     var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
-    html += '<th style="cursor:pointer; user-select:none; '+TRUNC+'" onclick="crmSetSort(\''+col.key+'\')" title="'+escapeHtml(col.label)+'">'+col.label+arrow+'</th>';
+    html += '<th style="cursor:pointer; user-select:none; vertical-align:bottom" onclick="crmSetSort(\''+col.key+'\')" title="'+escapeHtml(col.label)+'"><div style="'+CLAMP2+'">'+col.label+arrow+'</div></th>';
   });
   html += '<th></th></tr></thead><tbody>';
   function crmCell(v){
@@ -6343,14 +6386,15 @@ function renderCrmBaza(){
     return '<span style="color:var(--danger); font-weight:700">NIE</span>';
   }
   sorted.forEach(function(c){
-    var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb");
+    var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
     html += '<tr>'+
-      '<td style="'+NAME_CLAMP+'" title="'+escapeHtml(c.name||"")+'">'+escapeHtml(c.name||"")+'</td>'+
+      '<td><div style="'+CLAMP2+'" title="'+escapeHtml(c.name||"")+'">'+escapeHtml(c.name||"")+'</div></td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.city)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.category)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.system)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(igUrl)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(fbUrl)+'</td>'+
+      '<td style="'+TRUNC+'">'+crmYesNoCell(webUrl)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.email)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.phone)+'</td>'+
       '<td style="'+TRUNC+'">'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
@@ -6411,9 +6455,10 @@ function crmPriorityRow(c){
   var days = crmDaysSince(c);
   var daysLabel = (days===Infinity) ? "brak danych o kontakcie" : (days===0 ? "dziś" : days+" dni temu");
   var links = "";
-  var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb");
+  var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
   if(igUrl) links += '<a href="'+escapeHtml(igUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">📷</a>';
   if(fbUrl) links += '<a href="'+escapeHtml(fbUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">👍</a>';
+  if(webUrl) links += '<a href="'+escapeHtml(webUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">🌐</a>';
   if(c.email) links += '<a href="mailto:'+escapeHtml(c.email)+'" class="linklike" style="margin-right:10px">✉️</a>';
   if(c.phone) links += '<a href="tel:'+escapeHtml(c.phone.replace(/\s+/g,""))+'" class="linklike">📞</a>';
   return '<div class="taskitem" style="align-items:flex-start; flex-direction:column; gap:6px; padding:12px 4px">'+
