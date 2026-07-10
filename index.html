@@ -553,7 +553,7 @@ var TABS = [
   {id:"facebook", label:"Facebook", group:"Social Media"},
   {id:"nawyki", label:"Nawyki", group:"Narzędzia"},
   {id:"klienci", label:"Klienci", group:"Narzędzia"},
-  {id:"crm", label:"CRM Reaktywacja", group:"Narzędzia"},
+  {id:"crm", label:"Baza kontaktów", group:"Narzędzia"},
   {id:"agent", label:"Agent AI", group:"Narzędzia"},
   {id:"statystyki", label:"Statystyki", group:"Narzędzia"}
 ];
@@ -851,6 +851,7 @@ function migrateState(s){
   if(!s.agentRequests) s.agentRequests = [];
   if(!s.crmContacts) s.crmContacts = [];
   if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
+  if(!s.crmCategories || !s.crmCategories.length) s.crmCategories = ["Studia Tańca","Pole Dance","Joga","Pilates","Sztuki Walki"];
   (function(){
     if(!s.ceo) s.ceo = {};
     var c = s.ceo;
@@ -1461,6 +1462,7 @@ function defaultState(){
 
   s.crmContacts = [];
   s.crmMeta = {reviewIndex:0, filter:"all"};
+  s.crmCategories = ["Studia Tańca","Pole Dance","Joga","Pilates","Sztuki Walki"];
 
   return s;
 }
@@ -1522,7 +1524,7 @@ var RENDERERS = {
   ceo: renderCEO
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", wiadomosci:"Wiadomości", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", crm:"CRM Reaktywacja", agent:"Agent AI", ceo:"CEO"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", agent:"Agent AI", ceo:"CEO"};
 
 function renderAll(){
   renderNav();
@@ -5621,7 +5623,7 @@ function crmUndo(){
     state.crmContacts = state.crmContacts.filter(function(c){ return c.id!==a.id; });
   } else if(a.type==="edit"){
     var c = state.crmContacts.filter(function(x){ return x.id===a.id; })[0];
-    if(c){ c.name=a.prev.name; c.ig=a.prev.ig; c.fb=a.prev.fb; c.email=a.prev.email; c.phone=a.prev.phone; c.notes=a.prev.notes; }
+    if(c){ c.name=a.prev.name; c.ig=a.prev.ig; c.fb=a.prev.fb; c.email=a.prev.email; c.phone=a.prev.phone; c.notes=a.prev.notes; c.category=a.prev.category; }
   } else if(a.type==="softdelete" || a.type==="restore"){
     var c2 = state.crmContacts.filter(function(x){ return x.id===a.id; })[0];
     if(c2) c2.deletedAt = a.prevDeletedAt;
@@ -5683,18 +5685,37 @@ function closeCrmModal(){
   if(m) m.remove();
   __crmModalCtx = null;
 }
+function crmCategoryOptions(selected){
+  var html = '<option value=""'+(!selected?" selected":"")+'>— bez kategorii —</option>';
+  (state.crmCategories||[]).forEach(function(cat){
+    html += '<option value="'+escapeHtml(cat)+'"'+(selected===cat?" selected":"")+'>'+escapeHtml(cat)+'</option>';
+  });
+  return html;
+}
+function crmAddCategory(){
+  var name = prompt("Nazwa nowej kategorii:");
+  if(!name) return;
+  name = name.trim();
+  if(!name) return;
+  if(!state.crmCategories) state.crmCategories = [];
+  if(state.crmCategories.indexOf(name) === -1){
+    state.crmCategories.push(name);
+    save(); renderAll();
+  }
+}
 function openCrmModal(id){
   closeCrmModal();
   var opts = {};
   if(id){
     var existing = state.crmContacts.filter(function(x){ return x.id===id; })[0];
-    if(existing) opts = {id:existing.id, name:existing.name, ig:existing.ig, fb:existing.fb, email:existing.email, phone:existing.phone, notes:existing.notes};
+    if(existing) opts = {id:existing.id, name:existing.name, ig:existing.ig, fb:existing.fb, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category};
   }
   var isEdit = !!opts.id;
   var html = '<div class="modal-overlay" id="crmContactModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj kontakt":"Nowy kontakt")+'</h3>'+
     '<div class="field"><label>Nazwa</label><input type="text" id="cmName" value="'+escapeHtml(opts.name||"")+'"></div>'+
+    '<div class="field"><label>Kategoria</label><select id="cmCategory">'+crmCategoryOptions(opts.category)+'</select></div>'+
     '<div class="field"><label>Instagram (link lub @login)</label><input type="text" id="cmIg" value="'+escapeHtml(opts.ig||"")+'"></div>'+
     '<div class="field"><label>Facebook (link)</label><input type="text" id="cmFb" value="'+escapeHtml(opts.fb||"")+'"></div>'+
     '<div class="field"><label>Mail</label><input type="text" id="cmEmail" value="'+escapeHtml(opts.email||"")+'"></div>'+
@@ -5713,6 +5734,7 @@ function saveCrmModal(){
   if(!nameEl) return;
   var name = nameEl.value.trim();
   if(!name) return;
+  var category = document.getElementById("cmCategory").value;
   var ig = document.getElementById("cmIg").value.trim();
   var fb = document.getElementById("cmFb").value.trim();
   var email = document.getElementById("cmEmail").value.trim();
@@ -5722,11 +5744,11 @@ function saveCrmModal(){
   if(ctx.id){
     var c = state.crmContacts.filter(function(x){ return x.id===ctx.id; })[0];
     if(c){
-      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, ig:c.ig, fb:c.fb, email:c.email, phone:c.phone, notes:c.notes}});
-      c.name=name; c.ig=ig; c.fb=fb; c.email=email; c.phone=phone; c.notes=notes;
+      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, ig:c.ig, fb:c.fb, email:c.email, phone:c.phone, notes:c.notes, category:c.category}});
+      c.name=name; c.ig=ig; c.fb=fb; c.email=email; c.phone=phone; c.notes=notes; c.category=category;
     }
   } else {
-    var newC = {id:uid("crmc"), name:name, ig:ig, fb:fb, email:email, phone:phone, notes:notes, status:null, lastContact:"", taggedAt:null, hot:false, deletedAt:null, importedAt:todayStr()};
+    var newC = {id:uid("crmc"), name:name, ig:ig, fb:fb, email:email, phone:phone, notes:notes, category:category, status:null, lastContact:"", taggedAt:null, hot:false, deletedAt:null, importedAt:todayStr()};
     state.crmContacts.push(newC);
     pushCrmUndo({type:"add", id:newC.id});
     state.crmMeta.reviewIndex = state.crmContacts.indexOf(newC);
@@ -5856,6 +5878,7 @@ function crmConfirmImport(){
       email: (map.email!=null ? (r[map.email]||"").toString().trim() : ""),
       phone: (map.phone!=null ? (r[map.phone]||"").toString().trim() : ""),
       notes: (map.notes!=null ? (r[map.notes]||"").toString().trim() : ""),
+      category: "",
       status: null,
       lastContact: "",
       taggedAt: null,
@@ -5870,7 +5893,7 @@ function crmConfirmImport(){
 }
 function crmResetAll(){
   if(!state.crmContacts.length) return;
-  if(!confirm("Na pewno usunąć wszystkie "+state.crmContacts.length+" kontaktów z bazy CRM Reaktywacja (razem z koszem)? Tej operacji nie można cofnąć.")) return;
+  if(!confirm("Na pewno usunąć wszystkie "+state.crmContacts.length+" kontaktów z Bazy kontaktów (razem z koszem)? Tej operacji nie można cofnąć.")) return;
   state.crmContacts = [];
   state.crmMeta = {reviewIndex:0, filter:"all"};
   save(); renderAll();
@@ -5931,6 +5954,12 @@ function crmSetLastContact(id, val){
   c.lastContact = val;
   save();
 }
+function crmSetCategory(id, val){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.category = val;
+  save(); renderAll();
+}
 function crmStatusTag(statusId){
   var s = CRM_STATUSES.filter(function(x){ return x.id===statusId; })[0];
   if(!s) return "";
@@ -5947,10 +5976,12 @@ function crmUrl(v, kind){
 }
 function renderCRM(el){
   if(!state.crmMeta) state.crmMeta = {reviewIndex:0, filter:"all"};
-  setTopActions('<button class="btn secondary" onclick="crmUndo()">↺ Cofnij</button> <button class="btn" onclick="openCrmModal()">+ Nowy kontakt</button>');
+  if(!state.crmCategories) state.crmCategories = ["Studia Tańca","Pole Dance","Joga","Pilates","Sztuki Walki"];
+  setTopActions('<button class="btn secondary" onclick="crmUndo()">↺ Cofnij</button> <button class="btn secondary" onclick="crmAddCategory()">+ Dodaj kategorię</button> <button class="btn" onclick="openCrmModal()">+ Dodaj klienta</button>');
   var koszCount = state.crmContacts.filter(function(c){ return c.deletedAt; }).length;
   var html = '<div class="tabsw">'+
     '<button class="'+(crmSubview==="priorytety"?"active":"")+'" onclick="crmSetSubview(\'priorytety\')">Priorytety</button>'+
+    '<button class="'+(crmSubview==="baza"?"active":"")+'" onclick="crmSetSubview(\'baza\')">Baza</button>'+
     '<button class="'+(crmSubview==="przeglad"?"active":"")+'" onclick="crmSetSubview(\'przeglad\')">Przegląd</button>'+
     '<button class="'+(crmSubview==="import"?"active":"")+'" onclick="crmSetSubview(\'import\')">Import</button>'+
     '<button class="'+(crmSubview==="kosz"?"active":"")+'" onclick="crmSetSubview(\'kosz\')">Kosz'+(koszCount?" ("+koszCount+")":"")+'</button>'+
@@ -5966,7 +5997,7 @@ function renderCRM(el){
     (total ? '' : '<div class="empty" style="margin-top:10px; padding:0">Baza jest pusta — zaimportuj kontakty w zakładce "Import" albo dodaj kontakt ręcznie.</div>')+
     '</div>';
 
-  html += (crmSubview==="import") ? renderCrmImport() : (crmSubview==="priorytety" ? renderCrmPriorytety() : (crmSubview==="kosz" ? renderCrmKosz() : renderCrmPrzeglad()));
+  html += (crmSubview==="import") ? renderCrmImport() : (crmSubview==="priorytety" ? renderCrmPriorytety() : (crmSubview==="kosz" ? renderCrmKosz() : (crmSubview==="baza" ? renderCrmBaza() : renderCrmPrzeglad())));
   el.innerHTML = html;
 }
 function renderCrmImport(){
@@ -6071,6 +6102,8 @@ function renderCrmPrzeglad(){
   html += '<div class="field"><label>Notatka</label><div style="background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; min-height:20px">'+
     (c.notes ? escapeHtml(c.notes) : '<span style="color:var(--muted)">brak notatki</span>')+'</div></div>';
 
+  html += '<div class="field"><label>Kategoria</label><select onchange="crmSetCategory(\''+c.id+'\', this.value)">'+crmCategoryOptions(c.category)+'</select></div>';
+
   html += '<div class="field"><label>Data ostatniego kontaktu (opcjonalnie)</label><input type="date" value="'+escapeHtml(c.lastContact||"")+'" onchange="crmSetLastContact(\''+c.id+'\', this.value)"></div>';
 
   html += '<div class="field"><label>Status</label><div class="chiprow" style="margin-bottom:0">';
@@ -6087,6 +6120,80 @@ function renderCrmPrzeglad(){
     '</div>';
 
   html += '</div>';
+  return html;
+}
+
+var crmSortCol = "name";
+var crmSortDir = "asc";
+var crmCategoryFilter = "all";
+var CRM_TABLE_COLS = [
+  {key:"name", label:"Nazwa"},
+  {key:"category", label:"Kategoria"},
+  {key:"ig", label:"IG"},
+  {key:"fb", label:"FB"},
+  {key:"email", label:"Mail"},
+  {key:"phone", label:"Telefon"},
+  {key:"status", label:"Status"},
+  {key:"lastContact", label:"Ostatni kontakt"}
+];
+function crmSetSort(col){
+  if(crmSortCol===col){ crmSortDir = (crmSortDir==="asc") ? "desc" : "asc"; }
+  else { crmSortCol = col; crmSortDir = "asc"; }
+  renderAll();
+}
+function crmSetCategoryFilter(cat){ crmCategoryFilter = cat; renderAll(); }
+function crmSortValue(c, col){
+  if(col==="status"){
+    var s = CRM_STATUSES.filter(function(x){ return x.id===c.status; })[0];
+    return s ? s.label.toLowerCase() : "";
+  }
+  if(col==="lastContact") return c.lastContact || "";
+  var v = c[col];
+  return (v||"").toString().toLowerCase();
+}
+function renderCrmBaza(){
+  var activeList = crmActiveContacts();
+  if(!activeList.length){
+    return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę, albo dodaj kontakt ręcznie przyciskiem "+ Dodaj klienta".</div></div>';
+  }
+  var catFilter = crmCategoryFilter || "all";
+  var filtered = (catFilter==="all") ? activeList : activeList.filter(function(c){ return (c.category||"")===catFilter; });
+  var sorted = filtered.slice().sort(function(a,b){
+    var va = crmSortValue(a, crmSortCol), vb = crmSortValue(b, crmSortCol);
+    var cmp = String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
+    return crmSortDir==="asc" ? cmp : -cmp;
+  });
+
+  var html = '<div class="chiprow">';
+  html += '<span class="chip'+(catFilter==="all"?" active":"")+'" onclick="crmSetCategoryFilter(\'all\')">Wszystkie kategorie ('+activeList.length+')</span>';
+  var uncatCount = activeList.filter(function(c){ return !c.category; }).length;
+  html += '<span class="chip'+(catFilter===""?" active":"")+'" onclick="crmSetCategoryFilter(\'\')">Bez kategorii ('+uncatCount+')</span>';
+  (state.crmCategories||[]).forEach(function(cat){
+    var n = activeList.filter(function(c){ return c.category===cat; }).length;
+    html += '<span class="chip'+(catFilter===cat?" active":"")+'" onclick="crmSetCategoryFilter(\''+escapeHtml(cat)+'\')">'+escapeHtml(cat)+' ('+n+')</span>';
+  });
+  html += '</div>';
+
+  html += '<div class="card"><div style="overflow-x:auto"><table><thead><tr>';
+  CRM_TABLE_COLS.forEach(function(col){
+    var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
+    html += '<th style="cursor:pointer; user-select:none; white-space:nowrap" onclick="crmSetSort(\''+col.key+'\')">'+col.label+arrow+'</th>';
+  });
+  html += '<th></th></tr></thead><tbody>';
+  sorted.forEach(function(c){
+    html += '<tr>'+
+      '<td>'+escapeHtml(c.name||"")+'</td>'+
+      '<td>'+(c.category?escapeHtml(c.category):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.ig?escapeHtml(c.ig):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.fb?escapeHtml(c.fb):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.email?escapeHtml(c.email):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.phone?escapeHtml(c.phone):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.lastContact?fmtDate(c.lastContact):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button></td>'+
+      '</tr>';
+  });
+  html += '</tbody></table></div></div>';
   return html;
 }
 
@@ -6146,6 +6253,7 @@ function crmPriorityRow(c){
   return '<div class="taskitem" style="align-items:flex-start; flex-direction:column; gap:6px; padding:12px 4px">'+
     '<div style="display:flex; justify-content:space-between; width:100%; align-items:center">'+
       '<div><b style="color:#fff">'+escapeHtml(c.name)+'</b> '+(c.status ? crmStatusTag(c.status) : '')+
+      (c.category ? ' <span style="color:var(--muted); font-size:11.5px">'+escapeHtml(c.category)+'</span>' : '')+
       '<span style="color:var(--muted); font-size:11.5px; margin-left:8px">Ostatni kontakt: '+daysLabel+'</span></div>'+
       '<div style="white-space:nowrap">'+
         '<button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button> '+
