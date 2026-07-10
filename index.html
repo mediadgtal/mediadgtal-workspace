@@ -5641,7 +5641,7 @@ var T4A_STAGES = [
 ];
 function crmGetT4A(c){
   if(!c.t4a){
-    c.t4a = {sent: !!c.statusT4A, sentDate:"", offer:false, decision:false, listed:false, client: c.statusT4A==="klient"};
+    c.t4a = {sent: !!c.statusT4A, sentDate:"", offer:false, decision:false, listed:false, client: c.statusT4A==="klient", notes:""};
   }
   return c.t4a;
 }
@@ -5661,6 +5661,7 @@ function crmT4ATag(c){
   return "";
 }
 var crmT4ASyncStatus = {};
+var crmT4ACreating = {};
 function t4aBlockA_H(c){
   var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
   function hyperlink(url){ return url ? '=HYPERLINK("'+url.replace(/"/g,'""')+'","Link")' : ""; }
@@ -5671,7 +5672,8 @@ function t4aBlockJ_P(c){
   return [c.phone||"", !!t.sent, !!t.offer, !!t.decision, !!t.listed, !!t.client, t.sent ? (t.sentDate||todayStr()) : ""];
 }
 function t4aBlockQ_R(c){
-  return [c.system||"", c.notes||""];
+  var t = crmGetT4A(c);
+  return [c.system||"", t.notes||""];
 }
 function t4aRowFull(c){
   return t4aBlockA_H(c).concat([""]).concat(t4aBlockJ_P(c)).concat(t4aBlockQ_R(c));
@@ -5691,7 +5693,12 @@ function crmFlushPendingT4ASync(){
 }
 function crmSyncT4ARow(c){
   if(!window.__gcalToken) return;
-  if(!c.t4aSheetRow){ crmFindOrCreateT4ARow(c); return; }
+  if(!c.t4aSheetRow){
+    if(crmT4ACreating[c.id]) return;
+    crmT4ACreating[c.id] = true;
+    crmFindOrCreateT4ARow(c);
+    return;
+  }
   crmPushT4ARow(c);
 }
 function crmFindOrCreateT4ARow(c){
@@ -5709,7 +5716,7 @@ function crmFindOrCreateT4ARow(c){
       var idx = target ? names.indexOf(target) : -1;
       if(idx===-1){ crmAppendT4ARow(c); }
       else { crmMergeExistingT4ARow(c, idx+2); }
-    }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+    }).catch(function(){ crmT4ACreating[c.id] = false; crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
 function crmMergeExistingT4ARow(c, rowNum){
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
@@ -5737,11 +5744,12 @@ function crmMergeExistingT4ARow(c, rowNum){
       t.client = t.client || crmT4ABoolify(row[14]);
       t.sentDate = t.sentDate || row[15] || "";
       c.system = c.system || row[16] || "";
-      c.notes = c.notes || row[17] || "";
+      t.notes = t.notes || row[17] || "";
       c.t4aSheetRow = rowNum;
+      crmT4ACreating[c.id] = false;
       save();
       crmPushT4ARow(c);
-    }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+    }).catch(function(){ crmT4ACreating[c.id] = false; crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
 function crmAppendT4ARow(c){
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
@@ -5756,9 +5764,10 @@ function crmAppendT4ARow(c){
     var range = (data.updates && data.updates.updatedRange) || "";
     var m = range.match(/![A-Z]+(\d+)/);
     if(m){ c.t4aSheetRow = parseInt(m[1],10); }
+    crmT4ACreating[c.id] = false;
     c.t4aDirty = false; save();
     crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
-  }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+  }).catch(function(){ crmT4ACreating[c.id] = false; crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
 function crmPushT4ARow(c){
   crmT4ASyncStatus[c.id] = "syncing";
@@ -5778,6 +5787,34 @@ function crmPushT4ARow(c){
     c.t4aDirty = false; save();
     crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
   }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+}
+var crmT4ALastPull = 0;
+function crmPullT4AStatuses(){
+  if(!window.__gcalToken) return;
+  var linked = state.crmContacts.filter(function(c){ return c.t4aSheetRow && !c.t4aDirty; });
+  if(!linked.length) return;
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
+  var params = linked.map(function(c){ return "ranges="+encodeURIComponent(T4A_SHEET_TAB+"!K"+c.t4aSheetRow+":O"+c.t4aSheetRow); }).join("&");
+  fetch(base+"/values:batchGet?"+params, {headers:headers})
+    .then(function(r){
+      if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+      if(!r.ok) throw new Error("http"+r.status);
+      return r.json();
+    }).then(function(data){
+      var changed = false;
+      (data.valueRanges||[]).forEach(function(vr, i){
+        var c = linked[i];
+        var row = (vr.values && vr.values[0]) || [];
+        var t = crmGetT4A(c);
+        var next = {sent:crmT4ABoolify(row[0]), offer:crmT4ABoolify(row[1]), decision:crmT4ABoolify(row[2]), listed:crmT4ABoolify(row[3]), client:crmT4ABoolify(row[4])};
+        if(next.sent!==t.sent || next.offer!==t.offer || next.decision!==t.decision || next.listed!==t.listed || next.client!==t.client){
+          t.sent=next.sent; t.offer=next.offer; t.decision=next.decision; t.listed=next.listed; t.client=next.client;
+          changed = true;
+        }
+      });
+      if(changed){ save(); renderAll(); }
+    }).catch(function(){});
 }
 function crmRefreshT4ABlock(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
@@ -5803,6 +5840,14 @@ function crmSetT4ADate(id, val){
   c.t4aDirty = true;
   save(); renderAll();
   crmRefreshT4ABlock(id);
+  crmSyncT4ARow(c);
+}
+function crmSetT4ANotes(id, val){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  crmGetT4A(c).notes = val;
+  c.t4aDirty = true;
+  save();
   crmSyncT4ARow(c);
 }
 function crmT4AChecklistHtml(c){
@@ -5834,6 +5879,8 @@ function crmT4AChecklistHtml(c){
     cb("decision","Decyzja pozytywna")+
     cb("listed","Wpis na listę")+
     cb("client","Klient")+
+    '<div style="margin-top:8px"><label style="font-size:11px; color:var(--muted)">Notatki tool4arts (osobne od notatek ogólnych, wysyłane do arkusza Tomka)</label>'+
+    '<textarea rows="2" onchange="crmSetT4ANotes(\''+c.id+'\', this.value)" style="font-size:12.5px; margin-top:4px">'+escapeHtml(t.notes||"")+'</textarea></div>'+
     statusLine+
     '</div></div>';
 }
@@ -6078,7 +6125,6 @@ function saveCrmNoteModal(id){
   c.notes = el.value.trim();
   closeCrmNoteModal();
   save(); renderAll();
-  if(c.t4aSheetRow){ c.t4aDirty = true; crmSyncT4ARow(c); }
 }
 
 function crmNormHeader(h){
@@ -6307,6 +6353,7 @@ function crmUrl(v, kind){
 function renderCRM(el){
   if(!state.crmMeta) state.crmMeta = {reviewIndex:0, filter:"all"};
   if(!state.crmCategories) state.crmCategories = ["Studia Tańca","Pole Dance","Joga","Pilates","Sztuki Walki"];
+  if(window.__gcalToken && Date.now()-crmT4ALastPull>45000){ crmT4ALastPull = Date.now(); crmPullT4AStatuses(); }
   setTopActions('<button class="btn secondary" onclick="crmUndo()">↺ Cofnij</button> <button class="btn secondary" onclick="crmAddCategory()">+ Dodaj kategorię</button> <button class="btn" onclick="openCrmModal()">+ Dodaj klienta</button>');
   var koszCount = state.crmContacts.filter(function(c){ return c.deletedAt; }).length;
   var html = '<div class="tabsw">'+
