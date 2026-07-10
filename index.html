@@ -308,14 +308,14 @@
   .cal-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y}
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:640px}
   .cal-dow{background:var(--sidebar-bg); color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; text-align:center; padding:8px 0; font-weight:700}
-  .cal-cell{background:var(--bg); min-height:88px; padding:7px; position:relative; cursor:pointer}
+  .cal-cell{background:var(--bg); min-height:88px; min-width:0; padding:7px; position:relative; cursor:pointer; overflow:hidden}
   .cal-cell.out{opacity:.35}
   .cal-cell.today{box-shadow:inset 0 0 0 1.5px var(--accent); border-radius:4px}
   .cal-daynum{font-size:12px; color:var(--muted-light); margin-bottom:5px}
   .cal-ev{font-size:10.5px; padding:2px 5px; border-radius:4px; margin-bottom:3px; color:#161519; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer}
 
   .cal-grid-outer{background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:640px}
-  .cal-weekgrid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px}
+  .cal-weekgrid{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:1px}
   .cal-weekrow{position:relative}
   .cal-bars-layer{position:absolute; left:0; right:0; pointer-events:none}
   .cal-bar{position:absolute; height:17px; line-height:17px; font-size:10.5px; font-weight:600; color:#161519; padding:0 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; pointer-events:auto}
@@ -3546,10 +3546,11 @@ function fetchGCalEventsForVisibleMonth(){
           if(!it.start) return;
           var dates = eventDateRange(it);
           var t = it.start.dateTime ? it.start.dateTime.slice(11,16) : null;
+          var endT = it.end && it.end.dateTime ? it.end.dateTime.slice(11,16) : null;
           var rawStart = it.start.date || (it.start.dateTime||"").slice(0,10);
           var rawEnd = (it.end && (it.end.date || (it.end.dateTime||"").slice(0,10))) || rawStart;
           dates.forEach(function(d){
-            out.push({id:it.id, calendarId:cal.id, title: it.summary||"(bez tytułu)", date:d, time:t,
+            out.push({id:it.id, calendarId:cal.id, title: it.summary||"(bez tytułu)", date:d, time:t, endTime:endT,
               calendarName:cal.name, calendarColor:cal.color, allDay: !!it.start.date,
               rawStartDate: rawStart, rawEndDate: rawEnd, multiDay: dates.length>1});
           });
@@ -3730,7 +3731,7 @@ function renderKalendarz(el){
       html += '<div class="cal-bars-layer" style="top:26px; height:'+(laneCount*20)+'px">';
       segs.forEach(function(s){
         var idx = calEventRefs.length;
-        calEventRefs.push({existing:true, source:"gcal", id:s.e.id, calendarId:s.e.calendarId, title:s.e.title, date:s.e.rawStartDate, time:s.e.time, calendar:s.e.calendarName, allDay:s.e.allDay, rawStartDate:s.e.rawStartDate, rawEndDate:s.e.rawEndDate});
+        calEventRefs.push({existing:true, source:"gcal", id:s.e.id, calendarId:s.e.calendarId, title:s.e.title, date:s.e.rawStartDate, time:s.e.time, endTime:s.e.endTime, calendar:s.e.calendarName, allDay:s.e.allDay, rawStartDate:s.e.rawStartDate, rawEndDate:s.e.rawEndDate});
         var leftPct = (s.startCol/7*100);
         var widthPct = ((s.endCol-s.startCol+1)/7*100);
         var radius = (s.isRealStart?"9px":"0")+" "+(s.isRealEnd?"9px":"0")+" "+(s.isRealEnd?"9px":"0")+" "+(s.isRealStart?"9px":"0");
@@ -3761,7 +3762,7 @@ function calEventsForDay(dstr, gcalEvents){
     if(gcalEvents!==null){
       return {
         color: e.calendarColor, title: e.title, time: e.time, multiDay: e.multiDay,
-        ctx: {existing:true, source:"gcal", id:e.id, calendarId:e.calendarId, title:e.title, date:dstr, time:e.time,
+        ctx: {existing:true, source:"gcal", id:e.id, calendarId:e.calendarId, title:e.title, date:dstr, time:e.time, endTime:e.endTime,
           calendar:e.calendarName, allDay:e.allDay, rawStartDate:e.rawStartDate, rawEndDate:e.rawEndDate}
       };
     }
@@ -3785,13 +3786,24 @@ function openEventModal(opts){
   var calOptions = calSource.map(function(c){
     return '<option value="'+escapeHtml(c.name)+'"'+((opts.calendar||"")===c.name?" selected":"")+'>'+escapeHtml(c.name)+'</option>';
   }).join("");
-  var dateLabel = "Data" + (isEdit && opts.rawStartDate && opts.rawEndDate && opts.rawStartDate!==opts.rawEndDate ? " początkowa (wydarzenie trwa kilka dni — przesunięcie zachowa długość)" : "");
+  var prefillEndDate = "";
+  if(isEdit && opts.rawStartDate && opts.rawEndDate){
+    if(opts.allDay){
+      var incEnd = new Date(opts.rawEndDate+"T00:00:00"); incEnd.setDate(incEnd.getDate()-1);
+      if(isoLocal(incEnd) !== opts.rawStartDate) prefillEndDate = isoLocal(incEnd);
+    } else if(opts.rawEndDate !== opts.rawStartDate){
+      prefillEndDate = opts.rawEndDate;
+    }
+  }
+  var dateLabel = "Data początkowa" + (prefillEndDate ? " (wydarzenie trwa kilka dni)" : "");
   var html = '<div class="modal-overlay" id="eventModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj wydarzenie":"Nowe wydarzenie")+'</h3>'+
     '<div class="field"><label>Tytuł</label><input type="text" id="evmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
     '<div class="field"><label>'+dateLabel+'</label><input type="date" id="evmDate" value="'+(opts.date||todayStr())+'"></div>'+
-    '<div class="field"><label>Godzina (opcjonalnie)</label><input type="time" id="evmTime" value="'+(opts.time||"")+'"></div>'+
+    '<div class="field"><label>Godzina rozpoczęcia (opcjonalnie)</label><input type="time" id="evmTime" value="'+(opts.time||"")+'"></div>'+
+    '<div class="field"><label>Data zakończenia (opcjonalnie — dla wydarzeń trwających kilka dni)</label><input type="date" id="evmEndDate" value="'+prefillEndDate+'"></div>'+
+    '<div class="field"><label>Godzina zakończenia (opcjonalnie)</label><input type="time" id="evmEndTime" value="'+(opts.endTime||"")+'"></div>'+
     '<div class="field"><label>Kalendarz</label><select id="evmCal"'+(disableCalSelect?" disabled":"")+'>'+calOptions+'</select></div>'+
     (isEdit ? '' : '<div class="field"><label style="display:flex; align-items:center; gap:6px"><input type="checkbox" id="evmRecur" style="width:auto">🔁 Cykliczne — co tydzień, w ten sam dzień tygodnia</label></div>')+
     '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
@@ -3808,6 +3820,8 @@ function saveEventModal(){
   var title = document.getElementById("evmTitle").value.trim();
   var date = document.getElementById("evmDate").value;
   var time = document.getElementById("evmTime").value;
+  var endDateIn = document.getElementById("evmEndDate").value;
+  var endTimeIn = document.getElementById("evmEndTime").value;
   var calName = document.getElementById("evmCal").value;
   if(!title || !date){ alert("Podaj przynajmniej tytuł i datę."); return; }
   var recurEl = document.getElementById("evmRecur");
@@ -3818,23 +3832,16 @@ function saveEventModal(){
     var cal = gcalCalendars.filter(function(c){return c.name===calName;})[0] || gcalCalendars[0];
     var targetCalendarId = ctx.existing ? ctx.calendarId : cal.id;
     var body = {summary:title};
-    if(ctx.existing && ctx.allDay){
-      if(date===ctx.rawStartDate){
-        body.start = {date:ctx.rawStartDate};
-        body.end = {date:ctx.rawEndDate};
-      } else {
-        var deltaDays = Math.round((new Date(date+"T00:00:00") - new Date(ctx.rawStartDate+"T00:00:00"))/86400000);
-        var endD = new Date(ctx.rawEndDate+"T00:00:00"); endD.setDate(endD.getDate()+deltaDays);
-        body.start = {date:date};
-        body.end = {date: endD.getFullYear()+"-"+String(endD.getMonth()+1).padStart(2,"0")+"-"+String(endD.getDate()).padStart(2,"0")};
-      }
-    } else if(time){
-      var parts = time.split(":"); var endH = (parseInt(parts[0],10)+1)%24;
+    if(time){
+      var endDateFinal = endDateIn && endDateIn>=date ? endDateIn : date;
+      var endTimeFinal = endTimeIn || (function(){ var p=time.split(":"); var h=(parseInt(p[0],10)+1)%24; return String(h).padStart(2,"0")+":"+p[1]; })();
       body.start = {dateTime:date+"T"+time+":00", timeZone:"Europe/Warsaw"};
-      body.end = {dateTime:date+"T"+String(endH).padStart(2,"0")+":"+parts[1]+":00", timeZone:"Europe/Warsaw"};
+      body.end = {dateTime:endDateFinal+"T"+endTimeFinal+":00", timeZone:"Europe/Warsaw"};
     } else {
+      var endDateAllDay = endDateIn && endDateIn>=date ? endDateIn : date;
+      var endExclusive = new Date(endDateAllDay+"T00:00:00"); endExclusive.setDate(endExclusive.getDate()+1);
       body.start = {date:date};
-      body.end = {date:date};
+      body.end = {date: isoLocal(endExclusive)};
     }
     if(isRecur){
       var recurWd = (new Date(date+"T00:00:00").getDay()+6)%7;
