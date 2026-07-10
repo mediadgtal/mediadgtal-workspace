@@ -6466,7 +6466,6 @@ var crmSortDir = "asc";
 var crmCategoryFilter = "all";
 var crmSystemFilter = "";
 var crmT4AFilter = "";
-var crmWebsiteFilter = "";
 var crmCityFilter = "";
 var crmStatusFilter = "";
 var crmNameFilter = "";
@@ -6492,7 +6491,6 @@ function crmSetSort(col){
 function crmSetCategoryFilter(cat){ crmCategoryFilter = cat; renderAll(); }
 function crmSetSystemFilter(v){ crmSystemFilter = v; renderAllKeepFocus("crmSystemFilterInput"); }
 function crmSetT4AFilter(v){ crmT4AFilter = v; renderAllKeepFocus("crmT4AFilterInput"); }
-function crmSetWebsiteFilter(v){ crmWebsiteFilter = v; renderAllKeepFocus("crmWebsiteFilterInput"); }
 function crmSetCityFilter(v){ crmCityFilter = v; renderAllKeepFocus("crmCityFilterInput"); }
 function crmSetStatusFilter(v){ crmStatusFilter = v; renderAllKeepFocus("crmStatusFilterInput"); }
 function crmSetNameFilter(v){ crmNameFilter = v; renderAllKeepFocus("crmNameFilterInput"); }
@@ -6528,7 +6526,6 @@ function renderCrmBaza(){
   var catFilter = (crmCategoryFilter==null) ? "all" : crmCategoryFilter;
   var sysFilter = crmSystemFilter||"";
   var t4aFilter = crmT4AFilter||"";
-  var webFilter = crmWebsiteFilter||"";
   var cityFilter = crmCityFilter||"";
   var statusFilter = crmStatusFilter||"";
   var nameFilter = crmNameFilter||"";
@@ -6539,10 +6536,6 @@ function renderCrmBaza(){
     if(!crmFieldMatchesFilter(crmT4ALabel(c), t4aFilter)) return false;
     if(!crmFieldMatchesFilter(c.city, cityFilter)) return false;
     if(!crmFieldMatchesFilter(crmStatusLabel(c.status), statusFilter)) return false;
-    if(webFilter){
-      var hasWeb = !!crmUrl(c.website,"website");
-      if(!crmFieldMatchesFilter(hasWeb?"tak":"nie", webFilter)) return false;
-    }
     return true;
   });
   var citiesPresent = Array.from(new Set(activeList.map(function(c){ return (c.city||"").trim(); }).filter(Boolean))).sort(function(a,b){ return a.localeCompare(b,"pl"); });
@@ -6576,7 +6569,6 @@ function renderCrmBaza(){
   html += crmFilterInput("crmSystemFilterInput", "System", sysFilter, CRM_SYSTEMS, "crmSetSystemFilter");
   html += crmFilterInput("crmStatusFilterInput", "Status marketing", statusFilter, CRM_STATUSES.map(function(s){return s.label;}), "crmSetStatusFilter");
   html += crmFilterInput("crmT4AFilterInput", "Tool4arts", t4aFilter, T4A_STAGES.map(function(s){return s.label;}), "crmSetT4AFilter");
-  html += crmFilterInput("crmWebsiteFilterInput", "Strona", webFilter, ["TAK","NIE"], "crmSetWebsiteFilter");
   html += '</div>';
   html += '<div style="font-size:11px; color:var(--muted); margin:-8px 0 14px">Filtry szukają na bieżąco — wpisz dowolny fragment tekstu (np. "brak" pokaże puste pola).</div>';
 
