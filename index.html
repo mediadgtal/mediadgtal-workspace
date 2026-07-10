@@ -5607,6 +5607,7 @@ var CRM_STATUSES = [
   {id:"odrzucili", label:"Odrzucili", color:"#d1636f", bg:"#33222a"},
   {id:"klient", label:"Klient", color:"#63b58a", bg:"#20302a"}
 ];
+var CRM_SYSTEMS = ["Fitssey","Wod Guru","eFitness","Excel","BRAK"];
 var CRM_COL_ALIASES = {
   name:["nazwa studia","nazwa","studio","firma","name","klient"],
   ig:["ig","instagram","link ig","link instagram","insta"],
@@ -5623,7 +5624,7 @@ function crmUndo(){
     state.crmContacts = state.crmContacts.filter(function(c){ return c.id!==a.id; });
   } else if(a.type==="edit"){
     var c = state.crmContacts.filter(function(x){ return x.id===a.id; })[0];
-    if(c){ c.name=a.prev.name; c.ig=a.prev.ig; c.fb=a.prev.fb; c.email=a.prev.email; c.phone=a.prev.phone; c.notes=a.prev.notes; c.category=a.prev.category; }
+    if(c){ c.name=a.prev.name; c.ig=a.prev.ig; c.fb=a.prev.fb; c.email=a.prev.email; c.phone=a.prev.phone; c.notes=a.prev.notes; c.category=a.prev.category; c.system=a.prev.system; c.statusT4A=a.prev.statusT4A; }
   } else if(a.type==="softdelete" || a.type==="restore"){
     var c2 = state.crmContacts.filter(function(x){ return x.id===a.id; })[0];
     if(c2) c2.deletedAt = a.prevDeletedAt;
@@ -5703,12 +5704,26 @@ function crmAddCategory(){
     save(); renderAll();
   }
 }
+function crmSystemOptions(selected){
+  var html = '<option value=""'+(!selected?" selected":"")+'>— nie wybrano —</option>';
+  CRM_SYSTEMS.forEach(function(s){
+    html += '<option value="'+s+'"'+(selected===s?" selected":"")+'>'+s+'</option>';
+  });
+  return html;
+}
+function crmStatusOptions(selected){
+  var html = '<option value=""'+(!selected?" selected":"")+'>— brak —</option>';
+  CRM_STATUSES.forEach(function(s){
+    html += '<option value="'+s.id+'"'+(selected===s.id?" selected":"")+'>'+s.label+'</option>';
+  });
+  return html;
+}
 function openCrmModal(id){
   closeCrmModal();
   var opts = {};
   if(id){
     var existing = state.crmContacts.filter(function(x){ return x.id===id; })[0];
-    if(existing) opts = {id:existing.id, name:existing.name, ig:existing.ig, fb:existing.fb, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category};
+    if(existing) opts = {id:existing.id, name:existing.name, ig:existing.ig, fb:existing.fb, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category, system:existing.system, statusT4A:existing.statusT4A};
   }
   var isEdit = !!opts.id;
   var html = '<div class="modal-overlay" id="crmContactModal">'+
@@ -5716,6 +5731,8 @@ function openCrmModal(id){
     '<h3>'+(isEdit?"Edytuj kontakt":"Nowy kontakt")+'</h3>'+
     '<div class="field"><label>Nazwa</label><input type="text" id="cmName" value="'+escapeHtml(opts.name||"")+'"></div>'+
     '<div class="field"><label>Kategoria</label><select id="cmCategory">'+crmCategoryOptions(opts.category)+'</select></div>'+
+    '<div class="field"><label>System (obecnie używany)</label><select id="cmSystem">'+crmSystemOptions(opts.system)+'</select></div>'+
+    '<div class="field"><label>Status — tool4arts</label><select id="cmStatusT4A">'+crmStatusOptions(opts.statusT4A)+'</select></div>'+
     '<div class="field"><label>Instagram (link lub @login)</label><input type="text" id="cmIg" value="'+escapeHtml(opts.ig||"")+'"></div>'+
     '<div class="field"><label>Facebook (link)</label><input type="text" id="cmFb" value="'+escapeHtml(opts.fb||"")+'"></div>'+
     '<div class="field"><label>Mail</label><input type="text" id="cmEmail" value="'+escapeHtml(opts.email||"")+'"></div>'+
@@ -5735,6 +5752,8 @@ function saveCrmModal(){
   var name = nameEl.value.trim();
   if(!name) return;
   var category = document.getElementById("cmCategory").value;
+  var system = document.getElementById("cmSystem").value;
+  var statusT4A = document.getElementById("cmStatusT4A").value || null;
   var ig = document.getElementById("cmIg").value.trim();
   var fb = document.getElementById("cmFb").value.trim();
   var email = document.getElementById("cmEmail").value.trim();
@@ -5744,11 +5763,11 @@ function saveCrmModal(){
   if(ctx.id){
     var c = state.crmContacts.filter(function(x){ return x.id===ctx.id; })[0];
     if(c){
-      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, ig:c.ig, fb:c.fb, email:c.email, phone:c.phone, notes:c.notes, category:c.category}});
-      c.name=name; c.ig=ig; c.fb=fb; c.email=email; c.phone=phone; c.notes=notes; c.category=category;
+      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, ig:c.ig, fb:c.fb, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, statusT4A:c.statusT4A}});
+      c.name=name; c.ig=ig; c.fb=fb; c.email=email; c.phone=phone; c.notes=notes; c.category=category; c.system=system; c.statusT4A=statusT4A;
     }
   } else {
-    var newC = {id:uid("crmc"), name:name, ig:ig, fb:fb, email:email, phone:phone, notes:notes, category:category, status:null, lastContact:"", taggedAt:null, hot:false, deletedAt:null, importedAt:todayStr()};
+    var newC = {id:uid("crmc"), name:name, ig:ig, fb:fb, email:email, phone:phone, notes:notes, category:category, system:system, statusT4A:statusT4A, status:null, lastContact:"", taggedAt:null, hot:false, deletedAt:null, importedAt:todayStr()};
     state.crmContacts.push(newC);
     pushCrmUndo({type:"add", id:newC.id});
     state.crmMeta.reviewIndex = state.crmContacts.indexOf(newC);
@@ -5879,6 +5898,8 @@ function crmConfirmImport(){
       phone: (map.phone!=null ? (r[map.phone]||"").toString().trim() : ""),
       notes: (map.notes!=null ? (r[map.notes]||"").toString().trim() : ""),
       category: "",
+      system: "",
+      statusT4A: null,
       status: null,
       lastContact: "",
       taggedAt: null,
@@ -5958,6 +5979,18 @@ function crmSetCategory(id, val){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
   c.category = val;
+  save(); renderAll();
+}
+function crmSetSystem(id, val){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.system = val;
+  save(); renderAll();
+}
+function crmSetStatusT4A(id, statusId){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.statusT4A = statusId || null;
   save(); renderAll();
 }
 function crmStatusTag(statusId){
@@ -6102,14 +6135,24 @@ function renderCrmPrzeglad(){
   html += '<div class="field"><label>Notatka</label><div style="background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; min-height:20px">'+
     (c.notes ? escapeHtml(c.notes) : '<span style="color:var(--muted)">brak notatki</span>')+'</div></div>';
 
-  html += '<div class="field"><label>Kategoria</label><select onchange="crmSetCategory(\''+c.id+'\', this.value)">'+crmCategoryOptions(c.category)+'</select></div>';
+  html += '<div class="row" style="gap:14px">'+
+    '<div class="field" style="flex:1"><label>Kategoria</label><select onchange="crmSetCategory(\''+c.id+'\', this.value)">'+crmCategoryOptions(c.category)+'</select></div>'+
+    '<div class="field" style="flex:1"><label>System (obecnie używany)</label><select onchange="crmSetSystem(\''+c.id+'\', this.value)">'+crmSystemOptions(c.system)+'</select></div>'+
+    '</div>';
 
   html += '<div class="field"><label>Data ostatniego kontaktu (opcjonalnie)</label><input type="date" value="'+escapeHtml(c.lastContact||"")+'" onchange="crmSetLastContact(\''+c.id+'\', this.value)"></div>';
 
-  html += '<div class="field"><label>Status</label><div class="chiprow" style="margin-bottom:0">';
+  html += '<div class="field"><label>Status — współpraca marketingowa</label><div class="chiprow" style="margin-bottom:0">';
   CRM_STATUSES.forEach(function(s){
     var active = c.status===s.id;
     html += '<button class="chip'+(active?" active":"")+'"'+(active?(' style="background:'+s.color+'; border-color:'+s.color+'; color:#1a1418; font-weight:700"'):'')+' onclick="crmSetStatus(\''+c.id+'\',\''+s.id+'\')">'+s.label+'</button>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="field"><label>Status — tool4arts</label><div class="chiprow" style="margin-bottom:0">';
+  CRM_STATUSES.forEach(function(s){
+    var active = c.statusT4A===s.id;
+    html += '<button class="chip'+(active?" active":"")+'"'+(active?(' style="background:'+s.color+'; border-color:'+s.color+'; color:#1a1418; font-weight:700"'):'')+' onclick="crmSetStatusT4A(\''+c.id+'\',\''+s.id+'\')">'+s.label+'</button>';
   });
   html += '</div></div>';
 
@@ -6126,14 +6169,18 @@ function renderCrmPrzeglad(){
 var crmSortCol = "name";
 var crmSortDir = "asc";
 var crmCategoryFilter = "all";
+var crmSystemFilter = "all";
+var crmT4AFilter = "all";
 var CRM_TABLE_COLS = [
   {key:"name", label:"Nazwa"},
   {key:"category", label:"Kategoria"},
+  {key:"system", label:"System"},
   {key:"ig", label:"IG"},
   {key:"fb", label:"FB"},
   {key:"email", label:"Mail"},
   {key:"phone", label:"Telefon"},
-  {key:"status", label:"Status"},
+  {key:"status", label:"Status — marketing"},
+  {key:"statusT4A", label:"Status — tool4arts"},
   {key:"lastContact", label:"Ostatni kontakt"}
 ];
 function crmSetSort(col){
@@ -6142,9 +6189,11 @@ function crmSetSort(col){
   renderAll();
 }
 function crmSetCategoryFilter(cat){ crmCategoryFilter = cat; renderAll(); }
+function crmSetSystemFilter(v){ crmSystemFilter = v; renderAll(); }
+function crmSetT4AFilter(v){ crmT4AFilter = v; renderAll(); }
 function crmSortValue(c, col){
-  if(col==="status"){
-    var s = CRM_STATUSES.filter(function(x){ return x.id===c.status; })[0];
+  if(col==="status" || col==="statusT4A"){
+    var s = CRM_STATUSES.filter(function(x){ return x.id===c[col]; })[0];
     return s ? s.label.toLowerCase() : "";
   }
   if(col==="lastContact") return c.lastContact || "";
@@ -6156,8 +6205,15 @@ function renderCrmBaza(){
   if(!activeList.length){
     return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę, albo dodaj kontakt ręcznie przyciskiem "+ Dodaj klienta".</div></div>';
   }
-  var catFilter = crmCategoryFilter || "all";
-  var filtered = (catFilter==="all") ? activeList : activeList.filter(function(c){ return (c.category||"")===catFilter; });
+  var catFilter = (crmCategoryFilter==null) ? "all" : crmCategoryFilter;
+  var sysFilter = (crmSystemFilter==null) ? "all" : crmSystemFilter;
+  var t4aFilter = (crmT4AFilter==null) ? "all" : crmT4AFilter;
+  var filtered = activeList.filter(function(c){
+    if(catFilter!=="all" && (c.category||"")!==catFilter) return false;
+    if(sysFilter!=="all" && (c.system||"")!==sysFilter) return false;
+    if(t4aFilter!=="all" && (c.statusT4A||"")!==t4aFilter) return false;
+    return true;
+  });
   var sorted = filtered.slice().sort(function(a,b){
     var va = crmSortValue(a, crmSortCol), vb = crmSortValue(b, crmSortCol);
     var cmp = String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
@@ -6174,6 +6230,19 @@ function renderCrmBaza(){
   });
   html += '</div>';
 
+  html += '<div class="row" style="margin-bottom:14px; gap:10px; flex-wrap:wrap">';
+  html += '<select onchange="crmSetSystemFilter(this.value)" style="width:auto">'+
+    '<option value="all"'+(sysFilter==="all"?" selected":"")+'>System: wszystkie</option>'+
+    '<option value=""'+(sysFilter===""?" selected":"")+'>System: nie wybrano</option>'+
+    CRM_SYSTEMS.map(function(s){ return '<option value="'+s+'"'+(sysFilter===s?" selected":"")+'>System: '+s+'</option>'; }).join("")+
+    '</select>';
+  html += '<select onchange="crmSetT4AFilter(this.value)" style="width:auto">'+
+    '<option value="all"'+(t4aFilter==="all"?" selected":"")+'>Tool4arts: wszystkie</option>'+
+    '<option value=""'+(t4aFilter===""?" selected":"")+'>Tool4arts: brak statusu</option>'+
+    CRM_STATUSES.map(function(s){ return '<option value="'+s.id+'"'+(t4aFilter===s.id?" selected":"")+'>Tool4arts: '+s.label+'</option>'; }).join("")+
+    '</select>';
+  html += '</div>';
+
   html += '<div class="card"><div style="overflow-x:auto"><table><thead><tr>';
   CRM_TABLE_COLS.forEach(function(col){
     var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
@@ -6184,11 +6253,13 @@ function renderCrmBaza(){
     html += '<tr>'+
       '<td>'+escapeHtml(c.name||"")+'</td>'+
       '<td>'+(c.category?escapeHtml(c.category):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.system?escapeHtml(c.system):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.ig?escapeHtml(c.ig):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.fb?escapeHtml(c.fb):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.email?escapeHtml(c.email):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.phone?escapeHtml(c.phone):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td>'+(c.statusT4A?crmStatusTag(c.statusT4A):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+(c.lastContact?fmtDate(c.lastContact):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button></td>'+
       '</tr>';
@@ -6253,6 +6324,7 @@ function crmPriorityRow(c){
   return '<div class="taskitem" style="align-items:flex-start; flex-direction:column; gap:6px; padding:12px 4px">'+
     '<div style="display:flex; justify-content:space-between; width:100%; align-items:center">'+
       '<div><b style="color:#fff">'+escapeHtml(c.name)+'</b> '+(c.status ? crmStatusTag(c.status) : '')+
+      (c.statusT4A ? ' <span style="font-size:11px; color:var(--muted)">t4a:</span> '+crmStatusTag(c.statusT4A) : '')+
       (c.category ? ' <span style="color:var(--muted); font-size:11.5px">'+escapeHtml(c.category)+'</span>' : '')+
       '<span style="color:var(--muted); font-size:11.5px; margin-left:8px">Ostatni kontakt: '+daysLabel+'</span></div>'+
       '<div style="white-space:nowrap">'+
