@@ -5634,6 +5634,21 @@ var CRM_STATUSES = [
 var CRM_SYSTEMS = ["Fitssey","Wod Guru","eFitness","Excel","BRAK"];
 var T4A_SHEET_ID = "18LsVb2KC0jtcbY7qNMmApl_7ZoPEVdhQNO_7--0wW8Y";
 var T4A_SHEET_TAB = "Baza";
+var T4A_SHEET_GID = 0;
+function crmFormatT4ARow(rowNum){
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
+  fetch(base+":batchUpdate", {
+    method:"POST", headers:headers,
+    body: JSON.stringify({requests:[{
+      repeatCell:{
+        range:{sheetId:T4A_SHEET_GID, startRowIndex:rowNum-1, endRowIndex:rowNum, startColumnIndex:0, endColumnIndex:18},
+        cell:{userEnteredFormat:{textFormat:{fontFamily:"Montserrat", fontSize:10}}},
+        fields:"userEnteredFormat.textFormat"
+      }
+    }]})
+  }).catch(function(){});
+}
 var T4A_STAGES = [
   {field:"client", label:"Klient", color:"#63b58a", bg:"#20302a"},
   {field:"listed", label:"Wpis na listę", color:"#cf9b4a", bg:"#342c1f"},
@@ -5772,6 +5787,7 @@ function crmAppendT4ARow(c, targetRow){
     crmT4ACreating[c.id] = false;
     c.t4aDirty = false; save();
     crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
+    crmFormatT4ARow(targetRow);
   }).catch(function(){ crmT4ACreating[c.id] = false; crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
 function crmPushT4ARow(c){
