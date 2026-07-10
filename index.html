@@ -5614,7 +5614,7 @@ function flushClientsBackupPush(){
 }
 
 /* ================= CRM REAKTYWACJA ================= */
-var crmSubview = "przeglad"; // przeglad | import | kosz
+var crmSubview = "priorytety"; // przeglad | import | kosz
 var crmImportPending = null; // {headerRow, dataRows, map, fileName}
 var crmImportWorkbook = null; // {wb, fileName} — czeka na wybór arkusza
 var crmUndoStack = [];
@@ -6467,6 +6467,7 @@ var crmT4AFilter = "";
 var crmWebsiteFilter = "";
 var crmCityFilter = "";
 var crmStatusFilter = "";
+var crmNameFilter = "";
 var CRM_TABLE_COLS = [
   {key:"name", label:"Nazwa"},
   {key:"city", label:"Miasto"},
@@ -6492,6 +6493,7 @@ function crmSetT4AFilter(v){ crmT4AFilter = v; renderAllKeepFocus("crmT4AFilterI
 function crmSetWebsiteFilter(v){ crmWebsiteFilter = v; renderAllKeepFocus("crmWebsiteFilterInput"); }
 function crmSetCityFilter(v){ crmCityFilter = v; renderAllKeepFocus("crmCityFilterInput"); }
 function crmSetStatusFilter(v){ crmStatusFilter = v; renderAllKeepFocus("crmStatusFilterInput"); }
+function crmSetNameFilter(v){ crmNameFilter = v; renderAllKeepFocus("crmNameFilterInput"); }
 function crmStatusLabel(id){
   var s = CRM_STATUSES.filter(function(x){ return x.id===id; })[0];
   return s ? s.label : "";
@@ -6527,8 +6529,10 @@ function renderCrmBaza(){
   var webFilter = crmWebsiteFilter||"";
   var cityFilter = crmCityFilter||"";
   var statusFilter = crmStatusFilter||"";
+  var nameFilter = crmNameFilter||"";
   var filtered = activeList.filter(function(c){
     if(catFilter!=="all" && (c.category||"")!==catFilter) return false;
+    if(!crmFieldMatchesFilter(c.name, nameFilter)) return false;
     if(!crmFieldMatchesFilter(c.system, sysFilter)) return false;
     if(!crmFieldMatchesFilter(crmT4ALabel(c), t4aFilter)) return false;
     if(!crmFieldMatchesFilter(c.city, cityFilter)) return false;
@@ -6565,6 +6569,7 @@ function renderCrmBaza(){
       '</div>';
   }
   html += '<div class="row" style="margin-bottom:14px; gap:10px; flex-wrap:wrap">';
+  html += crmFilterInput("crmNameFilterInput", "Nazwa", nameFilter, [], "crmSetNameFilter");
   html += crmFilterInput("crmCityFilterInput", "Miasto", cityFilter, citiesPresent, "crmSetCityFilter");
   html += crmFilterInput("crmSystemFilterInput", "System", sysFilter, CRM_SYSTEMS, "crmSetSystemFilter");
   html += crmFilterInput("crmStatusFilterInput", "Status marketing", statusFilter, CRM_STATUSES.map(function(s){return s.label;}), "crmSetStatusFilter");
