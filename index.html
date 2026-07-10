@@ -4211,13 +4211,16 @@ function changeNawykiYear(delta){
 function renderNawykiMonth(ym){
   var parts = ym.split("-"), y = +parts[0], m = +parts[1];
   var dim = daysInMonth(y,m);
+  var todayParts = todayStr().split("-");
+  var todayY = +todayParts[0], todayM = +todayParts[1], todayD = +todayParts[2];
   var html = '';
-  html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
+  html += '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid crosshair-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>';
   for(var d=1; d<=dim; d++){
     var wd = dowShort(y,m,d);
     var weekend = (wd==="SO"||wd==="NDZ");
-    html += '<th style="text-align:center; padding:6px 5px'+(weekend?"; background:rgba(207,155,74,.06)":"")+'">'+
+    var isToday = (y===todayY && m===todayM && d===todayD);
+    html += '<th style="text-align:center; padding:6px 5px'+(isToday?"; background:rgba(207,155,74,.35)":(weekend?"; background:rgba(207,155,74,.06)":""))+'">'+
       '<div style="font-size:9px; color:var(--muted); text-transform:uppercase">'+wd+'</div><div>'+d+'</div></th>';
   }
   html += '<th style="text-align:right">Wyk.</th><th style="text-align:right">Dni</th><th style="text-align:right">%</th><th></th></tr></thead><tbody>';
@@ -4230,7 +4233,8 @@ function renderNawykiMonth(ym){
       var key = ym+"-"+String(d).padStart(2,"0");
       var wd2 = dowShort(y,m,d);
       var weekend2 = (wd2==="SO"||wd2==="NDZ");
-      html += '<td style="text-align:center'+(weekend2?"; background:rgba(207,155,74,.06)":"")+'"><input type="checkbox" '+(h.log[key]?"checked":"")+' onchange="toggleHabitDay(\''+h.id+'\',\''+key+'\')"></td>';
+      var isToday2 = (y===todayY && m===todayM && d===todayD);
+      html += '<td style="text-align:center'+(isToday2?"; background:rgba(207,155,74,.35)":(weekend2?"; background:rgba(207,155,74,.06)":""))+'"><input type="checkbox" '+(h.log[key]?"checked":"")+' onchange="toggleHabitDay(\''+h.id+'\',\''+key+'\')"></td>';
     }
     html += '<td style="text-align:right; font-weight:600">'+st.done+'</td>'+
       '<td style="text-align:right; color:var(--muted)">'+st.days+'</td>'+
@@ -4305,7 +4309,7 @@ function deleteHabitReportRow(ym, idx){
 }
 
 function renderNawykiTotal(yr){
-  var html = '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
+  var html = '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid crosshair-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>'+
     '<th style="text-align:right">Suma (dni)</th><th style="text-align:right">% rok</th>';
   HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
@@ -6968,10 +6972,22 @@ function toggleStatCat(c){
 }
 
 /* ================= INIT ================= */
+function injectCrosshairCSS(){
+  var max = 40;
+  var css = '';
+  for(var i=1;i<=max;i++){
+    css += '.crosshair-grid:has(> thead > tr > *:nth-child('+i+'):hover) > tbody > tr > *:nth-child('+i+'), '+
+      '.crosshair-grid:has(> tbody > tr > *:nth-child('+i+'):hover) > tbody > tr > *:nth-child('+i+'){background:rgba(207,155,74,.16) !important}';
+  }
+  var style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
+}
 function init(){
   document.getElementById("brandLogo").src = "data:image/png;base64,"+LOGO_B64;
   load();
   renderAll();
+  injectCrosshairCSS();
   setInterval(function(){ crmT4ALastPull = Date.now(); crmPullT4AStatuses(); }, 45000);
 }
 init();
