@@ -1028,15 +1028,26 @@ function fmtPln(n){ return Math.round(n||0).toLocaleString("pl-PL")+" zł"; }
 var currentTab = "dashboard";
 var zadaniaSubview = "zadania";
 var zadCatFilter = ""; // stan filtrów Zadań trzymany w JS, nie w DOM — renderAll() czyści #content przed każdym renderem, więc odczyt document.getElementById(...).value po fakcie zawsze wraca null/domyślne
-var zadTydzienOd = null;
-var zadTydzienDo = null;
+var zadTydzienAnchor = null; // ISO data poniedziałku ogladanego tygodnia (zawsze pon-nd)
 var zadMiesiacVal = null;
 var zadSearchQuery = "";
 var zadSortMode = "newest"; // newest | oldest | az
 var zadUndoStack = [];
 function setZadCatFilter(v){ zadCatFilter = v; renderAll(); }
-function setZadTydzienOd(v){ zadTydzienOd = v; renderAll(); }
-function setZadTydzienDo(v){ zadTydzienDo = v; renderAll(); }
+function zadWeekDates(anchor){
+  var out = [];
+  var d = new Date(anchor+"T00:00:00");
+  for(var i=0;i<7;i++){ var dd=new Date(d); dd.setDate(d.getDate()+i); out.push(dd.toISOString().slice(0,10)); }
+  return out;
+}
+function setZadTydzienWeek(delta){
+  var base = zadTydzienAnchor || currentWeekDates()[0];
+  var d = new Date(base+"T00:00:00");
+  d.setDate(d.getDate()+delta*7);
+  zadTydzienAnchor = d.toISOString().slice(0,10);
+  renderAll();
+}
+function zadTydzienToday(){ zadTydzienAnchor = currentWeekDates()[0]; renderAll(); }
 function setZadMiesiac(v){ zadMiesiacVal = v; renderAll(); }
 function monthYearPickerHtml(ym, setFnName){
   var y = +ym.split("-")[0], m = +ym.split("-")[1];
@@ -3398,9 +3409,9 @@ function renderZadania(el){
     '</select></div>';
 
   var weekDefault = currentWeekDates();
-  if(!zadTydzienOd) zadTydzienOd = weekDefault[0];
-  if(!zadTydzienDo) zadTydzienDo = weekDefault[6];
-  var tydzienOd = zadTydzienOd, tydzienDo = zadTydzienDo;
+  if(!zadTydzienAnchor) zadTydzienAnchor = weekDefault[0];
+  var weekDates = zadWeekDates(zadTydzienAnchor);
+  var tydzienOd = weekDates[0], tydzienDo = weekDates[6];
 
   var now = new Date();
   if(!zadMiesiacVal) zadMiesiacVal = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
@@ -3428,8 +3439,21 @@ function renderZadania(el){
     var defaultDate = scope==="miesiac" ? miesiacVal+"-01" : (scope==="tydzien" ? tydzienOd : todayStr());
     html += '<div class="card"><div class="col-head"><span>'+label+'</span><b>'+items.length+'</b></div>';
     if(scope==="tydzien"){
-      html += '<div class="row" style="gap:6px; margin-bottom:10px"><input type="date" value="'+tydzienOd+'" onchange="setZadTydzienOd(this.value)" style="font-size:12px">'+
-        '<input type="date" value="'+tydzienDo+'" onchange="setZadTydzienDo(this.value)" style="font-size:12px"></div>';
+      var isCurrentWeek = (tydzienOd === weekDefault[0]);
+      html += '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:6px">'+
+        '<button class="linklike" onclick="setZadTydzienWeek(-1)">‹ Poprzedni</button>'+
+        (isCurrentWeek ? '' : '<button class="linklike" onclick="zadTydzienToday()">Bieżący tydzień</button>')+
+        '<button class="linklike" onclick="setZadTydzienWeek(1)">Następny ›</button>'+
+        '</div>';
+      html += '<div class="row" style="gap:3px; margin-bottom:10px">';
+      var dayAbbr = ["Pon","Wt","Śr","Czw","Pt","Sob","Ndz"];
+      weekDates.forEach(function(dstr, i){
+        var isToday = dstr===todayStr();
+        html += '<div style="flex:1; text-align:center; padding:4px 2px; border-radius:6px; font-size:11px'+
+          (isToday ? "; background:rgba(207,155,74,.3); font-weight:700; color:var(--accent)" : "; color:var(--muted)")+'">'+
+          dayAbbr[i]+'<br>'+(+dstr.slice(8,10))+'</div>';
+      });
+      html += '</div>';
     }
     if(scope==="miesiac"){
       html += monthYearPickerHtml(miesiacVal, "setZadMiesiac");
