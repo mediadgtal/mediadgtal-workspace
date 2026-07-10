@@ -6254,11 +6254,11 @@ function renderCrmPrzeglad(){
 var crmSortCol = "name";
 var crmSortDir = "asc";
 var crmCategoryFilter = "all";
-var crmSystemFilter = "all";
-var crmT4AFilter = "all";
-var crmWebsiteFilter = "all";
-var crmCityFilter = "all";
-var crmStatusFilter = "all";
+var crmSystemFilter = "";
+var crmT4AFilter = "";
+var crmWebsiteFilter = "";
+var crmCityFilter = "";
+var crmStatusFilter = "";
 var CRM_TABLE_COLS = [
   {key:"name", label:"Nazwa"},
   {key:"city", label:"Miasto"},
@@ -6279,11 +6279,22 @@ function crmSetSort(col){
   renderAll();
 }
 function crmSetCategoryFilter(cat){ crmCategoryFilter = cat; renderAll(); }
-function crmSetSystemFilter(v){ crmSystemFilter = v; renderAll(); }
-function crmSetT4AFilter(v){ crmT4AFilter = v; renderAll(); }
-function crmSetWebsiteFilter(v){ crmWebsiteFilter = v; renderAll(); }
-function crmSetCityFilter(v){ crmCityFilter = v; renderAll(); }
-function crmSetStatusFilter(v){ crmStatusFilter = v; renderAll(); }
+function crmSetSystemFilter(v){ crmSystemFilter = v; renderAllKeepFocus("crmSystemFilterInput"); }
+function crmSetT4AFilter(v){ crmT4AFilter = v; renderAllKeepFocus("crmT4AFilterInput"); }
+function crmSetWebsiteFilter(v){ crmWebsiteFilter = v; renderAllKeepFocus("crmWebsiteFilterInput"); }
+function crmSetCityFilter(v){ crmCityFilter = v; renderAllKeepFocus("crmCityFilterInput"); }
+function crmSetStatusFilter(v){ crmStatusFilter = v; renderAllKeepFocus("crmStatusFilterInput"); }
+function crmStatusLabel(id){
+  var s = CRM_STATUSES.filter(function(x){ return x.id===id; })[0];
+  return s ? s.label : "";
+}
+function crmFieldMatchesFilter(value, filterText){
+  if(!filterText) return true;
+  var f = filterText.trim().toLowerCase();
+  if(!f) return true;
+  if(f==="brak") return !value;
+  return (value||"").toString().toLowerCase().indexOf(f) !== -1;
+}
 function crmSortValue(c, col){
   if(col==="status" || col==="statusT4A"){
     var s = CRM_STATUSES.filter(function(x){ return x.id===c[col]; })[0];
@@ -6302,21 +6313,20 @@ function renderCrmBaza(){
     return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę, albo dodaj kontakt ręcznie przyciskiem "+ Dodaj klienta".</div></div>';
   }
   var catFilter = (crmCategoryFilter==null) ? "all" : crmCategoryFilter;
-  var sysFilter = (crmSystemFilter==null) ? "all" : crmSystemFilter;
-  var t4aFilter = (crmT4AFilter==null) ? "all" : crmT4AFilter;
-  var webFilter = (crmWebsiteFilter==null) ? "all" : crmWebsiteFilter;
-  var cityFilter = (crmCityFilter==null) ? "all" : crmCityFilter;
-  var statusFilter = (crmStatusFilter==null) ? "all" : crmStatusFilter;
+  var sysFilter = crmSystemFilter||"";
+  var t4aFilter = crmT4AFilter||"";
+  var webFilter = crmWebsiteFilter||"";
+  var cityFilter = crmCityFilter||"";
+  var statusFilter = crmStatusFilter||"";
   var filtered = activeList.filter(function(c){
     if(catFilter!=="all" && (c.category||"")!==catFilter) return false;
-    if(sysFilter!=="all" && (c.system||"")!==sysFilter) return false;
-    if(t4aFilter!=="all" && (c.statusT4A||"")!==t4aFilter) return false;
-    if(cityFilter!=="all" && (c.city||"")!==cityFilter) return false;
-    if(statusFilter!=="all" && (c.status||"")!==statusFilter) return false;
-    if(webFilter!=="all"){
+    if(!crmFieldMatchesFilter(c.system, sysFilter)) return false;
+    if(!crmFieldMatchesFilter(crmStatusLabel(c.statusT4A), t4aFilter)) return false;
+    if(!crmFieldMatchesFilter(c.city, cityFilter)) return false;
+    if(!crmFieldMatchesFilter(crmStatusLabel(c.status), statusFilter)) return false;
+    if(webFilter){
       var hasWeb = !!crmUrl(c.website,"website");
-      if(webFilter==="tak" && !hasWeb) return false;
-      if(webFilter==="nie" && hasWeb) return false;
+      if(!crmFieldMatchesFilter(hasWeb?"tak":"nie", webFilter)) return false;
     }
     return true;
   });
@@ -6337,33 +6347,22 @@ function renderCrmBaza(){
   });
   html += '</div>';
 
+  function crmFilterInput(id, label, value, options, setFn){
+    var listId = id+"List";
+    return '<div style="position:relative">'+
+      '<input type="text" id="'+id+'" list="'+listId+'" value="'+escapeHtml(value)+'" placeholder="'+escapeHtml(label)+': wpisz aby szukać…" oninput="'+setFn+'(this.value)" style="width:190px">'+
+      (value ? '<button class="linklike" title="Wyczyść filtr" onclick="'+setFn+'(\'\')" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); font-size:13px">✕</button>' : '')+
+      '<datalist id="'+listId+'">'+options.map(function(o){ return '<option value="'+escapeHtml(o)+'">'; }).join("")+'</datalist>'+
+      '</div>';
+  }
   html += '<div class="row" style="margin-bottom:14px; gap:10px; flex-wrap:wrap">';
-  html += '<select onchange="crmSetCityFilter(this.value)" style="width:auto">'+
-    '<option value="all"'+(cityFilter==="all"?" selected":"")+'>Miasto: wszystkie</option>'+
-    '<option value=""'+(cityFilter===""?" selected":"")+'>Miasto: brak</option>'+
-    citiesPresent.map(function(city){ return '<option value="'+escapeHtml(city)+'"'+(cityFilter===city?" selected":"")+'>Miasto: '+escapeHtml(city)+'</option>'; }).join("")+
-    '</select>';
-  html += '<select onchange="crmSetSystemFilter(this.value)" style="width:auto">'+
-    '<option value="all"'+(sysFilter==="all"?" selected":"")+'>System: wszystkie</option>'+
-    '<option value=""'+(sysFilter===""?" selected":"")+'>System: nie wybrano</option>'+
-    CRM_SYSTEMS.map(function(s){ return '<option value="'+s+'"'+(sysFilter===s?" selected":"")+'>System: '+s+'</option>'; }).join("")+
-    '</select>';
-  html += '<select onchange="crmSetStatusFilter(this.value)" style="width:auto">'+
-    '<option value="all"'+(statusFilter==="all"?" selected":"")+'>Status marketing: wszystkie</option>'+
-    '<option value=""'+(statusFilter===""?" selected":"")+'>Status marketing: brak</option>'+
-    CRM_STATUSES.map(function(s){ return '<option value="'+s.id+'"'+(statusFilter===s.id?" selected":"")+'>Status marketing: '+s.label+'</option>'; }).join("")+
-    '</select>';
-  html += '<select onchange="crmSetT4AFilter(this.value)" style="width:auto">'+
-    '<option value="all"'+(t4aFilter==="all"?" selected":"")+'>Tool4arts: wszystkie</option>'+
-    '<option value=""'+(t4aFilter===""?" selected":"")+'>Tool4arts: brak statusu</option>'+
-    CRM_STATUSES.map(function(s){ return '<option value="'+s.id+'"'+(t4aFilter===s.id?" selected":"")+'>Tool4arts: '+s.label+'</option>'; }).join("")+
-    '</select>';
-  html += '<select onchange="crmSetWebsiteFilter(this.value)" style="width:auto">'+
-    '<option value="all"'+(webFilter==="all"?" selected":"")+'>Strona: wszystkie</option>'+
-    '<option value="tak"'+(webFilter==="tak"?" selected":"")+'>Strona: TAK</option>'+
-    '<option value="nie"'+(webFilter==="nie"?" selected":"")+'>Strona: NIE</option>'+
-    '</select>';
+  html += crmFilterInput("crmCityFilterInput", "Miasto", cityFilter, citiesPresent, "crmSetCityFilter");
+  html += crmFilterInput("crmSystemFilterInput", "System", sysFilter, CRM_SYSTEMS, "crmSetSystemFilter");
+  html += crmFilterInput("crmStatusFilterInput", "Status marketing", statusFilter, CRM_STATUSES.map(function(s){return s.label;}), "crmSetStatusFilter");
+  html += crmFilterInput("crmT4AFilterInput", "Tool4arts", t4aFilter, CRM_STATUSES.map(function(s){return s.label;}), "crmSetT4AFilter");
+  html += crmFilterInput("crmWebsiteFilterInput", "Strona", webFilter, ["TAK","NIE"], "crmSetWebsiteFilter");
   html += '</div>';
+  html += '<div style="font-size:11px; color:var(--muted); margin:-8px 0 14px">Filtry szukają na bieżąco — wpisz dowolny fragment tekstu (np. "brak" pokaże puste pola).</div>';
 
   var TRUNC = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap";
   var CLAMP2 = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word; line-height:1.3";
@@ -6385,6 +6384,10 @@ function renderCrmBaza(){
     if(url) return '<a href="'+escapeHtml(url)+'" target="_blank" rel="noopener" title="'+escapeHtml(url)+'" style="color:#63b58a; font-weight:700; text-decoration:none">TAK</a>';
     return '<span style="color:var(--danger); font-weight:700">NIE</span>';
   }
+  function crmEmailCell(email){
+    if(!email) return '<span style="color:var(--muted)">—</span>';
+    return '<a href="mailto:'+escapeHtml(email)+'" title="Napisz do: '+escapeHtml(email)+'" style="color:var(--muted-light)">'+escapeHtml(email)+'</a>';
+  }
   sorted.forEach(function(c){
     var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
     html += '<tr>'+
@@ -6395,7 +6398,7 @@ function renderCrmBaza(){
       '<td style="'+TRUNC+'">'+crmYesNoCell(igUrl)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(fbUrl)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(webUrl)+'</td>'+
-      '<td style="'+TRUNC+'">'+crmCell(c.email)+'</td>'+
+      '<td style="'+TRUNC+'">'+crmEmailCell(c.email)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.phone)+'</td>'+
       '<td style="'+TRUNC+'">'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td style="'+TRUNC+'">'+(c.statusT4A?crmStatusTag(c.statusT4A):'<span style="color:var(--muted)">—</span>')+'</td>'+
@@ -6485,6 +6488,52 @@ function crmPriorityRow(c){
     (crmDraftNoticeFor===c.id ? '<div class="stub-note" style="margin-top:4px">Generowanie szkiców przez Anthropic API jeszcze nie jest podłączone (do ustalenia klucz API) — na razie napisz wiadomość ręcznie, opierając się na notatce powyżej.</div>' : '')+
   '</div>';
 }
+function crmDailyBriefing(){
+  var items = [];
+  crmActiveContacts().forEach(function(c){
+    if(c.status==="klient" || c.status==="odrzucili") return;
+    var days = crmDaysSince(c);
+    if(c.hot && days>=2){
+      items.push({tier:0, days:days, id:c.id, text:'🔥 <b style="color:#fff">'+escapeHtml(c.name)+'</b> — blisko zamknięcia, cisza od '+days+' dni. Zadzwoń albo napisz do niego dziś.'});
+    } else if(c.status==="w_rozmowie" && days>=4){
+      items.push({tier:1, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — zrób follow-up: rozmowa w toku, cisza od '+days+' dni.'});
+    } else if(c.status==="ucichlo" && days>=10){
+      items.push({tier:2, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — reaktywuj: odpisali, ale ucichło już '+days+' dni temu.'});
+    } else if(c.status==="brak_odpowiedzi" && days>=5){
+      items.push({tier:2, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — ponów kontakt: brak odpowiedzi od '+days+' dni.'});
+    }
+  });
+  items.sort(function(a,b){ return (a.tier-b.tier) || (b.days-a.days); });
+  return {items:items, noweCount:crmPriorityBuckets().nowe.length};
+}
+function renderCrmBriefing(){
+  var b = crmDailyBriefing();
+  var showNoweHint = b.noweCount>15;
+  var html = '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">'+
+    '<h3 style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">📋 Co dziś zrobić '+
+    '<span style="font-size:11px; font-weight:400; color:var(--muted)">— pilnuję tego za Ciebie na podstawie bazy kontaktów</span></h3>';
+  if(!b.items.length && !showNoweHint){
+    html += '<div class="empty">Wszystko ogarnięte — żaden kontakt nie wymaga dziś pilnej uwagi. 👍</div>';
+  } else {
+    var shown = b.items.slice(0,8);
+    html += '<div style="display:flex; flex-direction:column; gap:9px">';
+    shown.forEach(function(it){
+      html += '<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; color:var(--muted-light)">'+
+        '<span>'+it.text+'</span>'+
+        '<button class="linklike" style="white-space:nowrap; flex:0 0 auto" onclick="openCrmModal(\''+it.id+'\')">Otwórz →</button>'+
+      '</div>';
+    });
+    if(b.items.length>8){
+      html += '<div style="font-size:12px; color:var(--muted)">+ '+(b.items.length-8)+' kolejnych pilnych spraw w sekcjach poniżej.</div>';
+    }
+    if(showNoweHint){
+      html += '<div style="font-size:13px; color:var(--muted-light); padding-top:'+(b.items.length?"4px":"0")+'">Masz <b style="color:#fff">'+b.noweCount+'</b> nowych, nieotagowanych kontaktów — warto poświęcić chwilę w zakładce <b>Przegląd</b>, żeby żaden nie umknął.</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
 function renderCrmPriorytety(){
   if(!crmActiveContacts().length){
     return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę, albo dodaj kontakt ręcznie przyciskiem "+ Nowy kontakt".</div></div>';
@@ -6496,7 +6545,7 @@ function renderCrmPriorytety(){
     {label:"Follow-upy", list:b.followup, empty:"Brak rozmów czekających na follow-up."},
     {label:"Nowe kontakty", list:b.nowe, empty:"Brak nowych, nieotagowanych kontaktów."}
   ];
-  var html = "";
+  var html = renderCrmBriefing();
   sections.forEach(function(s){
     html += '<div class="card" style="margin-bottom:16px">'+
       '<h3>'+s.label+' ('+s.list.length+')</h3>'+
