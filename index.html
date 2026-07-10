@@ -6621,10 +6621,10 @@ function renderCrmBaza(){
 
   var TRUNC = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap";
   var CLAMP2 = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word; line-height:1.3";
-  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1000px">'+
+  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1080px">'+
     '<colgroup><col style="width:18%"><col style="width:7%"><col style="width:7%"><col style="width:6%">'+
-    '<col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:10%"><col style="width:7%">'+
-    '<col style="width:8%"><col style="width:8%"><col style="width:5%"><col style="width:4%"></colgroup>'+
+    '<col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:7%">'+
+    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:4%"></colgroup>'+
     '<thead><tr>';
   CRM_TABLE_COLS.forEach(function(col){
     var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
