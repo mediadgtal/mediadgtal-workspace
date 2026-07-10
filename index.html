@@ -532,6 +532,7 @@
     </div>
     <div id="topActions"></div>
   </div>
+  <div id="gcalBanner"></div>
   <div id="content"></div>
 </div>
 
@@ -1535,10 +1536,23 @@ function renderAll(){
   renderNav();
   document.getElementById("pageTitle").textContent = TITLES[currentTab];
   setTopActions("");
+  renderGcalBanner();
   var el = document.getElementById("content");
   el.innerHTML = "";
   RENDERERS[currentTab](el);
 }
+function renderGcalBanner(){
+  var el = document.getElementById("gcalBanner");
+  if(!el) return;
+  if(window.__gcalToken || window.__gcalBannerDismissed){ el.innerHTML = ""; return; }
+  el.innerHTML = '<div style="background:rgba(207,155,74,.12); border-bottom:1px solid rgba(207,155,74,.35); color:var(--accent); font-size:12.5px; padding:9px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">'+
+    '<span>🔗 Nie jesteś połączony z Google w tej sesji — Kalendarz, kopie zapasowe i synchronizacja z arkuszem tool4arts (Baza kontaktów) są wyłączone.</span>'+
+    '<span style="display:flex; gap:14px; align-items:center; white-space:nowrap">'+
+    '<button class="btn small" onclick="window.reconnectGCal()">Połącz z Google</button>'+
+    '<button class="linklike" style="color:var(--accent); font-size:14px" onclick="dismissGcalBanner()" title="Ukryj do końca tej sesji">✕</button>'+
+    '</span></div>';
+}
+function dismissGcalBanner(){ window.__gcalBannerDismissed = true; renderGcalBanner(); }
 
 /* ================= DASHBOARD ================= */
 function renderDashboard(el){
@@ -5650,12 +5664,24 @@ function t4aBlockA_H(c){
   function hyperlink(url){ return url ? '=HYPERLINK("'+url.replace(/"/g,'""')+'","Link")' : ""; }
   return [c.name||"", c.contactPerson||"", c.category||"", c.city||"", c.email||"", hyperlink(igUrl), hyperlink(fbUrl), hyperlink(webUrl)];
 }
-function t4aBlockJ_O(c){
+function t4aBlockJ_P(c){
   var t = crmGetT4A(c);
-  return [c.phone||"", t.sent ? (t.sentDate||todayStr()) : "", t.offer?"TAK":"NIE", t.decision?"TAK":"NIE", t.listed?"TAK":"NIE", t.client?"TAK":"NIE"];
+  return [c.phone||"", !!t.sent, !!t.offer, !!t.decision, !!t.listed, !!t.client, t.sent ? (t.sentDate||todayStr()) : ""];
 }
 function t4aBlockQ_R(c){
   return [c.system||"", c.notes||""];
+}
+function t4aRowFull(c){
+  return t4aBlockA_H(c).concat([""]).concat(t4aBlockJ_P(c)).concat(t4aBlockQ_R(c));
+}
+function crmT4ABoolify(v){
+  return v===true || v==="TRUE" || v==="TAK" || v===1;
+}
+function crmT4AExtractUrl(formulaOrText){
+  if(!formulaOrText) return "";
+  var m = /HYPERLINK\(\s*"([^"]+)"/i.exec(formulaOrText);
+  if(m) return m[1];
+  return /^https?:\/\//i.test(formulaOrText) ? formulaOrText : "";
 }
 function crmFlushPendingT4ASync(){
   if(!window.__gcalToken) return;
@@ -5663,40 +5689,93 @@ function crmFlushPendingT4ASync(){
 }
 function crmSyncT4ARow(c){
   if(!window.__gcalToken) return;
+  if(!c.t4aSheetRow){ crmFindOrCreateT4ARow(c); return; }
+  crmPushT4ARow(c);
+}
+function crmFindOrCreateT4ARow(c){
   crmT4ASyncStatus[c.id] = "syncing";
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
-  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
-  if(!c.t4aSheetRow){
-    var row = t4aBlockA_H(c).concat([""]).concat(t4aBlockJ_O(c)).concat([""]).concat(t4aBlockQ_R(c));
-    fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A:R")+":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS", {
-      method:"POST", headers:headers, body: JSON.stringify({values:[row]})
-    }).then(function(r){
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
+  fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A2:A")+"?valueRenderOption=FORMULA", {headers:headers})
+    .then(function(r){
       if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
       if(!r.ok) throw new Error("http"+r.status);
       return r.json();
     }).then(function(data){
-      var range = (data.updates && data.updates.updatedRange) || "";
-      var m = range.match(/![A-Z]+(\d+)/);
-      if(m){ c.t4aSheetRow = parseInt(m[1],10); }
-      c.t4aDirty = false; save();
-      crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
+      var target = (c.name||"").trim().toLowerCase();
+      var names = (data.values||[]).map(function(row){ return (row[0]||"").toString().trim().toLowerCase(); });
+      var idx = target ? names.indexOf(target) : -1;
+      if(idx===-1){ crmAppendT4ARow(c); }
+      else { crmMergeExistingT4ARow(c, idx+2); }
     }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
-  } else {
-    var rn = c.t4aSheetRow;
-    fetch(base+"/values:batchUpdate", {
-      method:"POST", headers:headers,
-      body: JSON.stringify({valueInputOption:"USER_ENTERED", data:[
-        {range:T4A_SHEET_TAB+"!A"+rn+":H"+rn, values:[t4aBlockA_H(c)]},
-        {range:T4A_SHEET_TAB+"!J"+rn+":O"+rn, values:[t4aBlockJ_O(c)]},
-        {range:T4A_SHEET_TAB+"!Q"+rn+":R"+rn, values:[t4aBlockQ_R(c)]}
-      ]})
-    }).then(function(resp){
-      if(resp.status===401){ window.__gcalToken=null; throw new Error("401"); }
-      if(!resp.ok) throw new Error("http"+resp.status);
-      c.t4aDirty = false; save();
-      crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
+}
+function crmMergeExistingT4ARow(c, rowNum){
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
+  fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A"+rowNum+":R"+rowNum)+"?valueRenderOption=FORMULA", {headers:headers})
+    .then(function(r){
+      if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+      if(!r.ok) throw new Error("http"+r.status);
+      return r.json();
+    }).then(function(data){
+      var row = (data.values && data.values[0]) || [];
+      var t = crmGetT4A(c);
+      c.contactPerson = c.contactPerson || row[1] || "";
+      c.category = c.category || row[2] || "";
+      c.city = c.city || row[3] || "";
+      c.email = c.email || row[4] || "";
+      c.ig = c.ig || crmT4AExtractUrl(row[5]);
+      c.fb = c.fb || crmT4AExtractUrl(row[6]);
+      c.website = c.website || crmT4AExtractUrl(row[7]);
+      c.phone = c.phone || row[9] || "";
+      t.sent = t.sent || crmT4ABoolify(row[10]);
+      t.offer = t.offer || crmT4ABoolify(row[11]);
+      t.decision = t.decision || crmT4ABoolify(row[12]);
+      t.listed = t.listed || crmT4ABoolify(row[13]);
+      t.client = t.client || crmT4ABoolify(row[14]);
+      t.sentDate = t.sentDate || row[15] || "";
+      c.system = c.system || row[16] || "";
+      c.notes = c.notes || row[17] || "";
+      c.t4aSheetRow = rowNum;
+      save();
+      crmPushT4ARow(c);
     }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
-  }
+}
+function crmAppendT4ARow(c){
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
+  fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A:R")+":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS", {
+    method:"POST", headers:headers, body: JSON.stringify({values:[t4aRowFull(c)]})
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+    if(!r.ok) throw new Error("http"+r.status);
+    return r.json();
+  }).then(function(data){
+    var range = (data.updates && data.updates.updatedRange) || "";
+    var m = range.match(/![A-Z]+(\d+)/);
+    if(m){ c.t4aSheetRow = parseInt(m[1],10); }
+    c.t4aDirty = false; save();
+    crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
+  }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+}
+function crmPushT4ARow(c){
+  crmT4ASyncStatus[c.id] = "syncing";
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
+  var rn = c.t4aSheetRow;
+  fetch(base+"/values:batchUpdate", {
+    method:"POST", headers:headers,
+    body: JSON.stringify({valueInputOption:"USER_ENTERED", data:[
+      {range:T4A_SHEET_TAB+"!A"+rn+":H"+rn, values:[t4aBlockA_H(c)]},
+      {range:T4A_SHEET_TAB+"!J"+rn+":P"+rn, values:[t4aBlockJ_P(c)]},
+      {range:T4A_SHEET_TAB+"!Q"+rn+":R"+rn, values:[t4aBlockQ_R(c)]}
+    ]})
+  }).then(function(resp){
+    if(resp.status===401){ window.__gcalToken=null; throw new Error("401"); }
+    if(!resp.ok) throw new Error("http"+resp.status);
+    c.t4aDirty = false; save();
+    crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
+  }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
 function crmRefreshT4ABlock(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
@@ -6874,6 +6953,8 @@ function doSignIn(){
   signInWithPopup(auth, provider).then(function(result){
     var credential = GoogleAuthProvider.credentialFromResult(result);
     window.__gcalToken = credential && credential.accessToken;
+    window.__gcalBannerDismissed = false;
+    if(window.renderGcalBanner) window.renderGcalBanner();
     if(window.onGCalTokenReady) window.onGCalTokenReady();
   }).catch(function(err){
     gateText.textContent = "Logowanie nie powiodło się (" + err.code + "). Spróbuj ponownie.";
