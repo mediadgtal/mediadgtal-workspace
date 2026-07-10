@@ -1473,7 +1473,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); }
+function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -6218,6 +6218,13 @@ function startSync(){
   unsubscribeSnapshot = onSnapshot(docRef, function(snap){
     if(snap.exists()){
       var remote = snap.data();
+      if((remote._updatedAt||0) < (window.state._updatedAt||0)){
+        // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
+        // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
+        // danych, tylko dopchnij je ponownie do serwera.
+        scheduleFirestorePush();
+        return;
+      }
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
