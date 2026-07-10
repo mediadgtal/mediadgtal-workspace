@@ -3732,6 +3732,7 @@ window.onGCalTokenReady = function(){
   scheduleHabitsBackupPush();
   ensureClientsBackupSheet();
   scheduleClientsBackupPush();
+  crmFlushPendingT4ASync();
 };
 function renderKalendarz(el){
   var now = new Date();
@@ -5656,6 +5657,10 @@ function t4aBlockJ_O(c){
 function t4aBlockQ_R(c){
   return [c.system||"", c.notes||""];
 }
+function crmFlushPendingT4ASync(){
+  if(!window.__gcalToken) return;
+  state.crmContacts.filter(function(c){ return c.t4aDirty; }).forEach(function(c){ crmSyncT4ARow(c); });
+}
 function crmSyncT4ARow(c){
   if(!window.__gcalToken) return;
   crmT4ASyncStatus[c.id] = "syncing";
@@ -5672,7 +5677,8 @@ function crmSyncT4ARow(c){
     }).then(function(data){
       var range = (data.updates && data.updates.updatedRange) || "";
       var m = range.match(/![A-Z]+(\d+)/);
-      if(m){ c.t4aSheetRow = parseInt(m[1],10); save(); }
+      if(m){ c.t4aSheetRow = parseInt(m[1],10); }
+      c.t4aDirty = false; save();
       crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
     }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
   } else {
@@ -5687,6 +5693,7 @@ function crmSyncT4ARow(c){
     }).then(function(resp){
       if(resp.status===401){ window.__gcalToken=null; throw new Error("401"); }
       if(!resp.ok) throw new Error("http"+resp.status);
+      c.t4aDirty = false; save();
       crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
     }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
   }
@@ -5703,6 +5710,7 @@ function crmSetT4AField(id, field, val){
   var t = crmGetT4A(c);
   t[field] = val;
   if(field==="sent" && val && !t.sentDate) t.sentDate = todayStr();
+  c.t4aDirty = true;
   save(); renderAll();
   crmRefreshT4ABlock(id);
   crmSyncT4ARow(c);
@@ -5711,6 +5719,7 @@ function crmSetT4ADate(id, val){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
   crmGetT4A(c).sentDate = val;
+  c.t4aDirty = true;
   save(); renderAll();
   crmRefreshT4ABlock(id);
   crmSyncT4ARow(c);
@@ -5940,7 +5949,7 @@ function saveCrmModal(){
     if(c){
       pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, website:c.website, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, contactPerson:c.contactPerson}});
       c.name=name; c.contactPerson=contactPerson; c.city=city; c.ig=ig; c.fb=fb; c.website=website; c.email=email; c.phone=phone; c.notes=notes; c.category=category; c.system=system;
-      if(c.t4aSheetRow) crmSyncT4ARow(c);
+      if(c.t4aSheetRow){ c.t4aDirty = true; crmSyncT4ARow(c); }
     }
   } else {
     var newC = {id:uid("crmc"), name:name, contactPerson:contactPerson, city:city, ig:ig, fb:fb, website:website, email:email, phone:phone, notes:notes, category:category, system:system, statusT4A:null, status:null, lastContact:"", taggedAt:null, hot:false, deletedAt:null, importedAt:todayStr()};
@@ -5988,7 +5997,7 @@ function saveCrmNoteModal(id){
   c.notes = el.value.trim();
   closeCrmNoteModal();
   save(); renderAll();
-  if(c.t4aSheetRow) crmSyncT4ARow(c);
+  if(c.t4aSheetRow){ c.t4aDirty = true; crmSyncT4ARow(c); }
 }
 
 function crmNormHeader(h){
