@@ -5716,7 +5716,12 @@ function crmFindOrCreateT4ARow(c){
       var target = (c.name||"").trim().toLowerCase();
       var names = (data.values||[]).map(function(row){ return (row[0]||"").toString().trim().toLowerCase(); });
       var idx = target ? names.indexOf(target) : -1;
-      if(idx===-1){ crmAppendT4ARow(c); }
+      if(idx===-1){
+        var blankIdx = -1;
+        for(var i=0;i<names.length;i++){ if(!names[i]){ blankIdx = i; break; } }
+        var targetRow = blankIdx>-1 ? blankIdx+2 : names.length+2;
+        crmAppendT4ARow(c, targetRow);
+      }
       else { crmMergeExistingT4ARow(c, idx+2); }
     }).catch(function(){ crmT4ACreating[c.id] = false; crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
@@ -5753,19 +5758,17 @@ function crmMergeExistingT4ARow(c, rowNum){
       crmPushT4ARow(c);
     }).catch(function(){ crmT4ACreating[c.id] = false; crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
-function crmAppendT4ARow(c){
+function crmAppendT4ARow(c, targetRow){
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
   var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
-  fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A:R")+":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS", {
-    method:"POST", headers:headers, body: JSON.stringify({values:[t4aRowFull(c)]})
+  fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A"+targetRow+":R"+targetRow)+"?valueInputOption=USER_ENTERED", {
+    method:"PUT", headers:headers, body: JSON.stringify({values:[t4aRowFull(c)]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
     if(!r.ok) throw new Error("http"+r.status);
     return r.json();
   }).then(function(data){
-    var range = (data.updates && data.updates.updatedRange) || "";
-    var m = range.match(/![A-Z]+(\d+)/);
-    if(m){ c.t4aSheetRow = parseInt(m[1],10); }
+    c.t4aSheetRow = targetRow;
     crmT4ACreating[c.id] = false;
     c.t4aDirty = false; save();
     crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
