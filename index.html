@@ -1040,14 +1040,14 @@ function setZadCatFilter(v){ zadCatFilter = v; renderAll(); }
 function zadWeekDates(anchor){
   var out = [];
   var d = new Date(anchor+"T00:00:00");
-  for(var i=0;i<7;i++){ var dd=new Date(d); dd.setDate(d.getDate()+i); out.push(dd.toISOString().slice(0,10)); }
+  for(var i=0;i<7;i++){ var dd=new Date(d); dd.setDate(d.getDate()+i); out.push(isoLocal(dd)); }
   return out;
 }
 function setZadTydzienWeek(delta){
   var base = zadTydzienAnchor || currentWeekDates()[0];
   var d = new Date(base+"T00:00:00");
   d.setDate(d.getDate()+delta*7);
-  zadTydzienAnchor = d.toISOString().slice(0,10);
+  zadTydzienAnchor = isoLocal(d);
   renderAll();
 }
 function zadTydzienToday(){ zadTydzienAnchor = currentWeekDates()[0]; renderAll(); }
@@ -1751,6 +1751,7 @@ function promptSocialStatUpdate(platform){
   if(todayEntry){ todayEntry.count = n; } else { h.push({date:today, count:n}); }
   save(); renderAll();
 }
+function isoLocal(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function currentWeekDates(){
   var d = new Date();
   var day = d.getDay(); // 0=niedziela
@@ -1759,7 +1760,7 @@ function currentWeekDates(){
   var out = [];
   for(var i=0;i<7;i++){
     var dd = new Date(monday); dd.setDate(monday.getDate()+i);
-    out.push(dd.toISOString().slice(0,10));
+    out.push(isoLocal(dd));
   }
   return out;
 }
@@ -2206,7 +2207,7 @@ function renderPostyZaplanowane(){
     html += '<div class="cal-cell'+(inMonth?"":" out")+(isToday?" today":"")+'" ondblclick="openPostModal({brand:\''+jsAttrStr(postyFilter)+'\', date:\''+dstr+'\', stage:\'zaplanowany\'})"><div class="cal-daynum">'+gd.getDate()+'</div>';
     (byDate[dstr]||[]).forEach(function(p){
       var bg = p.platform==="tiktok" ? "#c9c9c9" : p.platform==="youtube" ? "#e0a19d" : "#c8b8f0";
-      html += '<div class="cal-ev" style="background:'+bg+'" onclick="event.stopPropagation(); openPostPreview(\''+p.id+'\')">'+
+      html += '<div class="cal-ev" style="background:'+bg+'; color:'+calTextColorFor(bg)+'" onclick="event.stopPropagation(); openPostPreview(\''+p.id+'\')">'+
         (p.platform?POST_PLATFORM_ICON[p.platform]+" ":"")+escapeHtml(p.title)+'</div>';
     });
     html += '</div>';
@@ -3238,18 +3239,26 @@ function renderZadania(el){
     html += '<div class="card"><div class="col-head"><span>'+label+'</span><b>'+items.length+'</b></div>';
     if(scope==="tydzien"){
       var isCurrentWeek = (tydzienOd === weekDefault[0]);
-      html += '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:6px">'+
+      var wkStartD = new Date(tydzienOd+"T00:00:00"), wkEndD = new Date(tydzienDo+"T00:00:00");
+      var monthLabel = (wkStartD.getMonth()===wkEndD.getMonth())
+        ? monthName(wkStartD.getMonth())+" "+wkStartD.getFullYear()
+        : monthName(wkStartD.getMonth())+" / "+monthName(wkEndD.getMonth())+" "+wkEndD.getFullYear();
+      html += '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px">'+
         '<button class="linklike" onclick="setZadTydzienWeek(-1)">‹ Poprzedni</button>'+
-        (isCurrentWeek ? '' : '<button class="linklike" onclick="zadTydzienToday()">Bieżący tydzień</button>')+
+        '<div style="text-align:center">'+
+        '<div style="font-weight:700; font-size:13.5px; color:#fff">'+monthLabel+'</div>'+
+        (isCurrentWeek ? '' : '<button class="linklike" style="font-size:11px" onclick="zadTydzienToday()">Wróć do bieżącego tygodnia</button>')+
+        '</div>'+
         '<button class="linklike" onclick="setZadTydzienWeek(1)">Następny ›</button>'+
         '</div>';
-      html += '<div class="row" style="gap:3px; margin-bottom:10px">';
+      html += '<div class="row" style="gap:5px; margin-bottom:12px">';
       var dayAbbr = ["Pon","Wt","Śr","Czw","Pt","Sob","Ndz"];
       weekDates.forEach(function(dstr, i){
         var isToday = dstr===todayStr();
-        html += '<div style="flex:1; text-align:center; padding:4px 2px; border-radius:6px; font-size:11px'+
-          (isToday ? "; background:rgba(207,155,74,.3); font-weight:700; color:var(--accent)" : "; color:var(--muted)")+'">'+
-          dayAbbr[i]+'<br>'+(+dstr.slice(8,10))+'</div>';
+        html += '<div style="flex:1; text-align:center; padding:7px 2px; border-radius:8px; font-size:12.5px'+
+          (isToday ? "; background:rgba(207,155,74,.32); font-weight:700; color:var(--accent)" : "; color:var(--muted-light)")+'">'+
+          '<div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.03em">'+dayAbbr[i]+'</div>'+
+          '<div style="font-size:14px; margin-top:2px">'+(+dstr.slice(8,10))+'</div></div>';
       });
       html += '</div>';
     }
@@ -3262,10 +3271,18 @@ function renderZadania(el){
       html += listOpen;
       items.forEach(function(t){
         var togFn = t.recurWeekday!=null ? "toggleRecurTaskToday" : "toggleTask";
+        var dayTag = "";
+        if(scope==="tydzien"){
+          var td = t.completedAt || t.createdAt;
+          if(td){
+            var wdIdx = (new Date(td+"T00:00:00").getDay()+6)%7;
+            dayTag = ' <span style="font-size:10.5px; color:var(--accent); font-weight:700">'+["Pon","Wt","Śr","Czw","Pt","Sob","Ndz"][wdIdx]+' '+(+td.slice(8,10))+'</span>';
+          }
+        }
         html += '<div class="taskitem">'+
           '<input type="checkbox" onchange="'+togFn+'(\''+t.id+'\')">'+
           '<span class="dot"></span>'+
-          '<div style="flex:1"><span class="ttitle">'+(t.recurWeekday!=null?"🔁 ":"")+escapeHtml(t.title)+'</span><br><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></div>'+
+          '<div style="flex:1"><span class="ttitle">'+(t.recurWeekday!=null?"🔁 ":"")+escapeHtml(t.title)+'</span>'+dayTag+'<br><span class="tag tag-'+t.category+'">'+CATEGORY_LABEL[t.category]+'</span></div>'+
           '<div class="taskmeta"><button class="linklike" onclick="openTaskModal({id:\''+t.id+'\'})">Edytuj</button><button class="linklike danger" onclick="deleteTask(\''+t.id+'\')">Usuń</button></div>'+
           '</div>';
       });
@@ -3487,6 +3504,14 @@ function ensureGCalCalendars(){
       renderAll();
     });
 }
+function calTextColorFor(bgColor){
+  var c = (bgColor||"").replace("#","");
+  if(c.length===3) c = c.split("").map(function(ch){return ch+ch;}).join("");
+  if(c.length!==6) return "#161519";
+  var r = parseInt(c.substr(0,2),16), g = parseInt(c.substr(2,2),16), b = parseInt(c.substr(4,2),16);
+  var luminance = (0.299*r + 0.587*g + 0.114*b)/255;
+  return luminance > 0.6 ? "#161519" : "#ffffff";
+}
 function eventDateRange(it){
   var startStr = it.start.date || (it.start.dateTime||"").slice(0,10);
   var endRaw = it.end && (it.end.date || (it.end.dateTime||"").slice(0,10));
@@ -3625,7 +3650,7 @@ function renderKalendarz(el){
       evs.forEach(function(ev){
         var idx = calEventRefs.length;
         calEventRefs.push(ev.ctx);
-        html += '<div class="cal-ev" style="background:'+ev.color+'; white-space:normal; font-size:12px" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+(ev.time?ev.time+" · ":"")+escapeHtml(ev.title)+'</div>';
+        html += '<div class="cal-ev" style="background:'+ev.color+'; color:'+calTextColorFor(ev.color)+'; white-space:normal; font-size:12px" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+(ev.time?ev.time+" · ":"")+escapeHtml(ev.title)+'</div>';
       });
       html += '</div></div>';
     }
@@ -3695,7 +3720,7 @@ function renderKalendarz(el){
       gEvs.forEach(function(ev){
         var idx = calEventRefs.length;
         calEventRefs.push(ev.ctx);
-        html += '<div class="cal-ev" style="background:'+ev.color+'" title="'+escapeHtml(ev.title)+'" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+(ev.time?ev.time+" · ":"")+escapeHtml(ev.title)+'</div>';
+        html += '<div class="cal-ev" style="background:'+ev.color+'; color:'+calTextColorFor(ev.color)+'" title="'+escapeHtml(ev.title)+'" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+(ev.time?ev.time+" · ":"")+escapeHtml(ev.title)+'</div>';
       });
       html += '</div>';
     });
@@ -3709,7 +3734,7 @@ function renderKalendarz(el){
         var leftPct = (s.startCol/7*100);
         var widthPct = ((s.endCol-s.startCol+1)/7*100);
         var radius = (s.isRealStart?"9px":"0")+" "+(s.isRealEnd?"9px":"0")+" "+(s.isRealEnd?"9px":"0")+" "+(s.isRealStart?"9px":"0");
-        html += '<div class="cal-bar" style="left:calc('+leftPct+'% + 2px); width:calc('+widthPct+'% - 4px); top:'+(s.lane*20)+'px; background:'+s.e.calendarColor+'; border-radius:'+radius+'" title="'+escapeHtml(s.e.title)+'" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+escapeHtml(s.e.title)+'</div>';
+        html += '<div class="cal-bar" style="left:calc('+leftPct+'% + 2px); width:calc('+widthPct+'% - 4px); top:'+(s.lane*20)+'px; background:'+s.e.calendarColor+'; color:'+calTextColorFor(s.e.calendarColor)+'; border-radius:'+radius+'" title="'+escapeHtml(s.e.title)+'" onclick="event.stopPropagation(); openEventModal(calEventRefs['+idx+'])">'+escapeHtml(s.e.title)+'</div>';
       });
       html += '</div>';
     }
