@@ -6320,7 +6320,7 @@ function crmSetLastContact(id, val){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
   c.lastContact = val;
-  save();
+  save(); renderAll();
 }
 function crmSetCategory(id, val){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
@@ -6489,7 +6489,10 @@ function renderCrmPrzeglad(){
     '<div class="field" style="flex:1"><label>System (obecnie używany)</label><select onchange="crmSetSystem(\''+c.id+'\', this.value)">'+crmSystemOptions(c.system)+'</select></div>'+
     '</div>';
 
-  html += '<div class="field"><label>Data ostatniego kontaktu (opcjonalnie)</label><input type="date" value="'+escapeHtml(c.lastContact||"")+'" onchange="crmSetLastContact(\''+c.id+'\', this.value)"></div>';
+  html += '<div class="field"><label>Data ostatniego kontaktu (opcjonalnie)</label><div class="row" style="gap:8px">'+
+    '<input type="date" value="'+escapeHtml(c.lastContact||"")+'" onchange="crmSetLastContact(\''+c.id+'\', this.value)" style="flex:1">'+
+    (c.lastContact ? '<button class="btn secondary small" onclick="crmSetLastContact(\''+c.id+'\', \'\')">✕ Wyczyść</button>' : '')+
+    '</div></div>';
 
   html += '<div class="field"><label>Status — współpraca marketingowa</label><div class="chiprow" style="margin-bottom:0">';
   CRM_STATUSES.forEach(function(s){
