@@ -505,6 +505,8 @@
 </style>
 </head>
 <body>
+<div id="fb-root"></div>
+<script async defer crossorigin="anonymous" src="https://connect.facebook.net/pl_PL/sdk.js"></script>
 <div id="authGate">
   <div class="gatecard">
     <img src="" alt="" id="gateLogo" style="max-width:160px; margin-bottom:18px; display:none">
@@ -846,6 +848,20 @@ function migrateState(s){
     if(s.contentCalendar) s.contentCalendar = s.contentCalendar.filter(notExpired);
     if(s.hasla) s.hasla = s.hasla.filter(notExpired);
     if(s.crmContacts) s.crmContacts = s.crmContacts.filter(notExpired);
+  })();
+  (function(){
+    var IG_ID_MAP = {"damian.gogulski":"17841401445304006", "tool4arts":"17841476725442707"};
+    var DEFAULT_FB_PAGE_ID = "108992522037930", TOOL4ARTS_FB_PAGE_ID = "1109133998958668";
+    (s.igAccounts||[]).forEach(function(a){
+      if(a.igBusinessId) return;
+      var handle = (a.handle||"").replace("@","").toLowerCase();
+      if(IG_ID_MAP[handle]) a.igBusinessId = IG_ID_MAP[handle];
+    });
+    (s.fbAccounts||[]).forEach(function(a){
+      if(a.fbPageId) return;
+      var name = (a.name||"").toLowerCase();
+      a.fbPageId = name.indexOf("tool4arts")!==-1 ? TOOL4ARTS_FB_PAGE_ID : DEFAULT_FB_PAGE_ID;
+    });
   })();
   if(!s.socialStats) s.socialStats = {};
   ["MediaDGtal","tool4arts"].forEach(function(acc){
@@ -1445,25 +1461,25 @@ function defaultState(){
 
   s.igAccounts = [
     {id:"ig1", handle:"@damian.gogulski", bio:"Marketing dla branży tanecznej — MediaDGtal", initials:"DA",
-     goal:1000, stats:[
+     goal:1000, igBusinessId:"17841401445304006", stats:[
        {date:"2026-05-18",followers:681},{date:"2026-05-25",followers:684},{date:"2026-06-01",followers:682},
        {date:"2026-06-08",followers:680},{date:"2026-06-15",followers:682},{date:"2026-06-22",followers:683},
        {date:"2026-06-29",followers:683},{date:"2026-07-06",followers:685}
      ], ideas:[]},
     {id:"ig2", handle:"@tool4arts", bio:"tool4arts — konto firmowe", initials:"T4",
-     goal:200, stats:[{date:"2026-07-01",followers:6},{date:"2026-07-06",followers:6}], ideas:[
+     goal:200, igBusinessId:"17841476725442707", stats:[{date:"2026-07-01",followers:6},{date:"2026-07-06",followers:6}], ideas:[
        "Krótki reel pokazujący panel rezerwacji na żywo.","Seria 'pytanie do właścicieli szkół'."
      ]}
   ];
   s.fbAccounts = [
     {id:"fb1", name:"MediaDGtal", bio:"Fanpage agencji MediaDGtal", initials:"ME",
-     goal:500, stats:[
+     goal:500, fbPageId:"108992522037930", stats:[
        {date:"2026-05-18",followers:75},{date:"2026-05-25",followers:75},{date:"2026-06-01",followers:75},
        {date:"2026-06-08",followers:75},{date:"2026-06-15",followers:75},{date:"2026-06-22",followers:75},
        {date:"2026-06-29",followers:75},{date:"2026-07-06",followers:75}
      ], ideas:[]},
     {id:"fb2", name:"tool4arts", bio:"tool4arts — fanpage", initials:"T4",
-     goal:100, stats:[{date:"2026-07-01",followers:2},{date:"2026-07-06",followers:2}], ideas:[]}
+     goal:100, fbPageId:"1109133998958668", stats:[{date:"2026-07-01",followers:2},{date:"2026-07-06",followers:2}], ideas:[]}
   ];
 
   s.finance = [
@@ -3048,9 +3064,13 @@ function renderSocial(el, platform){
   html += '</select>';
   html += '<button class="btn secondary small" onclick="addAccount(\''+platform+'\')">+ Nowe konto</button>';
   html += '<button class="btn danger small" onclick="removeAccount(\''+platform+'\')">Usuń konto</button>';
-  html += '<button class="btn secondary small" onclick="refreshAcc()">⟳ Odśwież</button></div>';
+  html += '<button class="btn secondary small" onclick="refreshAcc(\''+platform+'\')">⟳ Odśwież</button></div>';
 
-  html += '<div class="stub-note">To dane wprowadzane ręcznie / co tydzień. Prawdziwa synchronizacja z Instagram/Facebook API wymaga Fazy 4 migracji (konto Meta Developer + weryfikacja) — nie jest jeszcze podpięta.</div>';
+  if(window.__fbToken){
+    html += '<div class="stub-note">Połączono z Facebook/Instagram API. Kliknij „⟳ Odśwież”, żeby pobrać aktualną liczbę obserwujących.</div>';
+  } else {
+    html += '<div class="stub-note">To dane wprowadzane ręcznie / co tydzień, albo pobierane na żądanie z prawdziwego Instagram/Facebook API. <a href="#" onclick="window.reconnectFb(); return false;" style="color:var(--accent)">Połącz z Facebookiem</a>, żeby włączyć.</div>';
+  }
 
   var last = acc.stats[acc.stats.length-1].followers;
   var prev = acc.stats.length>1 ? acc.stats[acc.stats.length-2].followers : last;
@@ -3167,8 +3187,47 @@ function removeAccount(platform){
   if(platform==="instagram") igActiveId = newActive; else fbActiveId = newActive;
   save(); renderAll();
 }
-function refreshAcc(){
-  alert("Odświeżanie z realnego API Instagram/Facebook będzie dostępne po Fazie 4 migracji (konto Meta Developer + weryfikacja) — jeszcze nie podpięte.");
+function refreshAcc(platform){
+  platform = platform || (currentTab==="facebook" ? "facebook" : "instagram");
+  if(!window.__fbToken){
+    window.reconnectFb();
+    return;
+  }
+  if(!window.__fbPagesData){
+    ensureFbPages(function(){ applyFbRefresh(platform); });
+    return;
+  }
+  applyFbRefresh(platform);
+}
+function applyFbRefresh(platform){
+  var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
+  var activeId = platform==="instagram" ? igActiveId : fbActiveId;
+  var acc = list.filter(function(a){return a.id===activeId;})[0];
+  if(!acc) return;
+  var pages = window.__fbPagesData || [];
+  var pageMatch = pages.filter(function(p){
+    if(platform==="instagram"){
+      if(!p.instagram_business_account) return false;
+      if(acc.igBusinessId) return p.instagram_business_account.id===acc.igBusinessId;
+      var handle = (acc.handle||"").replace("@","").toLowerCase();
+      return (p.instagram_business_account.username||"").toLowerCase()===handle;
+    }
+    if(acc.fbPageId) return p.id===acc.fbPageId;
+    return (p.name||"").toLowerCase()===(acc.name||"").toLowerCase();
+  })[0];
+  if(!pageMatch){
+    alert('Nie znaleziono konta "'+(platform==="instagram"?acc.handle:acc.name)+'" wśród stron/kont podłączonych do Twojego Facebooka. Sprawdź, czy masz do niego dostęp jako administrator.');
+    return;
+  }
+  var real = platform==="instagram" ? pageMatch.instagram_business_account.followers_count : pageMatch.fan_count;
+  if(typeof real !== "number"){
+    alert("Facebook nie zwrócił liczby obserwujących dla tego konta.");
+    return;
+  }
+  var today = todayStr();
+  var last = acc.stats[acc.stats.length-1];
+  if(last && last.date===today){ last.followers = real; } else { acc.stats.push({date:today, followers:real}); }
+  save(); renderAll();
 }
 function saveMeasurement(platform){
   var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
@@ -7261,6 +7320,51 @@ function init(){
 init();
 </script>
 
+<script>
+/* ================= FACEBOOK / INSTAGRAM LOGIN (Faza 4) ================= */
+var FB_APP_ID = "1573841530817653";
+var FB_GRAPH_VERSION = "v21.0";
+window.__fbToken = null;
+window.__fbPagesData = null;
+var fbPagesLoading = false;
+
+window.fbAsyncInit = function(){
+  FB.init({ appId: FB_APP_ID, cookie: false, xfbml: false, version: FB_GRAPH_VERSION });
+};
+
+function doFbSignIn(){
+  if(typeof FB === "undefined"){
+    alert("Facebook SDK jeszcze się nie załadował — spróbuj ponownie za chwilę.");
+    return;
+  }
+  FB.login(function(response){
+    if(response && response.authResponse){
+      window.__fbToken = response.authResponse.accessToken;
+      ensureFbPages(function(){ renderAll(); });
+    }
+  }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights"});
+}
+window.reconnectFb = doFbSignIn;
+
+function ensureFbPages(cb){
+  if(!window.__fbToken){ if(cb) cb(); return; }
+  if(fbPagesLoading) return;
+  fbPagesLoading = true;
+  fetch("https://graph.facebook.com/"+FB_GRAPH_VERSION+"/me/accounts?fields=name,id,fan_count,instagram_business_account{id,username,followers_count}", {
+    headers:{Authorization:"Bearer "+window.__fbToken}
+  }).then(function(r){
+    if(r.status===401){ window.__fbToken=null; throw new Error("401"); }
+    return r.json();
+  }).then(function(json){
+    window.__fbPagesData = json.data || [];
+    fbPagesLoading = false;
+    if(cb) cb();
+  }).catch(function(){
+    fbPagesLoading = false;
+    if(cb) cb();
+  });
+}
+</script>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
