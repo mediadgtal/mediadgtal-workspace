@@ -3242,7 +3242,8 @@ function lineChart(stats){
     '<text x="'+(padL-10)+'" y="'+(padT+innerH+4)+'" text-anchor="end" font-size="12" fill="#8a8390">'+min+'</text>';
 
   var dots = stats.map(function(s,i){
-    var tipY = Math.max(pts[i][1]-34, padT+20);
+    var placeBelow = (pts[i][1]-padT) < 40;
+    var tipY = placeBelow ? pts[i][1]+44 : pts[i][1]-34;
     var tip = '<g id="stip'+i+'" class="chart-tip" style="display:none">'+
       '<rect x="'+(pts[i][0]-30).toFixed(1)+'" y="'+(tipY-18).toFixed(1)+'" width="60" height="26" rx="6" fill="#25232c" stroke="#2a2830"/>'+
       '<text x="'+pts[i][0].toFixed(1)+'" y="'+(tipY-1).toFixed(1)+'" text-anchor="middle" font-size="16" font-weight="800" fill="#cf9b4a">'+s.value+'</text>'+
