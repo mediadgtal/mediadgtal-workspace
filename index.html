@@ -4409,6 +4409,7 @@ var clientOpsSubview = "dzis"; // dzis | klienci
 var clientOpsExpandedId = null;
 var clientOpsUndoStack = [];
 var CLIENT_OPS_FREQ_LABEL = {once:"Jednorazowe", weekly:"Co tydzień", monthly:"Co miesiąc"};
+var CLIENT_OPS_STORAGE_ENABLED = false; // ustaw na true, gdy Damian zdecyduje: Blaze albo przejscie na Firestore-jako-storage
 var CLIENT_SHOT_PROMPT = "Jesteś doświadczonym specjalistą od reklam Meta Ads, pomagasz właścicielowi agencji marketingowej szybko ocenić zrzut ekranu z Meta Ads Managera. Oceń widoczne metryki (koszt wyniku/leada, zasięg, wydany budżet, CTR jeśli widoczny, liczba wyników) na tle typowych benchmarków dla reklam w social media dla małych/średnich firm lokalnych. Zwróć uwagę na sygnały ostrzegawcze: rosnący koszt leada, malejący zasięg, szybko wyczerpujący się budżet, spadający CTR. Odpowiedz PO POLSKU, krótko (maks. 6 zdań): zacznij od jednego zdania podsumowania (dobrze/przeciętnie/źle), potem 2-4 punkty z konkretnymi liczbami widocznymi na tym zrzucie. To ma być pomocnicza sugestia do weryfikacji przez człowieka, nie ostateczna ocena — nie udawaj większej pewności niż faktycznie masz z jednego zrzutu.";
 
 function pushClientOpsUndo(a){ clientOpsUndoStack.push(a); if(clientOpsUndoStack.length>50) clientOpsUndoStack.shift(); }
@@ -4516,14 +4517,18 @@ function renderClientOpsScreenshots(clientId){
   var html = '<div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border)">'+
     '<label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Analiza kampanii (screenshoty)</label>';
   html += '<div class="stub-note" style="margin-top:8px; background:rgba(207,155,74,.1); border-color:rgba(207,155,74,.3); color:var(--accent)">⚠️ Sugestia AI do weryfikacji — nie automatyczna decyzja. Zawsze oceń wynik samodzielnie.</div>';
-  if(!localStorage.getItem("mdgtal_anthropic_key")){
-    html += '<div class="stub-note" style="margin-top:8px">Brak klucza API Anthropic — ustaw go w sekcji "Ustawienia AI" na dole listy klientów, żeby włączyć analizę.</div>';
+  if(!CLIENT_OPS_STORAGE_ENABLED){
+    html += '<div class="stub-note" style="margin-top:8px">Wgrywanie screenshotów jest chwilowo wstrzymane — wymaga jednorazowej decyzji o Firebase Storage (plan Blaze) albo przejścia na przechowywanie w Firestore. Odłożone na później, wróć tu jak zdecydujesz.</div>';
+  } else {
+    if(!localStorage.getItem("mdgtal_anthropic_key")){
+      html += '<div class="stub-note" style="margin-top:8px">Brak klucza API Anthropic — ustaw go w sekcji "Ustawienia AI" na dole listy klientów, żeby włączyć analizę.</div>';
+    }
+    html += '<div class="row" style="gap:8px; margin:10px 0; align-items:center">'+
+      '<input type="file" accept="image/*" id="coShotInput_'+clientId+'" style="display:none" onchange="uploadClientOpsScreenshot(\''+clientId+'\', this)">'+
+      '<button class="btn small" onclick="document.getElementById(\'coShotInput_'+clientId+'\').click()">+ Wgraj screenshot</button>'+
+      '<span id="coShotStatus_'+clientId+'" style="font-size:12px; color:var(--muted)"></span>'+
+      '</div>';
   }
-  html += '<div class="row" style="gap:8px; margin:10px 0; align-items:center">'+
-    '<input type="file" accept="image/*" id="coShotInput_'+clientId+'" style="display:none" onchange="uploadClientOpsScreenshot(\''+clientId+'\', this)">'+
-    '<button class="btn small" onclick="document.getElementById(\'coShotInput_'+clientId+'\').click()">+ Wgraj screenshot</button>'+
-    '<span id="coShotStatus_'+clientId+'" style="font-size:12px; color:var(--muted)"></span>'+
-    '</div>';
   if(!shots.length){ html += '<div class="empty">Brak wgranych screenshotów.</div>'; }
   shots.forEach(function(s){
     html += '<div class="card" style="margin-bottom:10px; display:flex; gap:12px; align-items:flex-start">'+
