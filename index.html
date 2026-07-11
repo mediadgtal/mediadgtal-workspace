@@ -556,6 +556,7 @@ var TABS = [
   {id:"dashboard", label:"Pulpit", group:"Główne"},
   {id:"zadania", label:"Zadania", group:"Główne"},
   {id:"kalendarz", label:"Kalendarz", group:"Główne"},
+  {id:"finanse", label:"Finanse", group:"Główne"},
   {id:"ceo", label:"CEO", group:"Gra"},
   {id:"posty", label:"Posty", group:"Social Media"},
   {id:"instagram", label:"Instagram", group:"Social Media"},
@@ -576,6 +577,7 @@ var TAB_ICON_SVG = {
   facebook: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
   zadania: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   kalendarz: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  finanse: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 8.5h3.2a1.8 1.8 0 0 1 0 3.5H9.5m0 0h4a1.8 1.8 0 0 1 0 3.5H9.5"/><line x1="12" y1="6.5" x2="12" y2="17.5"/></svg>',
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   crm: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>',
@@ -1483,13 +1485,259 @@ function defaultState(){
   ];
 
   s.finance = [
-    {month:"2026-01", revenue:4200, bizCost:2100, personalCost:2400, target:20000},
-    {month:"2026-02", revenue:3800, bizCost:1900, personalCost:2300, target:20000},
-    {month:"2026-03", revenue:5100, bizCost:2400, personalCost:2500, target:20000},
-    {month:"2026-04", revenue:4600, bizCost:2200, personalCost:2400, target:20000},
-    {month:"2026-05", revenue:3900, bizCost:2000, personalCost:2300, target:20000},
-    {month:"2026-06", revenue:3200, bizCost:1800, personalCost:2200, target:20000},
-    {month:"2026-07", revenue:100, bizCost:493, personalCost:600, target:20000}
+    {month:"2026-01", revenue:5122, bizCost:2288.83, personalCost:3173.99, target:8000},
+    {month:"2026-02", revenue:9580, bizCost:2166.47, personalCost:8658.99, target:9000},
+    {month:"2026-03", revenue:7642, bizCost:2061.29, personalCost:7284.45, target:10000},
+    {month:"2026-04", revenue:8327.99, bizCost:2035.32, personalCost:5952.14, target:15000},
+    {month:"2026-05", revenue:5692, bizCost:1906.8, personalCost:3019.04, target:13000},
+    {month:"2026-06", revenue:7274, bizCost:2198.04, personalCost:5623.13, target:17000},
+    {month:"2026-07", revenue:100, bizCost:92.99, personalCost:1000, target:20000}
+  ];
+  s.financeCorrected = true;
+
+  s.financeEntries = [
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'Art Of Move marketing', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'Art of Move zajęcia za 12/2025', amount:730.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'Estilo', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'BLIK Kokot za kebsa', amount:42.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'z DADAMowego', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'z DADAMowego', amount:40.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'BLIK Seba zwrot za parking', amount:10.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'Priv z Beata', amount:300.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'przychody', name:'VENUS', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'Paliwo', amount:328.92, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'ZUS', amount:1023.59, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'PIT', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'Księgowość', amount:369.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'Reklama', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'VAT', amount:309.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'Manychat', amount:54.69, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'Płyn do spryskiwaczy', amount:36.99, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'firmowe', name:'InFakt', amount:73.65, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Wspólne', amount:500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Parking', amount:3.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Rossmann', amount:10.79, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Żabka', amount:6.99, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Basen', amount:8.8, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Barber', amount:120.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Żabka', amount:22.5, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'PEKAO', amount:1500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-01', category:'osobiste', name:'Przewalutowanie', amount:1.91, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'Art Of Move marketing', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'Art of Move zajęcia za 01/2026', amount:770.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'JUMP', amount:7000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'Estilo', amount:1100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'BLIK Canva Monika', amount:90.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'BLIK Canva Dusia', amount:90.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'BLIK Canva Asia', amount:90.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'BLIK Canva Lena', amount:90.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'z DADAMowego', amount:200.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'przychody', name:'PRIV z Hanią', amount:150.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'Paliwo', amount:335.73, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'ZUS', amount:851.1, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'PIT', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'Księgowość', amount:369.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'Reklama', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'VAT', amount:12.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'Manychat', amount:55.66, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'firmowe', name:'Canva', amount:449.99, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Wspólne', amount:2000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Zwrot na DADAM', amount:4878.22, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Książka Marcina Wąsika', amount:74.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Fizjo', amount:180.0, method:'gotowka'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Żabka', amount:22.5, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Parking', amount:12.63, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Żarówki', amount:7.96, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Basen', amount:30.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Basen', amount:44.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Kwiaty', amount:73.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Parking', amount:4.5, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Zwrot na DADAMowe', amount:200.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Przewalutowanie', amount:1.95, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Apcoa', amount:6.0, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Parking', amount:4.23, method:'karta'},
+    {id:uid("fin"), month:'2026-02', category:'osobiste', name:'Barber', amount:120.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'Art Of Move marketing', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'Art of Move zajęcia za 02/2026', amount:840.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'Estilo', amount:1100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'PRIV z Hanią', amount:150.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'VENUS', amount:192.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'PD Institute', amount:4000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'VAT z DADAM', amount:210.0, method:'gotowka'},
+    {id:uid("fin"), month:'2026-03', category:'przychody', name:'PRIV z Hanią', amount:150.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'Paliwo', amount:384.58, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'ZUS', amount:888.72, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'PIT', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'Księgowość', amount:369.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'Reklama', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'VAT', amount:326.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'firmowe', name:'Manychat', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Wspólne', amount:800.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Barber', amount:120.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Piwo Muchos', amount:20.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Żabka', amount:12.7, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Parking', amount:4.5, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Biedronka kwiaty', amount:92.95, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Biedronka', amount:3.82, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Rossmann', amount:7.49, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Parking', amount:3.42, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Wspólne', amount:1974.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Parking', amount:2.88, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Żabka', amount:11.49, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Wspólne', amount:1974.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'BLIK do Dusi', amount:50.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'BLIK do Michała', amount:56.67, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Parking', amount:10.98, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'spłata kredytówki', amount:1022.31, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Apcoa', amount:6.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'BLIK do Dusi', amount:50.0, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'BLIK do Dusi', amount:51.91, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Żabka', amount:3.4, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Parking', amount:4.23, method:'karta'},
+    {id:uid("fin"), month:'2026-03', category:'osobiste', name:'Parking', amount:1.7, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Art Of Move marketing', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Art of Move zajęcia za 03/2026', amount:1020.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Estilo', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'BLIK od Mamy Marty', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Na święta od Marty mamy', amount:100.0, method:'gotowka'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Na święta/uro od rodziców', amount:200.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'LOTOS', amount:3000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'VENUS', amount:255.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Alona Babynina', amount:500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Zwrot za Kurtkę Jeansową', amount:152.99, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'przychody', name:'Art Of Move marketing', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'Paliwo', amount:405.35, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'ZUS', amount:888.72, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'PIT', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'Księgowość', amount:369.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'Zapier', amount:111.64, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'VAT', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'Manychat', amount:57.62, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'Olej silnikowy', amount:50.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'firmowe', name:'Wycieraczka + granaty', amount:60.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Wspólne', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Barber', amount:120.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Parking', amount:5.31, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Wspólne oszczędnościowe', amount:1500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Action', amount:40.68, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Żabka', amount:24.5, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Orlen myjnia', amount:34.99, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Reserved', amount:368.98, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Przewalutowanie', amount:2.02, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Spłata kredytówki', amount:117.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Reserved', amount:169.99, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Parking', amount:3.42, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Żabka', amount:9.5, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Basen', amount:48.8, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Mechanik', amount:150.0, method:'gotowka'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Rossmann', amount:76.46, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'KFC', amount:45.98, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Żabka', amount:5.8, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Poco Loco', amount:54.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Action', amount:46.97, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Wspólne', amount:500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Żabka', amount:17.98, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Lody', amount:16.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Duzy Ben', amount:7.76, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'BLIK Kokot za kebsa', amount:47.5, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Żabka', amount:26.5, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Lody', amount:12.0, method:'karta'},
+    {id:uid("fin"), month:'2026-04', category:'osobiste', name:'Wspólne', amount:500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'Art Of Move marketing', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'Art of Move zajęcia za 04/2026', amount:1010.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'Estilo', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'Tool4Arts', amount:2000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'VENUS', amount:318.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'PRIV', amount:150.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'BLIK od Taty na im. Borysa', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'Polektyw', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'przychody', name:'Zwrot podatku', amount:114.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'Paliwo', amount:326.42, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'ZUS', amount:913.87, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'PIT', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'Księgowość', amount:369.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'Reklama', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'VAT', amount:38.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'Manychat', amount:55.98, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'firmowe', name:'Zapier', amount:110.54, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Wspólne', amount:1100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Barber', amount:120.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Chleb', amount:5.2, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Żabka', amount:26.5, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Allegro maszynka Gillette', amount:66.5, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Żabka', amount:15.98, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Lody', amount:12.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Przewalutowanie', amount:1.96, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Spłata kredytówki', amount:226.63, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Apteka', amount:29.98, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Doładowanie karty', amount:30.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Shein', amount:12.71, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Hebe', amount:22.79, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Reserved', amount:130.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'KFC', amount:30.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Herbaciarnia', amount:18.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Żabka', amount:26.5, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Orange', amount:5.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Lody', amount:12.0, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Żabka', amount:5.3, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Orlen', amount:7.99, method:'karta'},
+    {id:uid("fin"), month:'2026-05', category:'osobiste', name:'Spłata kredytówki', amount:114.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'Art of Move zajęcia za 05/2026', amount:640.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'Estilo', amount:1100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'Tool4Arts', amount:2000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'VENUS', amount:500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'Polektyw', amount:2000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'BLIK na dzień dziecka', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'PRIV z Basią', amount:150.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'PRIV z Basią', amount:200.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'VENUS', amount:84.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'PRIV z Basią', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'PRIV z Basią', amount:200.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'przychody', name:'PRIV z Basią', amount:200.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'Paliwo', amount:346.72, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'ZUS', amount:888.72, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'PIT', amount:0.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'Księgowość', amount:369.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'Reklama', amount:195.42, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'VAT', amount:38.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'Manychat', amount:57.06, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'Zapier', amount:112.93, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'firmowe', name:'Claude', amount:97.2, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Wspólne', amount:500.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Barber', amount:120.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Na oszczędnościowe', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'DOZO Sushi', amount:143.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Spłata kredytówki', amount:2000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Rossmann', amount:41.47, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Game Pass', amount:54.99, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Vezzi', amount:161.2, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Przewalutowanie', amount:2.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Kino', amount:81.8, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'x-kom', amount:50.89, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Żabka', amount:6.99, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Zahir', amount:28.99, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Lody', amount:12.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Karta PRIV', amount:15.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Spłata kredytówki', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Rossmann', amount:249.99, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Lidl', amount:18.82, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Pepco', amount:27.0, method:'karta'},
+    {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Żabka', amount:8.99, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'Estilo', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'}
   ];
 
   s.notifications = [
@@ -1564,6 +1812,7 @@ var RENDERERS = {
   facebook: function(el){ renderSocial(el,"facebook"); },
   zadania: renderZadania,
   kalendarz: renderKalendarz,
+  finanse: renderFinanse,
   nawyki: renderNawyki,
   klienci: renderKlienci,
   crm: renderCRM,
@@ -1572,7 +1821,7 @@ var RENDERERS = {
   ceo: renderCEO
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO"};
 
 function renderAll(){
   renderNav();
@@ -3364,6 +3613,134 @@ function saveMeasurement(platform){
   var val = parseInt(document.getElementById("measureVal").value, 10);
   if(!date || isNaN(val)) return;
   acc.stats.push({date:date, followers:val});
+  save(); renderAll();
+}
+
+/* ================= FINANSE ================= */
+var FINANCE_CATEGORIES = [["przychody","Przychody"],["firmowe","Wydatki firmowe"],["osobiste","Moje wydatki"],["oszczednosci","Oszczędności"]];
+var FINANCE_CATEGORY_LABEL = {przychody:"Przychody", firmowe:"Wydatki firmowe", osobiste:"Moje wydatki", oszczednosci:"Oszczędności"};
+var financeSubview = "przychody";
+var financeMonth = null;
+function fmtPln(n){
+  return (n||0).toLocaleString("pl-PL",{minimumFractionDigits:2, maximumFractionDigits:2})+" zł";
+}
+function financeMonthLabel(iso){
+  var parts = iso.split("-");
+  return monthName(parseInt(parts[1],10)-1)+" "+parts[0];
+}
+function financeAvailableMonths(){
+  var set = {};
+  state.financeEntries.forEach(function(e){ set[e.month]=true; });
+  set[todayStr().slice(0,7)] = true;
+  return Object.keys(set).sort();
+}
+function setFinanceSubview(v){ financeSubview=v; renderAll(); }
+function setFinanceMonth(v){ financeMonth=v; renderAll(); }
+function renderFinanse(el){
+  var months = financeAvailableMonths();
+  if(!financeMonth || months.indexOf(financeMonth)===-1) financeMonth = months[months.length-1];
+
+  var html = '<div class="tabsw">';
+  FINANCE_CATEGORIES.forEach(function(c){
+    html += '<button class="'+(financeSubview===c[0]?"active":"")+'" onclick="setFinanceSubview(\''+c[0]+'\')">'+c[1]+'</button>';
+  });
+  html += '</div>';
+
+  html += '<div class="row" style="justify-content:space-between; align-items:center; margin:14px 0; flex-wrap:wrap; gap:10px">'+
+    '<select onchange="setFinanceMonth(this.value)" style="width:auto">'+
+    months.map(function(m){ return '<option value="'+m+'"'+(m===financeMonth?" selected":"")+'>'+financeMonthLabel(m)+'</option>'; }).join("")+
+    '</select>'+
+    '<button class="btn" onclick="openFinanceModal({month:financeMonth, category:financeSubview})">+ Dodaj</button>'+
+    '</div>';
+
+  var entries = state.financeEntries.filter(function(e){ return e.month===financeMonth && e.category===financeSubview; });
+  var total = entries.reduce(function(s,e){ return s+e.amount; }, 0);
+  var cardTotal = entries.filter(function(e){ return e.method==="karta"; }).reduce(function(s,e){ return s+e.amount; }, 0);
+  var cashTotal = entries.filter(function(e){ return e.method==="gotowka"; }).reduce(function(s,e){ return s+e.amount; }, 0);
+
+  html += '<div class="kpi-row">'+
+    '<div><div class="k-value">'+fmtPln(total)+'</div><div class="k-label">Suma — '+FINANCE_CATEGORY_LABEL[financeSubview]+'</div></div>'+
+    '<div><div class="k-value">'+fmtPln(cardTotal)+'</div><div class="k-label">💳 Karta</div></div>'+
+    '<div><div class="k-value">'+fmtPln(cashTotal)+'</div><div class="k-label">💵 Gotówka</div></div>'+
+    '</div>';
+
+  if(!entries.length){
+    html += '<div class="empty">Brak pozycji w tym miesiącu.</div>';
+  } else {
+    html += '<table><tr><th>Nazwa</th><th style="text-align:right">Kwota</th><th>Sposób płatności</th><th></th></tr>';
+    entries.slice().sort(function(a,b){ return b.amount-a.amount; }).forEach(function(e){
+      html += '<tr onclick="openFinanceModal({id:\''+e.id+'\'})" style="cursor:pointer">'+
+        '<td>'+escapeHtml(e.name)+'</td>'+
+        '<td style="text-align:right">'+fmtPln(e.amount)+'</td>'+
+        '<td>'+(e.method==="gotowka"?"💵 Gotówka":"💳 Karta")+'</td>'+
+        '<td style="text-align:right"><button class="btn danger small" onclick="event.stopPropagation(); deleteFinanceEntry(\''+e.id+'\')">Usuń</button></td>'+
+        '</tr>';
+    });
+    html += '</table>';
+  }
+  el.innerHTML = html;
+}
+function openFinanceModal(opts){
+  opts = opts || {};
+  var isEdit = !!opts.id;
+  var entry = isEdit ? state.financeEntries.filter(function(e){ return e.id===opts.id; })[0] : null;
+  var month = entry ? entry.month : (opts.month || financeMonth);
+  var category = entry ? entry.category : (opts.category || financeSubview);
+  var catOptions = FINANCE_CATEGORIES.map(function(c){
+    return '<option value="'+c[0]+'"'+(category===c[0]?" selected":"")+'>'+c[1]+'</option>';
+  }).join("");
+  var html = '<div class="modal-overlay" id="financeModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj pozycję":"Nowa pozycja")+'</h3>'+
+    '<div class="field"><label>Kategoria</label><select id="fmCategory">'+catOptions+'</select></div>'+
+    '<div class="field"><label>Miesiąc</label><input type="month" id="fmMonth" value="'+month+'"></div>'+
+    '<div class="field"><label>Nazwa</label><input type="text" id="fmName" value="'+escapeHtml(entry?entry.name:"")+'"></div>'+
+    '<div class="field"><label>Kwota</label><input type="number" step="0.01" id="fmAmount" value="'+(entry?entry.amount:"")+'"></div>'+
+    '<div class="field"><label>Sposób płatności</label><select id="fmMethod">'+
+    '<option value="karta"'+(!entry||entry.method==="karta"?" selected":"")+'>💳 Karta</option>'+
+    '<option value="gotowka"'+(entry&&entry.method==="gotowka"?" selected":"")+'>💵 Gotówka</option>'+
+    '</select></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteFinanceModal()">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeFinanceModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveFinanceModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__financeModalCtx = {id: opts.id||null};
+}
+function closeFinanceModal(){
+  var el = document.getElementById("financeModal");
+  if(el) el.remove();
+}
+function saveFinanceModal(){
+  var name = document.getElementById("fmName").value.trim();
+  var amount = parseFloat(document.getElementById("fmAmount").value);
+  if(!name || isNaN(amount)) return;
+  var category = document.getElementById("fmCategory").value;
+  var month = document.getElementById("fmMonth").value;
+  var method = document.getElementById("fmMethod").value;
+  var ctx = window.__financeModalCtx || {};
+  if(ctx.id){
+    var e = state.financeEntries.filter(function(x){ return x.id===ctx.id; })[0];
+    if(e){ e.name=name; e.amount=amount; e.category=category; e.month=month; e.method=method; }
+  } else {
+    state.financeEntries.push({id:uid("fin"), month:month, category:category, name:name, amount:amount, method:method});
+  }
+  financeSubview = category; financeMonth = month;
+  closeFinanceModal();
+  save(); renderAll();
+}
+function deleteFinanceModal(){
+  var ctx = window.__financeModalCtx || {};
+  if(!ctx.id) return;
+  if(!confirm("Usunąć tę pozycję?")) return;
+  state.financeEntries = state.financeEntries.filter(function(x){ return x.id!==ctx.id; });
+  closeFinanceModal();
+  save(); renderAll();
+}
+function deleteFinanceEntry(id){
+  if(!confirm("Usunąć tę pozycję?")) return;
+  state.financeEntries = state.financeEntries.filter(function(x){ return x.id!==id; });
   save(); renderAll();
 }
 
