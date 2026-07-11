@@ -17,7 +17,7 @@
     --rozwoj-bg:#322419; --rozwoj-text:#e0954a;
     --admin-text:#837a82; --admin-bg:#2a2830;
     --muted:#8a8390; --muted-light:#c5bec3;
-    --danger:#d1636f;
+    --danger:#d1636f; --success:#7fb88a;
     --border:#2a2830; --text:#f0eef2;
     --radius:12px;
     --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
@@ -3041,8 +3041,77 @@ function setSocialRange(r){ socialRange = r; renderAll(); }
 function accBrand(acc){
   return ((acc.handle||acc.name||"").toLowerCase().indexOf("tool4arts")!==-1) ? "tool4arts" : "MediaDGtal";
 }
-function milestoneGoal(followers){
-  return (Math.floor(followers/1000)+1)*1000;
+var MILESTONE_THRESHOLDS = [10,100,500,1000,2000,5000,10000,15000,20000];
+function milestoneInfo(followers){
+  var start = 0, goal = null;
+  for(var i=0;i<MILESTONE_THRESHOLDS.length;i++){
+    if(followers < MILESTONE_THRESHOLDS[i]){ goal = MILESTONE_THRESHOLDS[i]; start = i===0?0:MILESTONE_THRESHOLDS[i-1]; break; }
+  }
+  if(goal==null){
+    start = MILESTONE_THRESHOLDS[MILESTONE_THRESHOLDS.length-1];
+    goal = start + 5000*(Math.floor((followers-start)/5000)+1);
+  }
+  var pct = Math.max(0, Math.min(100, Math.round((followers-start)/(goal-start)*100)));
+  return {start:start, goal:goal, pct:pct};
+}
+var SHORT_MONTHS = ["sty","lut","mar","kwi","maj","cze","lip","sie","wrz","paź","lis","gru"];
+function pad2(n){ return String(n).padStart(2,"0"); }
+function dISO(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function mondayOf(d){
+  var nd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  var day = nd.getDay();
+  var diff = day===0 ? -6 : 1-day;
+  nd.setDate(nd.getDate()+diff);
+  return nd;
+}
+function valueAsOf(stats, iso){
+  var v = null;
+  for(var i=0;i<stats.length;i++){ if(stats[i].date<=iso) v = stats[i].followers; else break; }
+  return v;
+}
+function buildChartSeries(stats, range){
+  var today = new Date(); today.setHours(0,0,0,0);
+  var out = [];
+  if(range==="tydzien"){
+    var mon = mondayOf(today);
+    for(var i=0;i<7;i++){
+      var d = new Date(mon); d.setDate(mon.getDate()+i);
+      if(d>today) break;
+      var iso = dISO(d);
+      var v = valueAsOf(stats, iso);
+      if(v==null) continue;
+      out.push({label:pad2(d.getDate())+"."+pad2(d.getMonth()+1), value:v});
+    }
+  } else if(range==="miesiac"){
+    var m = today.getMonth(), y = today.getFullYear();
+    var mon2 = mondayOf(new Date(y,m,1));
+    if(mon2.getMonth()!==m) mon2.setDate(mon2.getDate()+7);
+    while(mon2.getMonth()===m && mon2.getFullYear()===y && mon2<=today){
+      var sunday = new Date(mon2); sunday.setDate(mon2.getDate()+6);
+      var checkDate = sunday>today ? today : sunday;
+      var v2 = valueAsOf(stats, dISO(checkDate));
+      if(v2!=null) out.push({label:pad2(mon2.getDate())+"."+pad2(mon2.getMonth()+1), value:v2});
+      mon2 = new Date(mon2); mon2.setDate(mon2.getDate()+7);
+    }
+  } else if(range==="kwartal"){
+    var q = Math.floor(today.getMonth()/3);
+    [q*3, q*3+1, q*3+2].forEach(function(mm){
+      var monthStart = new Date(today.getFullYear(), mm, 1);
+      if(monthStart>today) return;
+      var monthEnd = new Date(today.getFullYear(), mm+1, 0);
+      var checkDate = monthEnd>today?today:monthEnd;
+      var v3 = valueAsOf(stats, dISO(checkDate));
+      if(v3!=null) out.push({label:SHORT_MONTHS[mm], value:v3});
+    });
+  } else {
+    for(var mm2=0; mm2<=today.getMonth(); mm2++){
+      var monthEnd2 = new Date(today.getFullYear(), mm2+1, 0);
+      var checkDate2 = monthEnd2>today?today:monthEnd2;
+      var v4 = valueAsOf(stats, dISO(checkDate2));
+      if(v4!=null) out.push({label:SHORT_MONTHS[mm2], value:v4});
+    }
+  }
+  return out.length ? out : (stats.length ? [{label:"", value:stats[stats.length-1].followers}] : [{label:"", value:0}]);
 }
 function needsWeeklyUpdate(acc){
   var lastDate = acc.stats.length ? acc.stats[acc.stats.length-1].date : null;
@@ -3067,27 +3136,43 @@ function renderSocial(el, platform){
   html += '<button class="btn secondary small" onclick="refreshAcc(\''+platform+'\')">⟳ Odśwież</button></div>';
 
   if(window.__fbToken){
-    html += '<div class="stub-note">Połączono z Facebook/Instagram API. Kliknij „⟳ Odśwież”, żeby pobrać aktualną liczbę obserwujących.</div>';
+    html += '<div class="stub-note">Połączono z Facebook/Instagram API — dane odświeżają się automatycznie raz dziennie przy pierwszym wejściu. Kliknij „⟳ Odśwież”, żeby zaktualizować od razu.</div>';
   } else {
-    html += '<div class="stub-note">To dane wprowadzane ręcznie / co tydzień, albo pobierane na żądanie z prawdziwego Instagram/Facebook API. <a href="#" onclick="window.reconnectFb(); return false;" style="color:var(--accent)">Połącz z Facebookiem</a>, żeby włączyć.</div>';
+    html += '<div class="stub-note">To dane wprowadzane ręcznie, albo pobierane automatycznie z prawdziwego Instagram/Facebook API. <a href="#" onclick="window.reconnectFb(); return false;" style="color:var(--accent)">Połącz z Facebookiem</a>, żeby włączyć.</div>';
   }
 
   var last = acc.stats[acc.stats.length-1].followers;
-  var prev = acc.stats.length>1 ? acc.stats[acc.stats.length-2].followers : last;
-  var change = last - prev;
-  var goal = milestoneGoal(last);
+  var todayIso = todayStr();
+  var priorEntries = acc.stats.filter(function(s){ return s.date < todayIso; });
+  var todayDelta = priorEntries.length ? last - priorEntries[priorEntries.length-1].followers : 0;
+  var todayColor = todayDelta>0 ? "var(--success)" : (todayDelta<0 ? "var(--danger)" : "var(--muted)");
+  var todaySign = todayDelta>0 ? "+" : "";
 
-  html += '<div class="prof-row"><div class="avatar">'+acc.initials+'</div><div>'+
+  var thisMonday = mondayOf(new Date());
+  var lastSunday = new Date(thisMonday); lastSunday.setDate(thisMonday.getDate()-1);
+  var weekAgoValue = valueAsOf(acc.stats, dISO(lastSunday));
+  var weekDelta = weekAgoValue==null ? 0 : last - weekAgoValue;
+  var weekSign = weekDelta>=0 ? "+" : "";
+
+  var mi = milestoneInfo(last);
+
+  var avatarHtml = acc.profilePic ? '<img class="avatar" src="'+escapeHtml(acc.profilePic)+'" style="object-fit:cover">' : '<div class="avatar">'+acc.initials+'</div>';
+  var subInfo = [];
+  if(acc.postsCount!=null) subInfo.push(acc.postsCount+" postów");
+  if(acc.followingCount!=null) subInfo.push(acc.followingCount+" obserwowanych");
+  html += '<div class="prof-row">'+avatarHtml+'<div>'+
     '<div class="prof-name">'+escapeHtml(platform==="instagram"?acc.handle:acc.name)+'</div>'+
-    '<div class="prof-bio">'+escapeHtml(acc.bio)+'</div></div></div>';
+    '<div class="prof-bio">'+escapeHtml(acc.bio||"")+'</div>'+
+    (subInfo.length ? '<div class="prof-bio" style="opacity:.7">'+subInfo.join(" · ")+'</div>' : '')+
+    '</div></div>';
 
   html += '<div class="kpi-row">'+
-    '<div><div class="k-value">'+last+'</div><div class="k-label">Obserwujący (ostatni wpis)</div></div>'+
-    '<div><div class="k-value accent">'+(change>=0?"+":"")+change+'</div><div class="k-label">Zmiana od poprzedniego wpisu</div></div>'+
-    '<div><div class="k-value">'+acc.stats.length+'</div><div class="k-label">Zapisanych pomiarów</div></div>'+
+    '<div><div class="k-value">'+last+' <span style="font-size:14px; font-weight:700; color:'+todayColor+'">'+todaySign+todayDelta+' dziś</span></div><div class="k-label">Obserwujący</div></div>'+
+    '<div><div class="k-value accent">'+weekSign+weekDelta+'</div><div class="k-label">Zmiana vs ubiegły tydzień (pon–nd)</div></div>'+
     '</div>';
+  html += '<div style="font-size:11.5px; color:var(--muted); margin:-6px 0 12px">Zapisanych pomiarów: '+acc.stats.length+'</div>';
 
-  if(needsWeeklyUpdate(acc)){
+  if(!window.__fbToken && needsWeeklyUpdate(acc)){
     html += '<div class="stub-note" style="background:rgba(207,155,74,.14)"><b>Czas zaktualizować obserwujących</b> — ostatni wpis: '+fmtDate(acc.stats[acc.stats.length-1].date)+'. '+
       '<span class="measure-row" style="display:inline-flex; gap:8px; margin-top:8px">'+
       '<input type="date" id="measureDate" value="'+todayStr()+'" style="width:auto">'+
@@ -3095,19 +3180,15 @@ function renderSocial(el, platform){
       '<button class="btn small" onclick="saveMeasurement(\''+platform+'\')">Zapisz</button></span></div>';
   }
 
-  html += '<div class="progress-label"><span>Postęp do kolejnego kamienia milowego</span><span>'+last+' / '+goal+' obserwujących</span></div>';
-  html += '<div class="habit-bar"><div style="width:'+Math.min(100,Math.round(last/goal*100))+'%"></div></div>';
+  html += '<div class="progress-label"><span>Postęp do kolejnego kamienia milowego</span><span class="accent" style="font-weight:700">'+mi.pct+'% · '+last+' / '+mi.goal+'</span></div>';
+  html += '<div class="habit-bar"><div style="width:'+mi.pct+'%"></div></div>';
 
-  var enriched = acc.stats.map(function(s,i){
-    var prevF = i>0 ? acc.stats[i-1].followers : s.followers;
-    return {date:s.date, followers:s.followers, delta:s.followers-prevF};
-  });
   html += '<div class="chiprow" style="margin-top:16px">';
   [["tydzien","Tydzień"],["miesiac","Miesiąc"],["kwartal","Kwartał"],["rok","Rok"]].forEach(function(pair){
     html += '<span class="chip'+(socialRange===pair[0]?" active":"")+'" onclick="setSocialRange(\''+pair[0]+'\')">'+pair[1]+'</span>';
   });
   html += '</div>';
-  html += lineChart(filterStatsByRange(enriched, socialRange));
+  html += lineChart(buildChartSeries(acc.stats, socialRange));
 
   var brand = accBrand(acc);
   var weekDates = currentWeekDates();
@@ -3124,42 +3205,56 @@ function renderSocial(el, platform){
 
   el.innerHTML = html;
 }
-function filterStatsByRange(stats, range){
-  var days = {tydzien:7, miesiac:31, kwartal:93, rok:366}[range] || 366;
-  var cutoff = new Date(); cutoff.setDate(cutoff.getDate()-days);
-  var cutoffStr = cutoff.toISOString().slice(0,10);
-  var filtered = stats.filter(function(s){ return s.date >= cutoffStr; });
-  return filtered.length ? filtered : stats.slice(-1);
-}
 function lineChart(stats){
-  var w=1200, h=220, pad=10;
-  var vals = stats.map(function(s){return s.followers;});
+  var w=1200, h=260, padL=54, padR=14, padT=16, padB=30;
+  var vals = stats.map(function(s){return s.value;});
   var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
   if(min===max){ min -= 1; max += 1; }
-  var stepX = (w-pad*2)/(stats.length-1 || 1);
+  var innerW = w-padL-padR, innerH = h-padT-padB;
+  var stepX = innerW/((stats.length-1)||1);
   var pts = stats.map(function(s,i){
-    var x = pad + i*stepX;
-    var y = h-pad - ((s.followers-min)/(max-min))*(h-pad*2);
+    var x = padL + i*stepX;
+    var y = padT + innerH - ((s.value-min)/(max-min))*innerH;
     return [x,y];
   });
   var line = pts.map(function(p,i){ return (i===0?"M":"L")+p[0].toFixed(1)+","+p[1].toFixed(1); }).join(" ");
-  var area = line + " L"+pts[pts.length-1][0].toFixed(1)+","+(h-pad)+" L"+pts[0][0].toFixed(1)+","+(h-pad)+" Z";
+  var area = line + " L"+pts[pts.length-1][0].toFixed(1)+","+(padT+innerH)+" L"+pts[0][0].toFixed(1)+","+(padT+innerH)+" Z";
   var gid = "grad"+Math.random().toString(36).slice(2,7);
-  var last = pts[pts.length-1];
-  var dots = stats.map(function(s,i){
-    var deltaTxt = (s.delta>=0?"+":"")+s.delta;
-    var title = "Tydzień "+fmtDate(s.date)+": "+s.followers+" obserwujących ("+deltaTxt+" vs poprzedni tydzień)";
-    return '<circle cx="'+pts[i][0].toFixed(1)+'" cy="'+pts[i][1].toFixed(1)+'" r="9" fill="transparent" stroke="none"><title>'+escapeHtml(title)+'</title></circle>';
+  var lastPt = pts[pts.length-1];
+
+  var xLabels = stats.map(function(s,i){
+    return '<text x="'+pts[i][0].toFixed(1)+'" y="'+(h-8)+'" text-anchor="middle" font-size="12" fill="#8a8390">'+escapeHtml(s.label)+'</text>';
   }).join("");
-  return '<div class="card" style="padding:20px 20px 6px"><svg viewBox="0 0 '+w+' '+h+'" style="width:100%; height:180px; display:block">'+
+  var yLabels =
+    '<text x="'+(padL-10)+'" y="'+(padT+5)+'" text-anchor="end" font-size="12" fill="#8a8390">'+max+'</text>'+
+    '<text x="'+(padL-10)+'" y="'+(padT+innerH+4)+'" text-anchor="end" font-size="12" fill="#8a8390">'+min+'</text>';
+
+  var dots = stats.map(function(s,i){
+    var tipY = Math.max(pts[i][1]-16, padT+12);
+    var tip = '<g id="stip'+i+'" class="chart-tip" style="display:none">'+
+      '<rect x="'+(pts[i][0]-24).toFixed(1)+'" y="'+(tipY-16).toFixed(1)+'" width="48" height="20" rx="5" fill="#25232c" stroke="#2a2830"/>'+
+      '<text x="'+pts[i][0].toFixed(1)+'" y="'+(tipY-2).toFixed(1)+'" text-anchor="middle" font-size="12" font-weight="700" fill="#f0eef2">'+s.value+'</text>'+
+      '</g>';
+    return tip + '<circle cx="'+pts[i][0].toFixed(1)+'" cy="'+pts[i][1].toFixed(1)+'" r="12" fill="transparent" stroke="none" onmouseenter="showChartTip('+i+')" onmouseleave="hideChartTip()" onclick="showChartTip('+i+')" style="cursor:pointer"/>';
+  }).join("");
+
+  return '<div class="card" style="padding:16px 12px 6px"><svg viewBox="0 0 '+w+' '+h+'" style="width:100%; height:210px; display:block">'+
     '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'+
     '<stop offset="0%" stop-color="#cf9b4a" stop-opacity="0.35"/><stop offset="100%" stop-color="#cf9b4a" stop-opacity="0"/>'+
     '</linearGradient></defs>'+
     '<path d="'+area+'" fill="url(#'+gid+')" stroke="none"/>'+
     '<path d="'+line+'" fill="none" stroke="#cf9b4a" stroke-width="2.5"/>'+
-    '<circle cx="'+last[0].toFixed(1)+'" cy="'+last[1].toFixed(1)+'" r="4" fill="#cf9b4a"/>'+
-    dots+
+    '<circle cx="'+lastPt[0].toFixed(1)+'" cy="'+lastPt[1].toFixed(1)+'" r="4" fill="#cf9b4a"/>'+
+    yLabels + xLabels + dots +
     '</svg></div>';
+}
+function showChartTip(i){
+  document.querySelectorAll(".chart-tip").forEach(function(e){ e.style.display="none"; });
+  var el = document.getElementById("stip"+i);
+  if(el) el.style.display="";
+}
+function hideChartTip(){
+  document.querySelectorAll(".chart-tip").forEach(function(e){ e.style.display="none"; });
 }
 function setActiveAcc(platform, id){
   if(platform==="instagram") igActiveId = id; else fbActiveId = id;
@@ -3204,6 +3299,10 @@ function applyFbRefresh(platform){
   var activeId = platform==="instagram" ? igActiveId : fbActiveId;
   var acc = list.filter(function(a){return a.id===activeId;})[0];
   if(!acc) return;
+  if(applyFbRefreshAcc(platform, acc, {silent:false})){ save(); renderAll(); }
+}
+function applyFbRefreshAcc(platform, acc, opts){
+  opts = opts || {};
   var pages = window.__fbPagesData || [];
   var pageMatch = pages.filter(function(p){
     if(platform==="instagram"){
@@ -3216,18 +3315,28 @@ function applyFbRefresh(platform){
     return (p.name||"").toLowerCase()===(acc.name||"").toLowerCase();
   })[0];
   if(!pageMatch){
-    alert('Nie znaleziono konta "'+(platform==="instagram"?acc.handle:acc.name)+'" wśród stron/kont podłączonych do Twojego Facebooka. Sprawdź, czy masz do niego dostęp jako administrator.');
-    return;
+    if(!opts.silent) alert('Nie znaleziono konta "'+(platform==="instagram"?acc.handle:acc.name)+'" wśród stron/kont podłączonych do Twojego Facebooka. Sprawdź, czy masz do niego dostęp jako administrator.');
+    return false;
   }
-  var real = platform==="instagram" ? pageMatch.instagram_business_account.followers_count : pageMatch.fan_count;
+  var ig = pageMatch.instagram_business_account;
+  var real = platform==="instagram" ? (ig && ig.followers_count) : pageMatch.fan_count;
   if(typeof real !== "number"){
-    alert("Facebook nie zwrócił liczby obserwujących dla tego konta.");
-    return;
+    if(!opts.silent) alert("Facebook nie zwrócił liczby obserwujących dla tego konta.");
+    return false;
   }
   var today = todayStr();
   var last = acc.stats[acc.stats.length-1];
   if(last && last.date===today){ last.followers = real; } else { acc.stats.push({date:today, followers:real}); }
-  save(); renderAll();
+  if(platform==="instagram" && ig){
+    if(typeof ig.follows_count==="number") acc.followingCount = ig.follows_count;
+    if(typeof ig.media_count==="number") acc.postsCount = ig.media_count;
+    if(ig.biography) acc.bio = ig.biography;
+    if(ig.profile_picture_url) acc.profilePic = ig.profile_picture_url;
+  } else if(platform==="facebook"){
+    if(pageMatch.about) acc.bio = pageMatch.about;
+    if(pageMatch.picture && pageMatch.picture.data && pageMatch.picture.data.url) acc.profilePic = pageMatch.picture.data.url;
+  }
+  return true;
 }
 function saveMeasurement(platform){
   var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
@@ -7278,11 +7387,11 @@ function renderStatystyki(el){
   }
   if(showAll || statCats["Instagram"]){
     var ig = state.igAccounts[0];
-    html += '<div class="card"><h3>Instagram</h3>'+lineChart(ig.stats)+'</div>';
+    html += '<div class="card"><h3>Instagram</h3>'+lineChart(buildChartSeries(ig.stats, statPeriod))+'</div>';
   }
   if(showAll || statCats["Facebook"]){
     var fb = state.fbAccounts[0];
-    html += '<div class="card"><h3>Facebook</h3>'+lineChart(fb.stats)+'</div>';
+    html += '<div class="card"><h3>Facebook</h3>'+lineChart(buildChartSeries(fb.stats, statPeriod))+'</div>';
   }
 
   html += '</div>';
@@ -7329,7 +7438,13 @@ window.__fbPagesData = null;
 var fbPagesLoading = false;
 
 window.fbAsyncInit = function(){
-  FB.init({ appId: FB_APP_ID, cookie: false, xfbml: false, version: FB_GRAPH_VERSION });
+  FB.init({ appId: FB_APP_ID, cookie: true, xfbml: false, version: FB_GRAPH_VERSION });
+  FB.getLoginStatus(function(response){
+    if(response && response.status === "connected"){
+      window.__fbToken = response.authResponse.accessToken;
+      maybeAutoSyncSocial();
+    }
+  });
 };
 
 function doFbSignIn(){
@@ -7350,7 +7465,7 @@ function ensureFbPages(cb){
   if(!window.__fbToken){ if(cb) cb(); return; }
   if(fbPagesLoading) return;
   fbPagesLoading = true;
-  fetch("https://graph.facebook.com/"+FB_GRAPH_VERSION+"/me/accounts?fields=name,id,fan_count,instagram_business_account{id,username,followers_count}", {
+  fetch("https://graph.facebook.com/"+FB_GRAPH_VERSION+"/me/accounts?fields=name,id,fan_count,about,picture{url},instagram_business_account{id,username,followers_count,follows_count,media_count,biography,profile_picture_url}", {
     headers:{Authorization:"Bearer "+window.__fbToken}
   }).then(function(r){
     if(r.status===401){ window.__fbToken=null; throw new Error("401"); }
@@ -7362,6 +7477,28 @@ function ensureFbPages(cb){
   }).catch(function(){
     fbPagesLoading = false;
     if(cb) cb();
+  });
+}
+
+/* Ciche odświeżenie raz dziennie przy pierwszym wejściu — tylko gdy sesja Facebooka jest już aktywna (bez pytania o zgodę ponownie). */
+function maybeAutoSyncSocial(retries){
+  retries = retries || 0;
+  if(typeof state === "undefined" || !state){
+    if(retries < 20) setTimeout(function(){ maybeAutoSyncSocial(retries+1); }, 500);
+    return;
+  }
+  if(state._socialAutoSyncDate === todayStr()) return;
+  autoSyncAllAccounts();
+}
+function autoSyncAllAccounts(){
+  if(!window.__fbToken || typeof state === "undefined" || !state) return;
+  ensureFbPages(function(){
+    if(!window.__fbPagesData) return;
+    state.igAccounts.forEach(function(acc){ applyFbRefreshAcc("instagram", acc, {silent:true}); });
+    state.fbAccounts.forEach(function(acc){ applyFbRefreshAcc("facebook", acc, {silent:true}); });
+    state._socialAutoSyncDate = todayStr();
+    save();
+    if(typeof renderAll === "function") renderAll();
   });
 }
 </script>
