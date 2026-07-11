@@ -274,10 +274,10 @@
   .acc-switch{display:flex; gap:8px; margin-bottom:22px; align-items:center; flex-wrap:wrap}
   .acc-switch select{width:auto; min-width:170px}
 
-  .prof-row{display:flex; align-items:center; gap:14px; margin-bottom:22px}
+  .prof-row{display:flex; align-items:flex-start; gap:14px; margin-bottom:22px}
   .prof-row .avatar{width:52px; height:52px; flex:0 0 52px; font-size:15px}
   .prof-name{font-size:17px; font-weight:700; color:#fff}
-  .prof-bio{font-size:12.5px; color:var(--muted); margin-top:2px}
+  .prof-bio{font-size:12.5px; color:var(--muted); margin-top:2px; white-space:pre-line; line-height:1.5}
 
   .kpi-row{display:flex; gap:46px; margin-bottom:22px; flex-wrap:wrap}
   .kpi-row .k-value{font-size:26px; font-weight:700; color:#fff}
@@ -1734,8 +1734,18 @@ function renderDashSocialPanel(){
     '</select></div>';
   html += '<div class="grid grid-4" style="gap:14px">';
   SOCIAL_TILE_PLATFORMS.forEach(function(p){
-    var hist = (state.socialStats[dashSocialAccount] && state.socialStats[dashSocialAccount][p] && state.socialStats[dashSocialAccount][p].history) || [];
-    var trend = computeSocialTrend(hist);
+    var isLive = (p==="instagram" || p==="facebook");
+    var trend;
+    if(p==="instagram"){
+      var igAcc = state.igAccounts.filter(function(a){ return accBrand(a)===dashSocialAccount; })[0];
+      trend = igAcc ? computeSocialTrend(igAcc.stats.map(function(s){ return {date:s.date, count:s.followers}; })) : null;
+    } else if(p==="facebook"){
+      var fbAcc = state.fbAccounts.filter(function(a){ return accBrand(a)===dashSocialAccount; })[0];
+      trend = fbAcc ? computeSocialTrend(fbAcc.stats.map(function(s){ return {date:s.date, count:s.followers}; })) : null;
+    } else {
+      var hist = (state.socialStats[dashSocialAccount] && state.socialStats[dashSocialAccount][p] && state.socialStats[dashSocialAccount][p].history) || [];
+      trend = computeSocialTrend(hist);
+    }
     html += '<div class="card" style="padding:16px">';
     html += '<div class="row" style="align-items:center; gap:8px; margin-bottom:12px">'+
       '<span style="width:28px; height:28px; border-radius:8px; background:'+SOCIAL_PLATFORM_COLOR[p]+'; display:flex; align-items:center; justify-content:center; color:#fff; flex:0 0 28px">'+SOCIAL_TILE_ICON_SVG[p]+'</span>'+
@@ -1754,7 +1764,9 @@ function renderDashSocialPanel(){
         html += '<div style="font-size:12.5px; color:var(--muted); margin-top:5px">bez zmian vs ub. tydz.</div>';
       }
     }
-    html += '<button class="linklike" style="margin-top:10px; font-size:12px" onclick="promptSocialStatUpdate(\''+p+'\')">⟳ Aktualizuj</button>';
+    if(!isLive){
+      html += '<button class="linklike" style="margin-top:10px; font-size:12px" onclick="promptSocialStatUpdate(\''+p+'\')">⟳ Aktualizuj</button>';
+    }
     html += '</div>';
   });
   html += '</div></div>';
@@ -3168,7 +3180,7 @@ function renderSocial(el, platform){
 
   html += '<div class="kpi-row">'+
     '<div><div class="k-value">'+last+' <span style="font-size:14px; font-weight:700; color:'+todayColor+'">'+todaySign+todayDelta+' dziś</span></div><div class="k-label">Obserwujący</div></div>'+
-    '<div><div class="k-value accent">'+weekSign+weekDelta+'</div><div class="k-label">Zmiana vs ubiegły tydzień (pon–nd)</div></div>'+
+    '<div><div class="k-value accent">'+weekSign+weekDelta+'</div><div class="k-label">Zmiana vs ubiegły tydzień</div></div>'+
     '</div>';
   html += '<div style="font-size:11.5px; color:var(--muted); margin:-6px 0 12px">Zapisanych pomiarów: '+acc.stats.length+'</div>';
 
@@ -3180,7 +3192,7 @@ function renderSocial(el, platform){
       '<button class="btn small" onclick="saveMeasurement(\''+platform+'\')">Zapisz</button></span></div>';
   }
 
-  html += '<div class="progress-label"><span>Postęp do kolejnego kamienia milowego</span><span class="accent" style="font-weight:700">'+mi.pct+'% · '+last+' / '+mi.goal+'</span></div>';
+  html += '<div class="progress-label"><span>Postęp do kolejnego kamienia milowego</span><span style="color:var(--accent); font-weight:700">'+mi.pct+'% · '+last+' / '+mi.goal+'</span></div>';
   html += '<div class="habit-bar"><div style="width:'+mi.pct+'%"></div></div>';
 
   html += '<div class="chiprow" style="margin-top:16px">';
@@ -3230,10 +3242,10 @@ function lineChart(stats){
     '<text x="'+(padL-10)+'" y="'+(padT+innerH+4)+'" text-anchor="end" font-size="12" fill="#8a8390">'+min+'</text>';
 
   var dots = stats.map(function(s,i){
-    var tipY = Math.max(pts[i][1]-16, padT+12);
+    var tipY = Math.max(pts[i][1]-34, padT+20);
     var tip = '<g id="stip'+i+'" class="chart-tip" style="display:none">'+
-      '<rect x="'+(pts[i][0]-24).toFixed(1)+'" y="'+(tipY-16).toFixed(1)+'" width="48" height="20" rx="5" fill="#25232c" stroke="#2a2830"/>'+
-      '<text x="'+pts[i][0].toFixed(1)+'" y="'+(tipY-2).toFixed(1)+'" text-anchor="middle" font-size="12" font-weight="700" fill="#f0eef2">'+s.value+'</text>'+
+      '<rect x="'+(pts[i][0]-30).toFixed(1)+'" y="'+(tipY-18).toFixed(1)+'" width="60" height="26" rx="6" fill="#25232c" stroke="#2a2830"/>'+
+      '<text x="'+pts[i][0].toFixed(1)+'" y="'+(tipY-1).toFixed(1)+'" text-anchor="middle" font-size="16" font-weight="800" fill="#cf9b4a">'+s.value+'</text>'+
       '</g>';
     return tip + '<circle cx="'+pts[i][0].toFixed(1)+'" cy="'+pts[i][1].toFixed(1)+'" r="12" fill="transparent" stroke="none" onmouseenter="showChartTip('+i+')" onmouseleave="hideChartTip()" onclick="showChartTip('+i+')" style="cursor:pointer"/>';
   }).join("");
@@ -3268,6 +3280,11 @@ function addAccount(platform){
   list.push(acc);
   if(platform==="instagram") igActiveId = acc.id; else fbActiveId = acc.id;
   save(); renderAll();
+  if(window.__fbToken){
+    ensureFbPages(function(){
+      if(applyFbRefreshAcc(platform, acc, {silent:true})){ save(); renderAll(); }
+    });
+  }
 }
 function removeAccount(platform){
   var list = platform==="instagram" ? state.igAccounts : state.fbAccounts;
