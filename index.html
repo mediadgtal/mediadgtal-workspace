@@ -144,6 +144,8 @@
   @keyframes fallSnow{to{transform:translate(var(--drift,10px),260px)}}
   .wx-flash{position:absolute; inset:0; background:#fff; opacity:0; animation:flash 7s ease-in-out infinite}
   @keyframes flash{0%,93%,100%{opacity:0} 94%{opacity:.45} 95%{opacity:0} 96%{opacity:.3} 97%{opacity:0}}
+  .row-flash{animation:rowFlash 2.5s ease-out}
+  @keyframes rowFlash{0%{background:rgba(207,155,74,.35)} 100%{background:transparent}}
 
   .weather-widget{margin-top:16px}
   .hero-top-row .weather-widget{margin-top:0}
@@ -850,6 +852,7 @@ function migrateState(s){
     if(s.contentCalendar) s.contentCalendar = s.contentCalendar.filter(notExpired);
     if(s.hasla) s.hasla = s.hasla.filter(notExpired);
     if(s.crmContacts) s.crmContacts = s.crmContacts.filter(notExpired);
+    if(s.clientMapPins) s.clientMapPins = s.clientMapPins.filter(notExpired);
   })();
   (function(){
     var IG_ID_MAP = {"damian.gogulski":"17841401445304006", "tool4arts":"17841476725442707"};
@@ -4975,6 +4978,10 @@ function undoKlienci(){
     state.clientsMonthly[a.ym].splice(a.index, 0, a.row);
   } else if(a.type==="goal"){
     state.clientsGoals[a.ym] = a.prevValue;
+  } else if(a.type==="editRow"){
+    var rows2 = state.clientsMonthly[a.ym]||[];
+    var r2 = rows2.filter(function(x){return x.id===a.rowId;})[0];
+    if(r2) CLIENT_FIELDS.forEach(function(f){ r2[f.key] = a.prev[f.key]; });
   }
   save(); renderAllKeepScroll("klienciScrollBox");
 }
@@ -6351,16 +6358,9 @@ function registerClientMapPin(name, city, category, source, targetState){
   return pin;
 }
 var clientMapFilter = "marketing";
+var clientMapView = "map"; // map | kosz
 function setClientMapFilter(v){ clientMapFilter = v; renderAll(); }
-function pinOffsetFor(seedStr, idx){
-  if(!idx) return {dx:0, dy:0};
-  var h = 0;
-  for(var i=0;i<seedStr.length;i++) h = (h*31 + seedStr.charCodeAt(i)) >>> 0;
-  h = (h + idx*97) >>> 0;
-  var angle = (h % 360) * Math.PI/180;
-  var r = 3.5 + (h % 5);
-  return {dx: Math.cos(angle)*r, dy: Math.sin(angle)*r};
-}
+function setClientMapView(v){ clientMapView = v; renderAll(); }
 function findContactCategory(name){
   var norm = normalizeName(name);
   var c = (state.crmContacts||[]).filter(function(x){ return !x.deletedAt && normalizeName(x.name)===norm; })[0];
@@ -6371,16 +6371,14 @@ function clientMapEntries(){
     return (state.crmContacts||[]).filter(function(c){ return !c.deletedAt && c.statusT4A==="klient"; })
       .map(function(c){ return {id:c.id, name:c.name, city:c.city, category:c.category, mode:"tool4arts"}; });
   }
-  return (state.clientMapPins||[]).map(function(p){
+  return (state.clientMapPins||[]).filter(function(p){ return !p.deletedAt; }).map(function(p){
     return {id:p.id, name:p.name, city:p.city, category: p.category || findContactCategory(p.name) || "", mode:"marketing"};
   });
 }
-function renderClientMapSection(){
+function clientMapGroupedByCity(){
   var entries = clientMapEntries();
   ensureCitiesGeocoded(entries.map(function(e){ return e.city; }).filter(Boolean));
-
-  var byCityCount = {};
-  var pins = [];
+  var groups = {}; var order = [];
   var stillLocating = 0, notFound = 0, noCity = 0;
   entries.forEach(function(e){
     if(!e.city){ noCity++; return; }
@@ -6389,17 +6387,24 @@ function renderClientMapSection(){
       if(cityLookupAttempted(e.city)) notFound++; else stillLocating++;
       return;
     }
-    var normC = normalizeCityName(r.name);
-    var idx = byCityCount[normC]||0; byCityCount[normC]=idx+1;
-    var off = pinOffsetFor(e.name, idx);
-    pins.push({id:e.id, mode:e.mode, name:e.name, city:r.name, category:e.category, coords:r.coords, off:off});
+    var key = normalizeCityName(r.name);
+    if(!groups[key]){ groups[key] = {key:key, cityName:r.name, coords:r.coords, entries:[]}; order.push(key); }
+    groups[key].entries.push(e);
   });
+  return {groups: order.map(function(k){ return groups[k]; }), stillLocating:stillLocating, notFound:notFound, noCity:noCity};
+}
+function renderClientMapSection(){
+  if(clientMapView==="kosz") return renderClientMapTrash();
+  var g = clientMapGroupedByCity();
 
-  var svgPins = pins.map(function(p){
-    var xy = projectLatLon(p.coords[0], p.coords[1]);
-    var cx = xy.x+p.off.dx, cy = xy.y+p.off.dy;
-    var label = escapeHtml(p.name)+" — "+escapeHtml(p.city);
-    return '<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="6" fill="#cf9b4a" stroke="#f0eef2" stroke-width="1" style="cursor:pointer" onclick="openClientPinModal(\''+p.mode+'\',\''+p.id+'\')"><title>'+label+'</title></circle>';
+  var svgPins = g.groups.map(function(grp){
+    var xy = projectLatLon(grp.coords[0], grp.coords[1]);
+    var n = grp.entries.length;
+    var label = n>1 ? (grp.cityName+" — "+n+" klientów") : (escapeHtml(grp.entries[0].name)+" — "+escapeHtml(grp.cityName));
+    var r = n>1 ? 12 : 10;
+    var circle = '<circle cx="'+xy.x.toFixed(1)+'" cy="'+xy.y.toFixed(1)+'" r="'+r+'" fill="#cf9b4a" stroke="#f0eef2" stroke-width="1.5" style="cursor:pointer" onclick="openClientPinModal(\''+grp.key+'\',0)"><title>'+label+'</title></circle>';
+    var countText = n>1 ? '<text x="'+xy.x.toFixed(1)+'" y="'+(xy.y+4).toFixed(1)+'" font-size="12" font-weight="700" fill="#1e1c22" text-anchor="middle" style="pointer-events:none">'+n+'</text>' : '';
+    return '<g style="cursor:pointer" onclick="openClientPinModal(\''+grp.key+'\',0)">'+circle+countText+'</g>';
   }).join("");
 
   var voivodeshipPaths = POLAND_VOIVODESHIPS.map(function(v){
@@ -6416,10 +6421,16 @@ function renderClientMapSection(){
       '</g>';
   }).join("");
 
-  var html = '<div class="chiprow" style="margin-bottom:14px">'+
+  var koszCount = (state.clientMapPins||[]).filter(function(p){ return p.deletedAt; }).length;
+  var html = '<div class="chiprow" style="margin-bottom:14px; justify-content:space-between; align-items:center">'+
+    '<div class="chiprow" style="margin:0">'+
     '<span class="chip'+(clientMapFilter==="marketing"?" active":"")+'" onclick="setClientMapFilter(\'marketing\')">Marketing</span>'+
     '<span class="chip'+(clientMapFilter==="tool4arts"?" active":"")+'" onclick="setClientMapFilter(\'tool4arts\')">tool4arts</span>'+
-    '</div>';
+    '</div>'+
+    '<div class="row" style="gap:10px">'+
+    (clientMapFilter==="marketing" ? '<button class="btn secondary small" onclick="openMapPinModal()">+ Dodaj miejsce</button>' : '')+
+    '<button class="linklike" onclick="setClientMapView(\'kosz\')">🗑 Kosz'+(koszCount?" ("+koszCount+")":"")+'</button>'+
+    '</div></div>';
 
   html += '<div class="card" style="padding:20px">';
   html += '<svg viewBox="0 0 '+POLAND_PROJ.viewW+' '+POLAND_PROJ.viewH+'" style="width:100%; max-width:560px; display:block; margin:0 auto">'+
@@ -6428,33 +6439,176 @@ function renderClientMapSection(){
     majorCityDots+
     svgPins+
     '</svg>';
+  var totalClients = g.groups.reduce(function(s,grp){ return s+grp.entries.length; }, 0);
   html += '<div class="row" style="gap:20px; margin-top:16px; flex-wrap:wrap; font-size:12.5px; color:var(--muted)">'+
-    '<span><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#cf9b4a; margin-right:6px; vertical-align:middle"></span>Klient ('+pins.length+')</span>'+
-    (stillLocating ? '<span>'+stillLocating+' miast jeszcze lokalizuję…</span>' : '')+
-    (notFound ? '<span title="Nie udało się rozpoznać tych nazw jako miast — sprawdź pisownię w Bazie kontaktów / Klienci">'+notFound+' miast nierozpoznanych</span>' : '')+
-    (noCity ? '<span title="Klienci bez podanej lokalizacji">'+noCity+' bez miasta</span>' : '')+
+    '<span><span style="display:inline-block; width:11px; height:11px; border-radius:50%; background:#cf9b4a; margin-right:6px; vertical-align:middle"></span>Klient ('+totalClients+' w '+g.groups.length+' miastach)</span>'+
+    (g.stillLocating ? '<span>'+g.stillLocating+' miast jeszcze lokalizuję…</span>' : '')+
+    (g.notFound ? '<span title="Nie udało się rozpoznać tych nazw jako miast — sprawdź pisownię w Bazie kontaktów / Klienci">'+g.notFound+' miast nierozpoznanych</span>' : '')+
+    (g.noCity ? '<span title="Klienci bez podanej lokalizacji">'+g.noCity+' bez miasta</span>' : '')+
     '</div>';
   html += '</div>';
   return html;
 }
+var __clientPinModalCtx = null;
 function closeClientPinModal(){
   var m = document.getElementById("clientPinModal");
   if(m) m.remove();
+  __clientPinModalCtx = null;
 }
-function openClientPinModal(mode, id){
+function openClientPinModal(cityKey, index){
   closeClientPinModal();
-  var entries = clientMapEntries();
-  var e = entries.filter(function(x){ return x.mode===mode && x.id===id; })[0];
-  if(!e) return;
+  var g = clientMapGroupedByCity();
+  var grp = g.groups.filter(function(x){ return x.key===cityKey; })[0];
+  if(!grp || !grp.entries.length) return;
+  var n = grp.entries.length;
+  index = ((index % n) + n) % n;
+  var e = grp.entries[index];
+  __clientPinModalCtx = {cityKey:cityKey, index:index};
+
+  var matchedContact = null;
+  if(e.mode==="tool4arts"){
+    matchedContact = (state.crmContacts||[]).filter(function(x){ return x.id===e.id && !x.deletedAt; })[0];
+  } else {
+    var norm = normalizeName(e.name);
+    matchedContact = (state.crmContacts||[]).filter(function(x){ return !x.deletedAt && normalizeName(x.name)===norm; })[0];
+  }
+
+  var navHtml = n>1 ? (
+    '<div class="row" style="justify-content:center; align-items:center; gap:14px; margin:4px 0 10px">'+
+    '<button class="linklike" onclick="clientPinModalNav(-1)" style="font-size:18px">◀</button>'+
+    '<span style="font-size:12px; color:var(--muted)">'+(index+1)+' z '+n+'</span>'+
+    '<button class="linklike" onclick="clientPinModalNav(1)" style="font-size:18px">▶</button>'+
+    '</div>'
+  ) : '';
+
+  var editButtons = (e.mode==="marketing") ?
+    '<button class="btn secondary small" onclick="openMapPinModal(\''+e.id+'\')">Edytuj</button>'+
+    '<button class="btn danger small" onclick="deleteMapPin(\''+e.id+'\')">Usuń</button>' : '';
+
+  var showInBazaBtn = matchedContact ?
+    '<button class="btn secondary small" onclick="crmJumpToContact(\''+matchedContact.id+'\')">Pokaż w bazie</button>' :
+    '<button class="btn secondary small" disabled title="Nie znaleziono odpowiadającego kontaktu w Bazie kontaktów" style="opacity:.4; cursor:not-allowed">Pokaż w bazie</button>';
+
   var html = '<div class="modal-overlay" id="clientPinModal" onclick="if(event.target===this) closeClientPinModal()">'+
     '<div class="modal-box card">'+
+    navHtml+
     '<h3>'+escapeHtml(e.name)+'</h3>'+
     '<div class="field"><label>Miasto</label><div>'+escapeHtml(e.city||"—")+'</div></div>'+
     '<div class="field"><label>Kategoria</label><div>'+escapeHtml(e.category||"—")+'</div></div>'+
-    '<div class="row" style="justify-content:flex-end; margin-top:14px">'+
+    '<div class="row" style="justify-content:flex-end; margin-top:14px; gap:8px; flex-wrap:wrap">'+
+    showInBazaBtn+
+    editButtons+
     '<button class="btn secondary small" onclick="closeClientPinModal()">Zamknij</button>'+
     '</div></div></div>';
   document.body.insertAdjacentHTML("beforeend", html);
+}
+function clientPinModalNav(delta){
+  if(!__clientPinModalCtx) return;
+  openClientPinModal(__clientPinModalCtx.cityKey, __clientPinModalCtx.index+delta);
+}
+function crmJumpToContact(contactId){
+  var c = (state.crmContacts||[]).filter(function(x){ return x.id===contactId && !x.deletedAt; })[0];
+  if(!c) return;
+  closeClientPinModal();
+  crmSubview = "baza";
+  crmNameFilter = c.name;
+  crmCategoryFilter = "all"; crmSystemFilter=""; crmT4AFilter=""; crmCityFilter=""; crmStatusFilter="";
+  currentTab = "crm";
+  renderAll();
+  setTimeout(function(){
+    var row = document.querySelector('[data-crm-row-id="'+c.id+'"]');
+    if(row){
+      row.scrollIntoView({block:"center", behavior:"smooth"});
+      row.classList.add("row-flash");
+      setTimeout(function(){ row.classList.remove("row-flash"); }, 2600);
+    }
+  }, 60);
+}
+function closeMapPinModal(){
+  var m = document.getElementById("mapPinModal");
+  if(m) m.remove();
+}
+function openMapPinModal(id){
+  closeClientPinModal();
+  closeMapPinModal();
+  var existing = id ? (state.clientMapPins||[]).filter(function(p){ return p.id===id; })[0] : null;
+  var isEdit = !!existing;
+  var html = '<div class="modal-overlay" id="mapPinModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj miejsce":"Nowe miejsce")+'</h3>'+
+    '<div class="field"><label>Nazwa</label><input type="text" id="mpName" value="'+escapeHtml(existing?existing.name:"")+'"></div>'+
+    '<div class="field"><label>Miasto</label><input type="text" id="mpCity" value="'+escapeHtml(existing?existing.city:"")+'"></div>'+
+    '<div class="field"><label>Kategoria</label><input type="text" id="mpCategory" value="'+escapeHtml(existing?existing.category:"")+'"></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    '<button class="btn secondary small" onclick="closeMapPinModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveMapPinModal(\''+(id||"")+'\')">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function saveMapPinModal(id){
+  var nameEl = document.getElementById("mpName");
+  if(!nameEl) return;
+  var name = nameEl.value.trim();
+  if(!name) return;
+  var city = document.getElementById("mpCity").value.trim();
+  var category = document.getElementById("mpCategory").value.trim();
+  if(!state.clientMapPins) state.clientMapPins = [];
+  if(id){
+    var p = state.clientMapPins.filter(function(x){ return x.id===id; })[0];
+    if(p){ p.name=name; p.city=city; p.category=category; }
+  } else {
+    state.clientMapPins.push({id:uid("cmp"), name:name, city:city, category:category, source:"app"});
+  }
+  closeMapPinModal();
+  save(); renderAll();
+}
+function deleteMapPin(id){
+  if(!confirm("Przenieść to miejsce do kosza mapy? Możesz je stamtąd przywrócić przez 30 dni.")) return;
+  var p = (state.clientMapPins||[]).filter(function(x){ return x.id===id; })[0];
+  if(!p) return;
+  p.deletedAt = todayStr();
+  closeClientPinModal();
+  save(); renderAll();
+}
+function restoreMapPin(id){
+  var p = (state.clientMapPins||[]).filter(function(x){ return x.id===id; })[0];
+  if(!p) return;
+  p.deletedAt = null;
+  save(); renderAll();
+}
+function purgeMapPin(id){
+  if(!confirm("Usunąć na stałe? Tego nie można cofnąć.")) return;
+  state.clientMapPins = (state.clientMapPins||[]).filter(function(p){ return p.id!==id; });
+  save(); renderAll();
+}
+function purgeAllMapPins(){
+  var count = (state.clientMapPins||[]).filter(function(p){ return p.deletedAt; }).length;
+  if(!count) return;
+  if(!confirm("Trwale usunąć wszystkie ("+count+") miejsca z kosza mapy? Tego nie można cofnąć.")) return;
+  state.clientMapPins = (state.clientMapPins||[]).filter(function(p){ return !p.deletedAt; });
+  save(); renderAll();
+}
+function renderClientMapTrash(){
+  var now = Date.now();
+  var items = (state.clientMapPins||[]).filter(function(p){ return p.deletedAt; });
+  items.sort(function(a,b){ return a.deletedAt < b.deletedAt ? 1 : -1; });
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">'+
+    '<button class="linklike" onclick="setClientMapView(\'map\')">← Wróć do mapy</button>'+
+    (items.length ? '<button class="btn danger small" onclick="purgeAllMapPins()">Wyczyść wszystkie</button>' : '')+
+    '</div>';
+  html += '<div class="stub-note">Usunięte miejsca z mapy trafiają tutaj na 30 dni, potem znikają na stałe.</div>';
+  html += '<div class="card"><table><thead><tr><th>Miejsce</th><th>Miasto</th><th>Usunięto</th><th>Zostało dni</th><th></th></tr></thead><tbody>';
+  if(!items.length){ html += '<tr><td colspan="5"><div class="empty">Kosz mapy jest pusty.</div></td></tr>'; }
+  items.forEach(function(p){
+    var daysLeft = Math.max(0, 30 - Math.floor((now - new Date(p.deletedAt+"T00:00:00").getTime())/86400000));
+    html += '<tr><td>'+escapeHtml(p.name)+'</td>'+
+      '<td>'+escapeHtml(p.city||"—")+'</td>'+
+      '<td>'+fmtDate(p.deletedAt)+'</td>'+
+      '<td>'+daysLeft+'</td>'+
+      '<td><button class="linklike" onclick="restoreMapPin(\''+p.id+'\')">Przywróć</button> <button class="linklike danger" onclick="purgeMapPin(\''+p.id+'\')">Usuń na stałe</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
 }
 
 function renderKlienci(el){
@@ -6465,7 +6619,7 @@ function renderKlienci(el){
   var yr = String(klienciYear);
 
   var topBtns = '<button class="btn secondary" onclick="undoKlienci()">↺ Cofnij</button>';
-  if(klienciTab!=="TOTAL" && klienciTab!=="MAPA") topBtns += ' <button class="btn" onclick="addClientRow()">+ Klient</button>';
+  if(klienciTab!=="TOTAL" && klienciTab!=="MAPA") topBtns += ' <button class="btn" onclick="openClientRowModal(klienciTab, null)">+ Klient</button>';
   setTopActions(topBtns);
 
   var html = '';
@@ -6544,21 +6698,87 @@ function renderClientFieldInput(ym, r, f){
   return '<input type="text" value="'+escapeHtml(val||"")+'" onchange="'+onCh+'" style="min-width:120px">';
 }
 
+var klientSortCol = "nazwa";
+var klientSortDir = "asc";
+var klientNameFilter = "";
+var klientLocFilter = "";
+function klientSetSort(col){
+  if(klientSortCol===col){ klientSortDir = (klientSortDir==="asc") ? "desc" : "asc"; }
+  else { klientSortCol = col; klientSortDir = "asc"; }
+  renderAll();
+}
+function klientSetNameFilter(v){ klientNameFilter = v; renderAllKeepFocus("klientNameFilterInput"); }
+function klientSetLocFilter(v){ klientLocFilter = v; renderAllKeepFocus("klientLocFilterInput"); }
+function klientFieldMatchesFilter(value, filterText){
+  if(!filterText) return true;
+  var f = filterText.trim().toLowerCase();
+  if(!f) return true;
+  return (value||"").toString().toLowerCase().indexOf(f) !== -1;
+}
+function klientSortValue(r, col){
+  if(col==="koniecKampanii") return computeKoniecDate(r) || "";
+  var v = r[col];
+  if(typeof v === "number") return v;
+  return (v||"").toString().toLowerCase();
+}
+function klientCellDisplay(r, f){
+  var val = r[f.key];
+  if(f.key==="faktura"){
+    if(!val) return '<span style="color:var(--muted)">—</span>';
+    var fColor = INVOICE_STATUS_COLOR[val] || null;
+    return '<span style="'+(fColor?'color:'+fColor+'; font-weight:600':'')+'">'+escapeHtml(val)+'</span>';
+  }
+  if(f.key==="koniecKampanii"){
+    var kVal = computeKoniecDate(r);
+    var kColor = resolvedDateColor(r, f.key);
+    if(!kVal) return '<span style="color:var(--muted)">—</span>';
+    return '<span title="Wyliczane automatycznie: Start Współpracy + Okres (dni)" style="'+(kColor?'color:'+kColor+'; font-weight:600':'')+'">'+kVal+'</span>';
+  }
+  if(f.type==="date"){
+    if(!val) return '<span style="color:var(--muted)">—</span>';
+    var color = resolvedDateColor(r, f.key);
+    return '<span style="'+(color?'color:'+color+'; font-weight:600':'')+'">'+val+'</span>';
+  }
+  if(f.type==="number") return (val||0).toLocaleString("pl-PL");
+  if(!val) return '<span style="color:var(--muted)">—</span>';
+  return '<span title="'+escapeHtml(val)+'">'+escapeHtml(val)+'</span>';
+}
 function renderKlienciMonth(ym){
   if(!state.clientsMonthly[ym]) state.clientsMonthly[ym] = [];
-  var rows = state.clientsMonthly[ym];
-  var html = '<div class="card"><div id="klienciScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
-    '<th>Lp.</th><th style="position:sticky; left:0; background:var(--bg)">Nazwa</th>';
-  CLIENT_FIELDS.slice(1).forEach(function(f){ html += '<th>'+f.label+'</th>'; });
-  html += '<th></th></tr></thead><tbody>';
-  if(!rows.length){ html += '<tr><td colspan="'+(CLIENT_FIELDS.length+2)+'" style="color:var(--muted)">Brak klientów w tym miesiącu. Dodaj przyciskiem "+ Klient".</td></tr>'; }
-  rows.forEach(function(r, idx){
-    html += '<tr><td>'+(idx+1)+'.</td>';
+  var allRows = state.clientsMonthly[ym];
+  var filtered = allRows.filter(function(r){
+    return klientFieldMatchesFilter(r.nazwa, klientNameFilter) && klientFieldMatchesFilter(r.lokalizacja, klientLocFilter);
+  });
+  var sorted = filtered.slice().sort(function(a,b){
+    var va = klientSortValue(a, klientSortCol), vb = klientSortValue(b, klientSortCol);
+    var cmp;
+    if(typeof va === "number" && typeof vb === "number") cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
+    return klientSortDir==="asc" ? cmp : -cmp;
+  });
+
+  var html = '<div class="row" style="margin-bottom:14px; gap:10px; flex-wrap:wrap">';
+  html += '<div style="position:relative"><input type="text" id="klientNameFilterInput" value="'+escapeHtml(klientNameFilter)+'" placeholder="Nazwa: wpisz aby szukać…" oninput="klientSetNameFilter(this.value)" style="width:190px"></div>';
+  html += '<div style="position:relative"><input type="text" id="klientLocFilterInput" value="'+escapeHtml(klientLocFilter)+'" placeholder="Lokalizacja: wpisz aby szukać…" oninput="klientSetLocFilter(this.value)" style="width:190px"></div>';
+  html += '</div>';
+
+  html += '<div class="card"><div id="klienciScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr>'+
+    '<th>Lp.</th>';
+  CLIENT_FIELDS.forEach(function(f, fi){
+    var arrow = klientSortCol===f.key ? (klientSortDir==="asc" ? " ▲" : " ▼") : "";
+    var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg); cursor:pointer; user-select:none"' : ' style="cursor:pointer; user-select:none"';
+    html += '<th'+stickyStyle+' onclick="klientSetSort(\''+f.key+'\')">'+f.label+arrow+'</th>';
+  });
+  html += '<th>Koniec Współpracy</th><th></th></tr></thead><tbody>';
+  if(!sorted.length){ html += '<tr><td colspan="'+(CLIENT_FIELDS.length+3)+'" style="color:var(--muted)">'+(allRows.length?'Brak klientów pasujących do filtrów.':'Brak klientów w tym miesiącu. Dodaj przyciskiem "+ Klient".')+'</td></tr>'; }
+  sorted.forEach(function(r, idx){
+    html += '<tr data-klient-row-id="'+r.id+'"><td>'+(idx+1)+'.</td>';
     CLIENT_FIELDS.forEach(function(f, fi){
       var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg)"' : '';
-      html += '<td'+stickyStyle+'>'+renderClientFieldInput(ym, r, f)+'</td>';
+      html += '<td'+stickyStyle+'>'+klientCellDisplay(r, f)+'</td>';
     });
-    html += '<td><button class="linklike danger" onclick="deleteClientRow(\''+ym+'\',\''+r.id+'\')">Usuń</button></td></tr>';
+    html += '<td>'+klientCellDisplay(r, {key:"koniecKampanii"})+'</td>';
+    html += '<td><button class="linklike" onclick="openClientRowModal(\''+ym+'\',\''+r.id+'\')">Edytuj</button></td></tr>';
   });
   html += '</tbody></table></div></div>';
 
@@ -6568,6 +6788,76 @@ function renderKlienciMonth(ym){
     '<tr><td>Łączna Ilość Klientów</td><td style="text-align:right; font-weight:700">'+s.laczna+'</td></tr>'+
     '</table></div>';
   return html;
+}
+var __klientModalCtx = null;
+function closeClientRowModal(){
+  var m = document.getElementById("klientRowModal");
+  if(m) m.remove();
+  __klientModalCtx = null;
+}
+function klientFieldInputHtml(f, val){
+  var id = "krm_"+f.key;
+  if(f.key==="faktura" || f.type==="select"){
+    var opts = f.options.map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(val===o?" selected":"")+'>'+(o||"—")+'</option>'; }).join("");
+    return '<select id="'+id+'">'+opts+'</select>';
+  }
+  if(f.type==="number") return '<input type="number" id="'+id+'" value="'+(val||0)+'">';
+  if(f.type==="date") return '<input type="date" id="'+id+'" value="'+escapeHtml(val||"")+'">';
+  return '<input type="text" id="'+id+'" value="'+escapeHtml(val||"")+'">';
+}
+function openClientRowModal(ym, rowId){
+  closeClientRowModal();
+  var existing = rowId ? (state.clientsMonthly[ym]||[]).filter(function(x){ return x.id===rowId; })[0] : null;
+  var isEdit = !!existing;
+  __klientModalCtx = {ym:ym, rowId:rowId};
+  var html = '<div class="modal-overlay" id="klientRowModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj klienta":"Nowy klient")+'</h3>';
+  CLIENT_FIELDS.forEach(function(f){
+    var val = existing ? existing[f.key] : (f.type==="number" ? 0 : "");
+    html += '<div class="field"><label>'+f.label+'</label>'+klientFieldInputHtml(f, val)+'</div>';
+  });
+  html += '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteClientRowModal()">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeClientRowModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveClientRowModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function saveClientRowModal(){
+  var ctx = __klientModalCtx;
+  if(!ctx) return;
+  var nameEl = document.getElementById("krm_nazwa");
+  if(!nameEl) return;
+  var vals = {};
+  CLIENT_FIELDS.forEach(function(f){
+    var el = document.getElementById("krm_"+f.key);
+    if(!el) return;
+    vals[f.key] = (f.type==="number") ? (+el.value||0) : el.value.trim();
+  });
+  if(!vals.nazwa) return;
+  if(!state.clientsMonthly[ctx.ym]) state.clientsMonthly[ctx.ym] = [];
+  var rows = state.clientsMonthly[ctx.ym];
+  if(ctx.rowId){
+    var r = rows.filter(function(x){ return x.id===ctx.rowId; })[0];
+    if(r){
+      pushKlienciUndo({type:"editRow", ym:ctx.ym, rowId:r.id, prev: Object.assign({}, r)});
+      CLIENT_FIELDS.forEach(function(f){ r[f.key] = vals[f.key]; });
+    }
+  } else {
+    var row = mkClient(vals.nazwa, vals.lokalizacja, vals.faktura, vals.statusKlienta, vals.wynagrodzenie, vals.budzetRekl, vals.iloscWsp, vals.okresDni, vals.etapWsp, vals.startKampanii, vals.koniecKampanii, "", "", vals.notatki);
+    rows.push(row);
+    pushKlienciUndo({type:"add", ym:ctx.ym, rowId:row.id});
+  }
+  registerClientMapPin(vals.nazwa, vals.lokalizacja, null, "app");
+  closeClientRowModal();
+  save(); renderAll();
+}
+function deleteClientRowModal(){
+  var ctx = __klientModalCtx;
+  if(!ctx || !ctx.rowId) return;
+  closeClientRowModal();
+  deleteClientRow(ctx.ym, ctx.rowId);
 }
 
 function renderKlienciTotal(yr){
@@ -7780,7 +8070,7 @@ function renderCrmBaza(){
   }
   sorted.forEach(function(c){
     var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
-    html += '<tr>'+
+    html += '<tr data-crm-row-id="'+c.id+'">'+
       '<td><div style="'+CLAMP2+'" title="'+escapeHtml(c.name||"")+'">'+escapeHtml(c.name||"")+'</div></td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.city)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.category)+'</td>'+
