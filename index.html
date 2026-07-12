@@ -879,14 +879,14 @@ function migrateState(s){
   if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
   if(!s.geoCache) s.geoCache = {};
   if(!s.clientMapPins) s.clientMapPins = [];
-  if(!s._clientMapPinsSeeded){
-    CLIENT_MAP_IMPORT_SEED.forEach(function(imp){ registerClientMapPin(imp.name, imp.city, imp.category, "import"); });
+  if(!s._clientMapPinsSeededV2){
+    CLIENT_MAP_IMPORT_SEED.forEach(function(imp){ registerClientMapPin(imp.name, imp.city, imp.category, "import", s); });
     Object.keys(s.clientsMonthly||{}).forEach(function(ym){
       (s.clientsMonthly[ym]||[]).forEach(function(r){
-        if(r.nazwa) registerClientMapPin(r.nazwa, r.lokalizacja, null, "app");
+        if(r.nazwa) registerClientMapPin(r.nazwa, r.lokalizacja, null, "app", s);
       });
     });
-    s._clientMapPinsSeeded = true;
+    s._clientMapPinsSeededV2 = true;
   }
   if(!s.clientOps) s.clientOps = {clients:[], tasks:[], screenshots:[]};
   if(!s.clientOps.clients) s.clientOps.clients = [];
@@ -6334,19 +6334,20 @@ function normalizeName(s){
     .replace(/ń/g,"n").replace(/ó/g,"o").replace(/ś/g,"s").replace(/ź/g,"z").replace(/ż/g,"z")
     .replace(/\s+/g," ");
 }
-function registerClientMapPin(name, city, category, source){
+function registerClientMapPin(name, city, category, source, targetState){
+  var ts = targetState || state;
   name = (name||"").toString().trim();
   if(!name) return null;
-  if(!state.clientMapPins) state.clientMapPins = [];
+  if(!ts.clientMapPins) ts.clientMapPins = [];
   var norm = normalizeName(name);
-  var existing = state.clientMapPins.filter(function(p){ return normalizeName(p.name)===norm; })[0];
+  var existing = ts.clientMapPins.filter(function(p){ return normalizeName(p.name)===norm; })[0];
   if(existing){
     if(!existing.city && city) existing.city = (city||"").trim();
     if(!existing.category && category) existing.category = category;
     return existing;
   }
   var pin = {id:uid("cmp"), name:name, city:(city||"").trim(), category:category||"", source:source||"app"};
-  state.clientMapPins.push(pin);
+  ts.clientMapPins.push(pin);
   return pin;
 }
 var clientMapFilter = "marketing";
