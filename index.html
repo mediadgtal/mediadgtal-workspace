@@ -6794,8 +6794,12 @@ function closeClientRowModal(){
   if(m) m.remove();
   __klientModalCtx = null;
 }
-function klientFieldInputHtml(f, val){
+function klientFieldInputHtml(f, val, row){
   var id = "krm_"+f.key;
+  if(f.key==="koniecKampanii"){
+    var kVal = row ? computeKoniecDate(row) : "";
+    return '<div title="Wyliczane automatycznie: Start Współpracy + Okres (dni)" style="padding:9px 6px; color:var(--muted)">'+(kVal||"—")+'</div>';
+  }
   if(f.key==="faktura" || f.type==="select"){
     var opts = f.options.map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(val===o?" selected":"")+'>'+(o||"—")+'</option>'; }).join("");
     return '<select id="'+id+'">'+opts+'</select>';
@@ -6814,7 +6818,7 @@ function openClientRowModal(ym, rowId){
     '<h3>'+(isEdit?"Edytuj klienta":"Nowy klient")+'</h3>';
   CLIENT_FIELDS.forEach(function(f){
     var val = existing ? existing[f.key] : (f.type==="number" ? 0 : "");
-    html += '<div class="field"><label>'+f.label+'</label>'+klientFieldInputHtml(f, val)+'</div>';
+    html += '<div class="field"><label>'+f.label+'</label>'+klientFieldInputHtml(f, val, existing)+'</div>';
   });
   html += '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
     (isEdit ? '<button class="btn danger small" onclick="deleteClientRowModal()">Usuń</button>' : '')+
