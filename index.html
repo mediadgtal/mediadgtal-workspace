@@ -6232,8 +6232,12 @@ function resolveCityCoords(rawName){
   var norm = normalizeCityName(rawName);
   var idx = getCityNormIndex();
   if(idx[norm]) return {name: idx[norm], coords: POLAND_CITIES[idx[norm]]};
-  if(state.geoCache && state.geoCache[norm]) return {name: rawName.trim(), coords: state.geoCache[norm]};
+  if(state.geoCache && state.geoCache[norm] && state.geoCache[norm]!=="404") return {name: rawName.trim(), coords: state.geoCache[norm]};
   return null;
+}
+function cityLookupAttempted(rawName){
+  var norm = normalizeCityName(rawName);
+  return !!(state.geoCache && (norm in state.geoCache));
 }
 var geocodeQueueRunning = false;
 function ensureCitiesGeocoded(names){
@@ -6243,7 +6247,7 @@ function ensureCitiesGeocoded(names){
     var norm = normalizeCityName(n);
     if(!n || seen[norm]) return;
     seen[norm] = true;
-    if(!resolveCityCoords(n)) pending.push(n);
+    if(!resolveCityCoords(n) && !cityLookupAttempted(n)) pending.push(n);
   });
   if(!pending.length || geocodeQueueRunning) return;
   geocodeQueueRunning = true;
@@ -6251,16 +6255,21 @@ function ensureCitiesGeocoded(names){
   function next(){
     if(i >= pending.length){ geocodeQueueRunning = false; save(); renderAll(); return; }
     var name = pending[i]; i++;
-    fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pl&q="+encodeURIComponent(name))
+    var controller = (typeof AbortController!=="undefined") ? new AbortController() : null;
+    var timeoutId = setTimeout(function(){ if(controller) controller.abort(); }, 6000);
+    fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pl&q="+encodeURIComponent(name), controller ? {signal:controller.signal} : {})
       .then(function(r){ return r.json(); })
       .then(function(json){
+        if(!state.geoCache) state.geoCache = {};
+        var norm = normalizeCityName(name);
         if(json && json[0]){
-          if(!state.geoCache) state.geoCache = {};
-          state.geoCache[normalizeCityName(name)] = [parseFloat(json[0].lat), parseFloat(json[0].lon)];
+          state.geoCache[norm] = [parseFloat(json[0].lat), parseFloat(json[0].lon)];
+        } else {
+          state.geoCache[norm] = "404";
         }
       })
-      .catch(function(){})
-      .then(function(){ setTimeout(next, 1100); });
+      .catch(function(){ /* transient failure (timeout/network) — leave uncached so it's retried next time */ })
+      .then(function(){ clearTimeout(timeoutId); setTimeout(next, 1100); });
   }
   next();
 }
@@ -6298,14 +6307,20 @@ function renderClientMapSection(){
   ensureCitiesGeocoded(clientCities.concat(whiteSpots));
 
   var pins = [];
-  var unresolved = 0;
-  clientCities.forEach(function(c){
+  var stillLocating = 0, notFound = 0;
+  function classify(c){
     var r = resolveCityCoords(c);
-    if(r) pins.push({name:r.name, coords:r.coords, type:"client"}); else unresolved++;
+    if(r) return r;
+    if(cityLookupAttempted(c)) notFound++; else stillLocating++;
+    return null;
+  }
+  clientCities.forEach(function(c){
+    var r = classify(c);
+    if(r) pins.push({name:r.name, coords:r.coords, type:"client"});
   });
   whiteSpots.forEach(function(c){
-    var r = resolveCityCoords(c);
-    if(r) pins.push({name:r.name, coords:r.coords, type:"blank"}); else unresolved++;
+    var r = classify(c);
+    if(r) pins.push({name:r.name, coords:r.coords, type:"blank"});
   });
 
   var svgPins = pins.map(function(p){
@@ -6331,7 +6346,8 @@ function renderClientMapSection(){
   html += '<div class="row" style="gap:20px; margin-top:16px; flex-wrap:wrap; font-size:12.5px; color:var(--muted)">'+
     '<span><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#cf9b4a; margin-right:6px; vertical-align:middle"></span>Klient ('+clientCities.length+')</span>'+
     '<span><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#4a4650; border:1px solid #8a8390; margin-right:6px; vertical-align:middle"></span>Biała plama ('+whiteSpots.length+')</span>'+
-    (unresolved ? '<span>'+unresolved+' miast jeszcze lokalizuję…</span>' : '')+
+    (stillLocating ? '<span>'+stillLocating+' miast jeszcze lokalizuję…</span>' : '')+
+    (notFound ? '<span title="Nie udało się rozpoznać tych nazw jako miast — sprawdź pisownię w Bazie kontaktów">'+notFound+' miast nierozpoznanych</span>' : '')+
     '</div>';
   html += '</div>';
   return html;
