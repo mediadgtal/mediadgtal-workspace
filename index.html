@@ -6769,15 +6769,14 @@ function renderKlienciMonth(ym){
     var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg); cursor:pointer; user-select:none"' : ' style="cursor:pointer; user-select:none"';
     html += '<th'+stickyStyle+' onclick="klientSetSort(\''+f.key+'\')">'+f.label+arrow+'</th>';
   });
-  html += '<th>Koniec Współpracy</th><th></th></tr></thead><tbody>';
-  if(!sorted.length){ html += '<tr><td colspan="'+(CLIENT_FIELDS.length+3)+'" style="color:var(--muted)">'+(allRows.length?'Brak klientów pasujących do filtrów.':'Brak klientów w tym miesiącu. Dodaj przyciskiem "+ Klient".')+'</td></tr>'; }
+  html += '<th></th></tr></thead><tbody>';
+  if(!sorted.length){ html += '<tr><td colspan="'+(CLIENT_FIELDS.length+2)+'" style="color:var(--muted)">'+(allRows.length?'Brak klientów pasujących do filtrów.':'Brak klientów w tym miesiącu. Dodaj przyciskiem "+ Klient".')+'</td></tr>'; }
   sorted.forEach(function(r, idx){
     html += '<tr data-klient-row-id="'+r.id+'"><td>'+(idx+1)+'.</td>';
     CLIENT_FIELDS.forEach(function(f, fi){
       var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg)"' : '';
       html += '<td'+stickyStyle+'>'+klientCellDisplay(r, f)+'</td>';
     });
-    html += '<td>'+klientCellDisplay(r, {key:"koniecKampanii"})+'</td>';
     html += '<td><button class="linklike" onclick="openClientRowModal(\''+ym+'\',\''+r.id+'\')">Edytuj</button></td></tr>';
   });
   html += '</tbody></table></div></div>';
