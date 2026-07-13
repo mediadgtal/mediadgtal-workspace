@@ -565,6 +565,7 @@ var TABS = [
   {id:"facebook", label:"Facebook", group:"Social Media"},
   {id:"nawyki", label:"Nawyki", group:"Narzędzia"},
   {id:"klienci", label:"Klienci", group:"Narzędzia"},
+  {id:"audyt", label:"Auto Audyt", group:"Narzędzia"},
   {id:"crm", label:"Baza kontaktów", group:"Narzędzia"},
   {id:"clientops", label:"Obsługa Klientów", group:"Narzędzia"},
   {id:"agent", label:"Agent AI", group:"Narzędzia"},
@@ -584,7 +585,8 @@ var TAB_ICON_SVG = {
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   crm: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>',
   clientops: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v3h8V3"/><polyline points="8 13 10.5 15.5 16 10"/></svg>',
-  agent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.8 4.4L18 8l-4.2 1.6L12 14l-1.8-4.4L6 8l4.2-1.6z"/><path d="M19 15l.9 2.2L22 18l-2.1.8L19 21l-.9-2.2L16 18l2.1-.8z"/></svg>'
+  agent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.8 4.4L18 8l-4.2 1.6L12 14l-1.8-4.4L6 8l4.2-1.6z"/><path d="M19 15l.9 2.2L22 18l-2.1.8L19 21l-.9-2.2L16 18l2.1-.8z"/></svg>',
+  audyt: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6.5"/><line x1="15" y1="15" x2="21" y2="21"/><polyline points="7 10 9 12 13 8"/></svg>'
 };
 var SOCIAL_TILE_ICON_SVG = {
   facebook: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
@@ -1853,6 +1855,8 @@ function defaultState(){
 
   s.clientOps = {clients:[], tasks:[], screenshots:[]};
 
+  s.audits = [];
+
   return s;
 }
 
@@ -1911,10 +1915,11 @@ var RENDERERS = {
   crm: renderCRM,
   clientops: renderClientOps,
   agent: renderAgentAI,
-  ceo: renderCEO
+  ceo: renderCEO,
+  audyt: renderAudyt
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
 
 function renderAll(){
   renderNav();
@@ -6070,6 +6075,205 @@ function deleteClientOpsScreenshot(id){
   if(!confirm("Usunąć ten screenshot i jego analizę?")) return;
   state.clientOps.screenshots = state.clientOps.screenshots.filter(function(x){return x.id!==id;});
   save(); renderAll();
+}
+
+/* ================= Auto Audyt — logika ================= */
+var AUDIT_SYSTEM_PROMPT = "Jesteś doświadczonym konsultantem marketingowym pracującym dla agencji MediaDGtal, która pozyskuje klientów w branży tanecznej: studia/szkoły tańca, studia pole dance, jogi i pilatesu (klienci B2B) oraz niezależni instruktorzy pole dance/stretching (klienci B2C, zwykle bez zarejestrowanej firmy). "+
+  "Oferta MediaDGtal, do której masz dopasować rekomendacje: "+
+  "(1) sam organiczny wzrost na Instagramie — plan treści, optymalizacja profilu, obsługa DM, automatyzacja ManyChat, cotygodniowe konsultacje: 2000 zł/msc (nowy klient, umowa 3 mies.) lub 1000 zł/msc (klient powracający, umowa 6 mies.) dla studiów; 500 zł/msc dla niezależnych instruktorów; "+
+  "(2) wzrost + reklamy Meta Ads z gwarancją nowych klientów w umowie — 3500 zł/msc (nowy) lub 2000 zł/msc (powracający) dla studiów z gwarancją +10 nowych klientów/msc; 1000 zł/msc dla instruktorów z gwarancją +5 nowych klientów/msc; "+
+  "(3) nowy, rozwijany kierunek: uczenie właściciela/instruktora samodzielnego tworzenia organicznych treści i budowania strony zamiast prowadzenia wzrostu za niego; "+
+  "(4) od września 2026 Damian sprzedaje też 'tool4arts' — system CRM do zapisów na zajęcia i płatności online dla szkół tańca/studiów — warto to zaproponować, jeśli podmiot nie ma widocznego systemu rezerwacji/płatności online. "+
+  "\n\nDostajesz link do strony internetowej / Instagrama / Facebooka potencjalnego klienta i/lub zrzut ekranu jego profilu lub strony. Twoje zadanie: zrobić krótki, praktyczny audyt marketingowy PO POLSKU, który pomoże Damianowi ocenić ten kontakt PRZED pierwszym kontaktem sprzedażowym. "+
+  "Instagram i Facebook renderują treść dynamicznie w JavaScript, więc pobranie linka może zwrócić bardzo ograniczoną zawartość (czasem tylko podstawowe metadane) — jeśli tak się stanie, napisz to wprost i oceniaj wyłącznie na podstawie tego, co faktycznie udało się zobaczyć (z linku i/lub załączonego zrzutu ekranu). Nigdy nie zmyślaj szczegółów, których nie widziałeś. "+
+  "\n\nOdpowiedz w tym formacie (nagłówki pogrubione markdownem):\n"+
+  "**Podsumowanie** — 1-2 zdania.\n"+
+  "**Obecność online** — co faktycznie widać: strona/social media, spójność wizualna, częstotliwość i jakość treści, czy jest link do zapisów/kontaktu.\n"+
+  "**Mocne strony**\n"+
+  "**Braki i słabe strony**\n"+
+  "**Sugerowana oferta MediaDGtal** — wskaż konkretnie, którą z powyższych opcji (organiczny wzrost / wzrost+reklamy / edukacja treści / tool4arts) i dlaczego akurat tę.\n"+
+  "**Potencjał klienta**: Wysoki / Średni / Niski — jednozdaniowe uzasadnienie.\n"+
+  "Bądź konkretny i zwięzły, unikaj ogólników.";
+function auditDetectTargetType(url){
+  if(!url) return "Zrzut ekranu";
+  var u = url.toLowerCase();
+  if(u.indexOf("instagram.com")!==-1) return "Instagram";
+  if(u.indexOf("facebook.com")!==-1 || u.indexOf("fb.com")!==-1 || u.indexOf("fb.watch")!==-1) return "Facebook";
+  return "Strona WWW";
+}
+function performAudit(url, base64, mediaType){
+  var key = localStorage.getItem("mdgtal_anthropic_key");
+  if(!key) return Promise.reject(new Error("Brak klucza API Anthropic — ustaw go w zakładce \"Obsługa Klientów\" → Ustawienia AI."));
+  var contentBlocks = [];
+  if(base64) contentBlocks.push({type:"image", source:{type:"base64", media_type:mediaType, data:base64}});
+  contentBlocks.push({type:"text", text: url ? ("Zrób audyt tego podmiotu. Link do sprawdzenia: "+url) : "Zrób audyt na podstawie wyłącznie załączonego zrzutu ekranu."});
+  var body = {
+    model:"claude-opus-4-8",
+    max_tokens:1500,
+    system: AUDIT_SYSTEM_PROMPT,
+    messages:[{role:"user", content:contentBlocks}]
+  };
+  if(url) body.tools = [{type:"web_fetch_20260209", name:"web_fetch", max_uses:3}];
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{
+      "x-api-key": key,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true",
+      "content-type":"application/json"
+    },
+    body: JSON.stringify(body)
+  }).then(function(r){
+    if(!r.ok){
+      return r.json().catch(function(){return null;}).then(function(errBody){
+        var msg = (errBody && errBody.error && errBody.error.message) || ("HTTP "+r.status);
+        throw new Error("Anthropic API: "+msg);
+      });
+    }
+    return r.json();
+  }).then(function(data){
+    var text = (data.content||[]).filter(function(b){ return b.type==="text"; }).map(function(b){ return b.text||""; }).join("\n").trim();
+    return text || "Brak odpowiedzi od modelu.";
+  });
+}
+var auditExpandedId = null;
+var auditPendingFile = null;
+function auditPickScreenshot(inputEl){
+  var file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  auditPendingFile = file;
+  var lbl = document.getElementById("auditFileLabel");
+  if(lbl) lbl.textContent = file.name;
+}
+function runAudit(){
+  var urlEl = document.getElementById("auditUrlInput");
+  var nameEl = document.getElementById("auditNameInput");
+  var url = urlEl ? urlEl.value.trim() : "";
+  var name = nameEl ? nameEl.value.trim() : "";
+  var file = auditPendingFile;
+  if(!url && !file){
+    var statusEl = document.getElementById("auditRunStatus");
+    if(statusEl) statusEl.textContent = "Podaj link albo dodaj zrzut ekranu.";
+    return;
+  }
+  var rec = {
+    id: uid("audit"), name: name || "", url: url || "",
+    targetType: auditDetectTargetType(url), hadScreenshot: !!file,
+    note: "", status: "wtoku", errorMsg: "", createdAt: todayStr()
+  };
+  state.audits.unshift(rec);
+  auditExpandedId = rec.id;
+  if(urlEl) urlEl.value = "";
+  if(nameEl) nameEl.value = "";
+  auditPendingFile = null;
+  save(); renderAll();
+  var runIt = function(base64, mediaType){
+    performAudit(url, base64, mediaType).then(function(text){
+      rec.note = text;
+      rec.status = "gotowy";
+      save(); renderAll();
+    }).catch(function(err){
+      rec.status = "blad";
+      rec.errorMsg = (err && err.message) ? err.message : "Nie udało się wykonać audytu.";
+      save(); renderAll();
+    });
+  };
+  if(file){
+    fileToBase64(file).then(function(b64){ runIt(b64, file.type||"image/jpeg"); }).catch(function(){
+      rec.status = "blad"; rec.errorMsg = "Nie udało się odczytać pliku."; save(); renderAll();
+    });
+  } else {
+    runIt(null, null);
+  }
+}
+function toggleAuditExpand(id){
+  auditExpandedId = (auditExpandedId===id) ? null : id;
+  renderAll();
+}
+function saveAuditNote(id){
+  var rec = state.audits.filter(function(a){ return a.id===id; })[0];
+  if(!rec) return;
+  var ta = document.getElementById("auditNoteArea_"+id);
+  if(!ta) return;
+  rec.note = ta.value;
+  save(); renderAll();
+}
+function deleteAudit(id){
+  if(!confirm("Usunąć ten audyt?")) return;
+  state.audits = state.audits.filter(function(a){ return a.id!==id; });
+  if(auditExpandedId===id) auditExpandedId = null;
+  save(); renderAll();
+}
+function rerunAudit(id){
+  var rec = state.audits.filter(function(a){ return a.id===id; })[0];
+  if(!rec || !rec.url) return;
+  rec.status = "wtoku"; rec.errorMsg = "";
+  save(); renderAll();
+  performAudit(rec.url, null, null).then(function(text){
+    rec.note = text; rec.status = "gotowy";
+    save(); renderAll();
+  }).catch(function(err){
+    rec.status = "blad";
+    rec.errorMsg = (err && err.message) ? err.message : "Nie udało się wykonać audytu.";
+    save(); renderAll();
+  });
+}
+function auditStatusTag(rec){
+  if(rec.status==="wtoku") return '<span class="tag" style="background:#2a2830; color:var(--muted)">Analizuję…</span>';
+  if(rec.status==="blad") return '<span class="tag" style="background:#3a2226; color:var(--danger)">Błąd</span>';
+  return '<span class="tag" style="background:#20302a; color:#63b58a">Gotowy</span>';
+}
+function renderAudyt(el){
+  var hasKey = !!localStorage.getItem("mdgtal_anthropic_key");
+  var html = '<div class="card">'+
+    '<h3 style="margin-bottom:8px">Nowy audyt</h3>'+
+    '<div class="stub-note" style="margin-bottom:10px">Wklej link do strony, Instagrama lub Facebooka potencjalnego klienta. Instagram/Facebook renderują treść w JS, więc sam link czasem da bardzo mało — jeśli tak, dołącz też zrzut ekranu profilu, wtedy AI oceni na jego podstawie.</div>'+
+    (!hasKey ? '<div class="stub-note" style="margin-bottom:10px">Brak klucza API Anthropic — ustaw go w zakładce "Obsługa Klientów" → sekcja "Ustawienia AI" na dole listy klientów.</div>' : '')+
+    '<div class="field"><label>Link (strona / Instagram / Facebook)</label><input type="text" id="auditUrlInput" placeholder="https://..."></div>'+
+    '<div class="field"><label>Nazwa / kontakt (opcjonalnie)</label><input type="text" id="auditNameInput" placeholder="np. Studio Tańca XYZ"></div>'+
+    '<div class="row" style="gap:8px; align-items:center; margin-bottom:10px">'+
+    '<input type="file" accept="image/*" id="auditFileInput" style="display:none" onchange="auditPickScreenshot(this)">'+
+    '<button class="btn secondary small" onclick="document.getElementById(\'auditFileInput\').click()">+ Dodaj zrzut ekranu</button>'+
+    '<span id="auditFileLabel" style="font-size:12px; color:var(--muted)"></span>'+
+    '</div>'+
+    '<button class="btn" onclick="runAudit()">Uruchom audyt</button>'+
+    '<span id="auditRunStatus" style="font-size:12px; color:var(--danger); margin-left:10px"></span>'+
+    '</div>';
+
+  html += '<div style="margin-top:18px">';
+  if(!state.audits.length){
+    html += '<div class="card"><div class="empty">Brak audytów. Wklej link albo dodaj zrzut ekranu powyżej.</div></div>';
+  }
+  state.audits.forEach(function(rec){
+    var expanded = auditExpandedId===rec.id;
+    html += '<div class="card" style="margin-bottom:10px">'+
+      '<div class="row" style="justify-content:space-between; align-items:center; cursor:pointer" onclick="toggleAuditExpand(\''+rec.id+'\')">'+
+      '<div><b>'+escapeHtml(rec.name || rec.url || "Zrzut ekranu")+'</b> '+
+      '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted); margin-left:6px">'+rec.targetType+'</span> '+
+      auditStatusTag(rec)+
+      '<div style="font-size:11px; color:var(--muted); margin-top:3px">'+fmtDate(rec.createdAt)+(rec.url?' · '+escapeHtml(rec.url):'')+'</div>'+
+      '</div><div style="font-size:18px; color:var(--muted)">'+(expanded?"−":"+")+'</div>'+
+      '</div>';
+    if(expanded){
+      html += '<div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border)">';
+      if(rec.status==="wtoku"){
+        html += '<div class="empty">Analizuję…</div>';
+      } else if(rec.status==="blad"){
+        html += '<div style="color:var(--danger); font-size:13px; margin-bottom:8px">'+escapeHtml(rec.errorMsg||"Błąd audytu.")+'</div>';
+      } else {
+        html += '<textarea id="auditNoteArea_'+rec.id+'" rows="12" style="width:100%; font-size:13px">'+escapeHtml(rec.note||"")+'</textarea>'+
+          '<div style="margin-top:8px"><button class="btn small" onclick="saveAuditNote(\''+rec.id+'\')">Zapisz notatkę</button></div>';
+      }
+      html += '<div style="margin-top:10px">'+
+        (rec.url ? '<button class="btn secondary small" onclick="rerunAudit(\''+rec.id+'\')">Uruchom ponownie</button> ' : '')+
+        '<button class="btn danger small" onclick="deleteAudit(\''+rec.id+'\')">Usuń</button>'+
+        '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 /* ================= CEO — logika ================= */
