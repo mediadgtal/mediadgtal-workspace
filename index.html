@@ -848,6 +848,14 @@ function migrateState(s){
     });
   }
   (function(){
+    // uc?export=view zwraca 503 gdy hotlinkowany jako <img> — przepisz stare linki Drive na /thumbnail (idempotentne, bez flagi).
+    (s.posts||[]).forEach(function(p){
+      if(p.images && p.images.length) p.images = p.images.map(normalizeImageUrl);
+      if(p.fbImage) p.fbImage = normalizeImageUrl(p.fbImage);
+      if(p.video) p.video = normalizeVideoUrl(p.video);
+    });
+  })();
+  (function(){
     var cutoff = Date.now() - 30*86400000;
     var notExpired = function(x){ return !x.deletedAt || new Date(x.deletedAt+"T00:00:00").getTime() >= cutoff; };
     if(s.posts) s.posts = s.posts.filter(notExpired);
@@ -2680,7 +2688,7 @@ function importDriveMonthFolder(){
       return driveApiListChildren(m.folder.id).then(function(files){
         var images = files.filter(function(f){ return f.mimeType.indexOf("image/")===0; })
           .sort(function(a,b){ return a.name<b.name?-1:(a.name>b.name?1:0); })
-          .map(function(f){ return "https://drive.google.com/uc?export=view&id="+f.id; });
+          .map(function(f){ return "https://drive.google.com/thumbnail?id="+f.id+"&sz=w1000"; });
         var videoFile = files.filter(function(f){ return f.mimeType.indexOf("video/")===0; })[0];
         var textFiles = files.filter(function(f){ return f.mimeType==="text/plain" || f.mimeType==="application/vnd.google-apps.document" || /\.txt$/i.test(f.name); });
         var fbFile = textFiles.filter(function(f){ return /fb|facebook/i.test(f.name); })[0];
@@ -3191,14 +3199,28 @@ function closePostModal(){
   var m = document.getElementById("postModal");
   if(m) m.remove();
 }
-function normalizeImageUrl(url){
+function driveFileIdFromUrl(url){
   url = (url||"").trim();
-  if(!url) return url;
+  if(!url) return null;
   var m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
   if(!m) m = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
   if(!m) m = url.match(/drive\.google\.com\/uc\?(?:export=[a-zA-Z]+&)?id=([a-zA-Z0-9_-]+)/);
-  if(m) return "https://drive.google.com/uc?export=view&id="+m[1];
-  return url;
+  if(!m) m = url.match(/drive\.google\.com\/thumbnail\?id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+function normalizeImageUrl(url){
+  url = (url||"").trim();
+  if(!url) return url;
+  // Uwaga: drive.google.com/uc?export=view zwraca u Google 503 gdy jest hotlinkowany jako <img> z obcego originu
+  // (potwierdzone realnym testem 2026-07-13) — dla zdjęć zawsze uzywamy /thumbnail, ktory dziala niezawodnie.
+  var id = driveFileIdFromUrl(url);
+  return id ? ("https://drive.google.com/thumbnail?id="+id+"&sz=w1000") : url;
+}
+function normalizeVideoUrl(url){
+  url = (url||"").trim();
+  if(!url) return url;
+  var id = driveFileIdFromUrl(url);
+  return id ? ("https://drive.google.com/uc?export=view&id="+id) : url;
 }
 function savePostModal(){
   var title = document.getElementById("pmTitle").value.trim();
@@ -3212,7 +3234,7 @@ function savePostModal(){
   var images = document.getElementById("pmImages").value.split("\n").map(function(s){return normalizeImageUrl(s);}).filter(Boolean);
   var isCarousel = platform==="fbig" && document.getElementById("pmCarousel").checked;
   var fbImage = isCarousel ? normalizeImageUrl(document.getElementById("pmFbImage").value) : "";
-  var video = normalizeImageUrl(document.getElementById("pmVideo").value.trim()) || null;
+  var video = normalizeVideoUrl(document.getElementById("pmVideo").value.trim()) || null;
   var ctx = window.__postModalCtx || {};
   if(ctx.id){
     var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
@@ -3244,7 +3266,7 @@ function readSzkicFieldsInto(p){
   p.captionIg = document.getElementById("szkCaptionIg").value.trim();
   p.cta = document.getElementById("szkCta").value.trim();
   p.images = document.getElementById("szkImages").value.split("\n").map(function(s){return normalizeImageUrl(s);}).filter(Boolean);
-  p.video = normalizeImageUrl(document.getElementById("szkVideo").value.trim()) || null;
+  p.video = normalizeVideoUrl(document.getElementById("szkVideo").value.trim()) || null;
 }
 function saveSzkicBox(){
   var p = state.posts.filter(function(x){return x.id===szkicActiveId;})[0];
