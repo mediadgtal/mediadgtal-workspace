@@ -1005,6 +1005,45 @@ function migrateState(s){
     }
     delete p.caption;
   });
+  if(!s.financeJuly2026Refreshed && s.financeEntries){
+    // Jednorazowe odświeżenie lipca 2026 realnymi danymi z "Arkusz Finansów 2026" (zakładka Lip),
+    // zamiast trzech prowizorycznych wpisów placeholderowych sprzed uzupełnienia arkusza przez Damiana.
+    s.financeEntries = s.financeEntries.filter(function(e){ return e.month!=='2026-07'; });
+    [
+      ["przychody","Art Of Move marketing",1000.0],
+      ["przychody","Art of Move zajęcia za 05/2026",0],
+      ["przychody","Estilo",100.0],
+      ["przychody","Tool4Arts",2000.0],
+      ["przychody","VENUS",0],
+      ["przychody","PRIV z Basią",100.0],
+      ["przychody","BLIK Kokot za kręgle",24.0],
+      ["przychody","BlIK Krzychu za kręgle",24.0],
+      ["firmowe","Paliwo",0],
+      ["firmowe","ZUS",0],
+      ["firmowe","PIT",0],
+      ["firmowe","Księgowość",369.0],
+      ["firmowe","Reklama",0],
+      ["firmowe","Google Workspace",92.99],
+      ["firmowe","VAT",0],
+      ["firmowe","Manychat",58.32],
+      ["firmowe","Zapier",0],
+      ["firmowe","Claude",0],
+      ["osobiste","Borys",1000.0],
+      ["osobiste","Wspólne",0],
+      ["osobiste","Barber",0],
+      ["osobiste","Żabka",8.1],
+      ["osobiste","Hebe",18.89],
+      ["osobiste","Intermarche",12.99],
+      ["osobiste","Kręgle",70.0],
+      ["osobiste","Game Pass",54.99],
+      ["osobiste","Przewalutowanie",2.04],
+      ["osobiste","Żabka",24.5],
+      ["osobiste","Basen",52.7]
+    ].forEach(function(row){
+      s.financeEntries.push({id:uid("fin"), month:'2026-07', category:row[0], name:row[1], amount:row[2], method:'karta'});
+    });
+    s.financeJuly2026Refreshed = true;
+  }
   return s;
 }
 window.migrateState = migrateState;
@@ -1758,9 +1797,35 @@ function defaultState(){
     {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Lidl', amount:18.82, method:'karta'},
     {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Pepco', amount:27.0, method:'karta'},
     {id:uid("fin"), month:'2026-06', category:'osobiste', name:'Żabka', amount:8.99, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'Art Of Move marketing', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'Art of Move zajęcia za 05/2026', amount:0, method:'karta'},
     {id:uid("fin"), month:'2026-07', category:'przychody', name:'Estilo', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'Tool4Arts', amount:2000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'VENUS', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'PRIV z Basią', amount:100.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'BLIK Kokot za kręgle', amount:24.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'przychody', name:'BlIK Krzychu za kręgle', amount:24.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Paliwo', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'ZUS', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'PIT', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Księgowość', amount:369.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Reklama', amount:0, method:'karta'},
     {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
-    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'}
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'VAT', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Manychat', amount:58.32, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Zapier', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Claude', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Wspólne', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Barber', amount:0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Żabka', amount:8.1, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Hebe', amount:18.89, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Intermarche', amount:12.99, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Kręgle', amount:70.0, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Game Pass', amount:54.99, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Przewalutowanie', amount:2.04, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Żabka', amount:24.5, method:'karta'},
+    {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Basen', amount:52.7, method:'karta'}
   ];
   s.financeSeededMonths = {};
   s.financeBackupSheetId = null;
@@ -4123,7 +4188,9 @@ function renderFinanse(el){
         '<td style="'+TD+'; text-align:right">'+fmtPln(e.amount)+'</td>'+
         '<td style="'+TD+'">'+(e.method==="gotowka"?"💵 Gotówka":"💳 Karta")+'</td>'+
         '<td style="'+TD+'; color:var(--muted)">'+(e.createdAt?fmtDate(e.createdAt):'—')+'</td>'+
-        '<td style="'+TD+'; text-align:right"><button class="btn danger small" onclick="event.stopPropagation(); deleteFinanceEntry(\''+e.id+'\')">Usuń</button></td>'+
+        '<td style="'+TD+'; text-align:right; white-space:nowrap">'+
+        '<button class="linklike" title="Przenieś tę pozycję (tylko nazwa, bez kwoty) do '+financeMonthLabel(nextMonthKey(e.month))+'" onclick="event.stopPropagation(); advanceFinanceEntryToNextMonth(\''+e.id+'\')">Przenieś dalej</button> '+
+        '<button class="btn danger small" onclick="event.stopPropagation(); deleteFinanceEntry(\''+e.id+'\')">Usuń</button></td>'+
         '</tr>';
     });
     html += '</table></div>';
@@ -4175,6 +4242,7 @@ function openFinanceModal(opts){
     '<option value="karta"'+(!entry||entry.method==="karta"?" selected":"")+'>💳 Karta</option>'+
     '<option value="gotowka"'+(entry&&entry.method==="gotowka"?" selected":"")+'>💵 Gotówka</option>'+
     '</select></div>'+
+    '<div class="field"><label>Data dodania</label><input type="date" id="fmCreatedAt" value="'+(entry?(entry.createdAt||""):todayStr())+'"></div>'+
     '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
     (isEdit ? '<button class="btn danger small" onclick="deleteFinanceModal()">Usuń</button>' : '')+
     '<button class="btn secondary small" onclick="closeFinanceModal()">Anuluj</button>'+
@@ -4194,12 +4262,13 @@ function saveFinanceModal(){
   var category = document.getElementById("fmCategory").value;
   var month = document.getElementById("fmMonth").value;
   var method = document.getElementById("fmMethod").value;
+  var createdAt = document.getElementById("fmCreatedAt").value || todayStr();
   var ctx = window.__financeModalCtx || {};
   if(ctx.id){
     var e = state.financeEntries.filter(function(x){ return x.id===ctx.id; })[0];
-    if(e){ e.name=name; e.amount=amount; e.category=category; e.month=month; e.method=method; }
+    if(e){ e.name=name; e.amount=amount; e.category=category; e.month=month; e.method=method; e.createdAt=createdAt; }
   } else {
-    state.financeEntries.push({id:uid("fin"), month:month, category:category, name:name, amount:amount, method:method, createdAt:todayStr()});
+    state.financeEntries.push({id:uid("fin"), month:month, category:category, name:name, amount:amount, method:method, createdAt:createdAt});
   }
   financeSubview = category; financeTab = month;
   closeFinanceModal();
@@ -4216,6 +4285,14 @@ function deleteFinanceModal(){
 function deleteFinanceEntry(id){
   if(!confirm("Usunąć tę pozycję?")) return;
   state.financeEntries = state.financeEntries.filter(function(x){ return x.id!==id; });
+  save(); renderAll();
+}
+function advanceFinanceEntryToNextMonth(id){
+  var e = state.financeEntries.filter(function(x){ return x.id===id; })[0];
+  if(!e) return;
+  var nextYm = nextMonthKey(e.month);
+  state.financeEntries.push({id:uid("fin"), month:nextYm, category:e.category, name:e.name, amount:0, method:e.method, createdAt:todayStr()});
+  financeSubview = e.category; financeTab = nextYm;
   save(); renderAll();
 }
 
