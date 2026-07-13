@@ -2303,15 +2303,18 @@ function renderPosty(el){
     '<button class="'+(postySubtab==="hasla"?"active":"")+'" onclick="setPostySub(\'hasla\')">Hasła</button>'+
     '<button class="'+(postySubtab==="kategorie"?"active":"")+'" onclick="setPostySub(\'kategorie\')">Baza</button>'+
     '<button class="'+(postySubtab==="szkic"?"active":"")+'" onclick="setPostySub(\'szkic\')">Szkic</button>'+
+    '<button class="'+(postySubtab==="wideo"?"active":"")+'" onclick="setPostySub(\'wideo\')">Wideo</button>'+
     '<button class="'+(postySubtab==="kosz"?"active":"")+'" onclick="setPostySub(\'kosz\')">Kosz</button>'+
     '</div>';
 
-  html += '<div class="chiprow">';
-  state.brands.forEach(function(b){
-    html += '<span class="chip'+(postyFilter===b?" active":"")+'" onclick="setPostyFilter(\''+jsAttrStr(b)+'\')">'+escapeHtml(b)+'</span>';
-  });
-  html += '<span class="chip" onclick="addBrand()" title="Dodaj nową markę / konto">+</span>';
-  html += '</div>';
+  if(postySubtab!=="wideo"){
+    html += '<div class="chiprow">';
+    state.brands.forEach(function(b){
+      html += '<span class="chip'+(postyFilter===b?" active":"")+'" onclick="setPostyFilter(\''+jsAttrStr(b)+'\')">'+escapeHtml(b)+'</span>';
+    });
+    html += '<span class="chip" onclick="addBrand()" title="Dodaj nową markę / konto">+</span>';
+    html += '</div>';
+  }
 
   if(postySubtab==="pulpit" || postySubtab==="zaplanowane"){
     html += '<div class="chiprow">';
@@ -2338,6 +2341,7 @@ function renderPosty(el){
   else if(postySubtab==="hasla"){ html += renderPostyHasla(); }
   else if(postySubtab==="kategorie"){ html += renderPostyBaza(); }
   else if(postySubtab==="szkic"){ html += renderPostySzkic(); }
+  else if(postySubtab==="wideo"){ html += renderPostyWideo(); }
   else if(postySubtab==="kosz"){ html += renderPostyKosz(); }
   else { html += renderPostyPulpit(); }
 
@@ -3309,6 +3313,350 @@ function renderPostyKosz(){
   html += '</tbody></table></div>';
 
   return html;
+}
+
+/* ================= POSTY — EDYTOR WIDEO (AI) ================= */
+// Uwaga: to jest osobny, niesynchronizowany z Firestore stan (pliki wideo są za duże na jeden dokument).
+// Trzyma się wyłącznie w pamięci przeglądarki na czas sesji — import/eksport ręczny.
+var videoEditor = {history:[], activeIndex:-1, fileName:null, inputExt:".mp4", previewDuration:0, statusMsg:"", statusIsError:false, processing:false};
+var __ffmpegInstance = null;
+var __ffmpegLogBuffer = [];
+var VIDEO_PROMPT_SCHEMA = {
+  type:"object",
+  properties:{
+    actions:{
+      type:"array",
+      items:{
+        type:"object",
+        properties:{
+          type:{type:"string", enum:["cut_silence"]},
+          threshold_db:{type:"number"},
+          min_silence_ms:{type:"number"},
+          padding_ms:{type:"number"}
+        },
+        required:["type"],
+        additionalProperties:false
+      }
+    },
+    unsupported:{type:"array", items:{type:"string"}},
+    note:{type:"string"}
+  },
+  required:["actions","unsupported","note"],
+  additionalProperties:false
+};
+var VIDEO_SYSTEM_PROMPT = "Jesteś silnikiem interpretującym polecenia do prostego, przeglądarkowego edytora wideo. "+
+  "Obecnie dostępna jest TYLKO jedna prawdziwa operacja: cut_silence — automatyczne wykrywanie i wycinanie ciszy z nagrania. "+
+  "Napisy, tłumaczenia, efekty, animacje tekstu, przejścia, b-roll, muzyka i dobór czcionek NIE są jeszcze zaimplementowane. "+
+  "Przeanalizuj polecenie użytkownika (po polsku) i zwróć WYŁĄCZNIE poprawny JSON zgodny ze schematem: "+
+  "actions — lista akcji do wykonania teraz (pusta, jeśli polecenie nie pasuje do dostępnej operacji); "+
+  "dla cut_silence możesz dobrać threshold_db (głośność ciszy w dB, domyślnie -30, im niżej tym bardziej czułe), "+
+  "min_silence_ms (minimalna długość ciszy do wycięcia w ms, domyślnie 500) i padding_ms (margines bezpieczeństwa przed cięciem w ms, domyślnie 150) na podstawie sensu polecenia (np. \"wytnij tylko długie pauzy\" -> większe min_silence_ms); "+
+  "unsupported — krótkie nazwy funkcji z polecenia użytkownika, których jeszcze nie obsługujemy (np. \"napisy\", \"b-roll\", \"efekty\", \"przejścia\", \"muzyka\", \"czcionki\"), puste jeśli brak; "+
+  "note — jedno krótkie zdanie po polsku, co teraz robisz albo dlaczego nic nie da się zrobić.";
+function videoFormatBytes(bytes){
+  if(!bytes) return "0 B";
+  var units = ["B","KB","MB","GB"];
+  var i = Math.min(units.length-1, Math.floor(Math.log(bytes)/Math.log(1024)));
+  return (bytes/Math.pow(1024,i)).toFixed(i===0?0:1)+" "+units[i];
+}
+function renderPostyWideo(){
+  var html = '';
+  if(!videoEditor.history.length){
+    html += '<div class="card">'+
+      '<h3>Importuj wideo</h3>'+
+      '<div class="empty" style="margin-bottom:14px">Wybierz plik wideo z dysku, żeby zacząć. Przetwarzanie odbywa się lokalnie w Twojej przeglądarce — najlepiej działa na krótszych nagraniach (do kilku minut).</div>'+
+      '<input type="file" accept="video/*" id="videoImportInput" style="display:none" onchange="videoImportFile(this)">'+
+      '<button class="btn" onclick="document.getElementById(\'videoImportInput\').click()">+ Importuj wideo</button>'+
+      '</div>';
+    html += '<div class="stub-note" style="margin-top:14px">Wkrótce: polskie napisy z transkrypcji, efekty i animacje tekstu, biblioteka b-roll, dobór czcionek i przejść. Na start dostępne jest automatyczne wykrywanie i wycinanie ciszy — komendą tekstową do AI albo jednym przyciskiem.</div>';
+    return html;
+  }
+  var current = videoEditor.history[videoEditor.activeIndex];
+  html += '<div class="card">';
+  html += '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap">'+
+    '<h3 style="margin:0">'+escapeHtml(videoEditor.fileName||"Wideo")+'</h3>'+
+    '<button class="linklike danger" onclick="videoResetEditor()">Zamknij i odrzuć</button>'+
+    '</div>';
+  html += '<video src="'+escapeHtml(current.blobUrl)+'" controls style="width:100%; max-height:480px; background:#000; border-radius:8px; display:block" onloadedmetadata="videoEditorDurationLoaded(this)"></video>';
+
+  html += '<div class="row" style="gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center">'+
+    '<button class="btn secondary small" '+(videoEditor.activeIndex<=0?"disabled":"")+' onclick="videoUndo()">↶ Cofnij</button>'+
+    '<button class="btn secondary small" '+(videoEditor.activeIndex>=videoEditor.history.length-1?"disabled":"")+' onclick="videoRedo()">↷ Ponów</button>'+
+    '<span style="font-size:12px; color:var(--muted)">Krok '+(videoEditor.activeIndex+1)+' z '+videoEditor.history.length+': '+escapeHtml(current.label)+(current.note?' — '+escapeHtml(current.note):'')+'</span>'+
+    '</div>';
+
+  if(videoEditor.statusMsg){
+    html += '<div class="stub-note" style="margin-top:12px'+(videoEditor.statusIsError?'; border-color:rgba(209,99,111,.4); color:var(--danger); background:rgba(209,99,111,.08)':'')+'">'+
+      (videoEditor.processing?'⏳ ':'')+escapeHtml(videoEditor.statusMsg)+'</div>';
+  }
+  html += '</div>';
+
+  var hasKey = !!localStorage.getItem("mdgtal_anthropic_key");
+  html += '<div class="card" style="margin-top:16px">'+
+    '<h3>Poproś AI o edycję</h3>'+
+    (!hasKey ? '<div class="stub-note">Ustaw klucz API Anthropic poniżej, żeby włączyć polecenia tekstowe.</div>' : '')+
+    '<textarea id="videoPromptInput" rows="2" placeholder="np. Wytnij ciszę z nagrania" style="width:100%; resize:vertical" '+(videoEditor.processing?"disabled":"")+'></textarea>'+
+    '<div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap">'+
+    '<button class="btn" '+(videoEditor.processing||!hasKey?"disabled":"")+' onclick="videoApplyPrompt()">Zastosuj</button>'+
+    '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoApplyPreset(\'cut_silence\')">⚡ Szybko: wytnij ciszę (bez AI)</button>'+
+    '</div>'+
+    '</div>';
+  if(!hasKey){ html += renderClientOpsApiKeySettings(); }
+
+  html += '<div class="card" style="margin-top:16px">'+
+    '<h3>Eksport</h3>'+
+    '<div class="empty" style="margin-bottom:10px">Zapisz aktualną wersję wideo (krok '+(videoEditor.activeIndex+1)+') na dysku.</div>'+
+    '<button class="btn" '+(videoEditor.processing?"disabled":"")+' onclick="videoExportSave()">💾 Eksportuj i zapisz</button>'+
+    '</div>';
+
+  html += '<div class="stub-note" style="margin-top:14px">Wkrótce: polskie napisy z transkrypcji, efekty i animacje tekstu, biblioteka b-roll, dobór czcionek i przejść.</div>';
+  return html;
+}
+function videoImportFile(inputEl){
+  var file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  var url = URL.createObjectURL(file);
+  var extMatch = file.name.match(/\.[a-z0-9]+$/i);
+  videoEditor.fileName = file.name;
+  videoEditor.inputExt = extMatch ? extMatch[0] : ".mp4";
+  videoEditor.history = [{label:"Oryginał", blobUrl:url, blob:file, note:videoFormatBytes(file.size)}];
+  videoEditor.activeIndex = 0;
+  videoEditor.previewDuration = 0;
+  videoEditor.statusMsg = "";
+  videoEditor.statusIsError = false;
+  videoEditor.processing = false;
+  inputEl.value = "";
+  renderAll();
+}
+function videoEditorDurationLoaded(el){
+  videoEditor.previewDuration = el.duration || 0;
+}
+function videoResetEditor(){
+  if(!confirm("Zamknąć edytor i odrzucić bieżące wideo oraz historię zmian? Nie zostało to zapisane na dysku.")) return;
+  videoEditor = {history:[], activeIndex:-1, fileName:null, inputExt:".mp4", previewDuration:0, statusMsg:"", statusIsError:false, processing:false};
+  renderAll();
+}
+function videoUndo(){ if(videoEditor.activeIndex>0){ videoEditor.activeIndex--; renderAll(); } }
+function videoRedo(){ if(videoEditor.activeIndex<videoEditor.history.length-1){ videoEditor.activeIndex++; renderAll(); } }
+function videoSetStatus(msg, processing, isError){
+  videoEditor.statusMsg = msg;
+  videoEditor.processing = !!processing;
+  videoEditor.statusIsError = !!isError;
+  renderAll();
+}
+function videoPushHistoryStep(step){
+  videoEditor.history = videoEditor.history.slice(0, videoEditor.activeIndex+1);
+  videoEditor.history.push(step);
+  videoEditor.activeIndex = videoEditor.history.length-1;
+}
+function videoPatchedFfmpegWorkerUrl(ffmpegBaseURL){
+  // ffmpeg.wasm's worker.js imports "./const.js" and "./errors.js" as relative specifiers.
+  // Constructing the worker itself needs a same-origin (blob) URL, but a blob URL has no
+  // path to resolve relative imports against — so those two imports must be rewritten to
+  // absolute CDN URLs (jsDelivr sends open CORS headers, so cross-origin *module imports*
+  // — as opposed to cross-origin *Worker construction*, which browsers block — work fine).
+  return fetch(ffmpegBaseURL+"/worker.js").then(function(r){ return r.text(); }).then(function(text){
+    text = text.replace('"./const.js"', '"'+ffmpegBaseURL+'/const.js"')
+                .replace('"./errors.js"', '"'+ffmpegBaseURL+'/errors.js"');
+    return URL.createObjectURL(new Blob([text], {type:"text/javascript"}));
+  });
+}
+function ensureFfmpeg(){
+  if(__ffmpegInstance) return Promise.resolve(__ffmpegInstance);
+  return import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js").then(function(ffmpegMod){
+    return import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js").then(function(utilMod){
+      var ffmpeg = new ffmpegMod.FFmpeg();
+      ffmpeg.on("log", function(e){ __ffmpegLogBuffer.push(e.message); });
+      var ffmpegBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm";
+      var coreBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
+      return Promise.all([
+        videoPatchedFfmpegWorkerUrl(ffmpegBaseURL),
+        utilMod.toBlobURL(coreBaseURL+"/ffmpeg-core.js", "text/javascript"),
+        utilMod.toBlobURL(coreBaseURL+"/ffmpeg-core.wasm", "application/wasm")
+      ]).then(function(urls){
+        return ffmpeg.load({classWorkerURL:urls[0], coreURL:urls[1], wasmURL:urls[2]}).then(function(){
+          __ffmpegInstance = ffmpeg;
+          return ffmpeg;
+        });
+      });
+    });
+  });
+}
+function videoParseSilenceLog(text){
+  var starts = [], ends = [], m;
+  var startRe = /silence_start:\s*([0-9.]+)/g;
+  var endRe = /silence_end:\s*([0-9.]+)/g;
+  while((m = startRe.exec(text))) starts.push(parseFloat(m[1]));
+  while((m = endRe.exec(text))) ends.push(parseFloat(m[1]));
+  var silences = [];
+  for(var i=0;i<starts.length;i++){
+    silences.push([starts[i], ends[i]!=null ? ends[i] : starts[i]+999999]);
+  }
+  return silences;
+}
+function videoComputeKeepSegments(silences, duration, paddingSec){
+  var cuts = silences.map(function(s){
+    return [Math.min(duration, s[0])+paddingSec, Math.min(duration, s[1])-paddingSec];
+  }).filter(function(c){ return c[1] > c[0]; }).sort(function(a,b){ return a[0]-b[0]; });
+  var keep = [], cursor = 0;
+  cuts.forEach(function(c){
+    if(c[0] > cursor) keep.push([cursor, c[0]]);
+    cursor = Math.max(cursor, c[1]);
+  });
+  if(cursor < duration) keep.push([cursor, duration]);
+  return keep.filter(function(k){ return (k[1]-k[0]) > 0.05; });
+}
+function videoCutSilence(thresholdDb, minSilenceMs, paddingMs){
+  thresholdDb = thresholdDb || -30;
+  var minSilenceSec = (minSilenceMs || 500)/1000;
+  var paddingSec = (paddingMs!=null ? paddingMs : 150)/1000;
+  var current = videoEditor.history[videoEditor.activeIndex];
+  var inName = "in"+videoEditor.inputExt;
+  videoSetStatus("Wczytuję silnik wideo (pierwsze użycie może potrwać kilkadziesiąt sekund)…", true);
+  return ensureFfmpeg().then(function(ffmpeg){
+    videoSetStatus("Analizuję ścieżkę dźwiękową…", true);
+    return current.blob.arrayBuffer().then(function(buf){
+      return ffmpeg.writeFile(inName, new Uint8Array(buf));
+    }).then(function(){
+      __ffmpegLogBuffer.length = 0;
+      return ffmpeg.exec(["-i", inName, "-af", "silencedetect=noise="+thresholdDb+"dB:d="+minSilenceSec, "-f", "null", "-"]);
+    }).then(function(){
+      var silences = videoParseSilenceLog(__ffmpegLogBuffer.join("\n"));
+      var duration = videoEditor.previewDuration || 0;
+      var keepSegments = videoComputeKeepSegments(silences, duration, paddingSec);
+      if(!keepSegments.length){
+        throw new Error("Nie wykryto ciszy do wycięcia w tym nagraniu (przy tym progu czułości).");
+      }
+      videoSetStatus("Wycinam ciszę ("+keepSegments.length+" zachowanych fragmentów)…", true);
+      var concatList = [];
+      var chain = Promise.resolve();
+      keepSegments.forEach(function(seg, i){
+        var segName = "seg"+i+".mp4";
+        chain = chain.then(function(){
+          return ffmpeg.exec(["-i", inName, "-ss", String(seg[0]), "-to", String(seg[1]),
+            "-c:v","libx264","-preset","ultrafast","-crf","23","-pix_fmt","yuv420p","-c:a","aac", segName]);
+        });
+        concatList.push("file '"+segName+"'");
+      });
+      return chain.then(function(){
+        return ffmpeg.writeFile("concat.txt", new TextEncoder().encode(concatList.join("\n")));
+      }).then(function(){
+        return ffmpeg.exec(["-f","concat","-safe","0","-i","concat.txt","-c","copy","out.mp4"]);
+      }).then(function(){
+        return ffmpeg.readFile("out.mp4");
+      }).then(function(data){
+        var blob = new Blob([data.buffer], {type:"video/mp4"});
+        var url = URL.createObjectURL(blob);
+        videoPushHistoryStep({label:"Wycięto ciszę", blobUrl:url, blob:blob, note:keepSegments.length+" fragmentów, próg "+thresholdDb+" dB"});
+        videoSetStatus("Gotowe — cisza wycięta.", false);
+      });
+    });
+  }).catch(function(err){
+    videoSetStatus("Błąd: "+((err && err.message) || err), false, true);
+    throw err;
+  });
+}
+function videoExecuteAction(action){
+  if(action.type==="cut_silence"){
+    return videoCutSilence(action.threshold_db, action.min_silence_ms, action.padding_ms);
+  }
+  return Promise.resolve();
+}
+function videoRunActionsSequentially(actions){
+  var p = Promise.resolve();
+  actions.forEach(function(action){ p = p.then(function(){ return videoExecuteAction(action); }); });
+  return p;
+}
+function callAnthropicJSON(systemPrompt, userPrompt, schema, maxTokens){
+  var key = localStorage.getItem("mdgtal_anthropic_key");
+  if(!key) return Promise.reject(new Error("Brak klucza API Anthropic."));
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{
+      "x-api-key": key,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true",
+      "content-type":"application/json"
+    },
+    body: JSON.stringify({
+      model:"claude-opus-4-8",
+      max_tokens: maxTokens || 1024,
+      system: systemPrompt,
+      output_config:{format:{type:"json_schema", schema:schema}},
+      messages:[{role:"user", content:userPrompt}]
+    })
+  }).then(function(r){
+    if(!r.ok){
+      return r.json().catch(function(){return null;}).then(function(errBody){
+        var msg = (errBody && errBody.error && errBody.error.message) || ("HTTP "+r.status);
+        throw new Error("Anthropic API: "+msg);
+      });
+    }
+    return r.json();
+  }).then(function(data){
+    var text = (data.content||[]).map(function(b){ return b.text||""; }).join("").trim();
+    return JSON.parse(text);
+  });
+}
+function interpretVideoPrompt(promptText){
+  return callAnthropicJSON(VIDEO_SYSTEM_PROMPT, promptText, VIDEO_PROMPT_SCHEMA, 500);
+}
+function videoApplyPreset(type){
+  if(!videoEditor.history.length || videoEditor.processing) return;
+  videoRunActionsSequentially([{type:type}]).then(function(){ renderAll(); }).catch(function(){});
+}
+function videoApplyPrompt(){
+  var ta = document.getElementById("videoPromptInput");
+  var text = ta ? ta.value.trim() : "";
+  if(!text || !videoEditor.history.length || videoEditor.processing) return;
+  videoSetStatus("Analizuję polecenie…", true);
+  interpretVideoPrompt(text).then(function(result){
+    var actions = result.actions || [];
+    if(!actions.length){
+      var note = "Nie znalazłem w tym poleceniu obsługiwanej jeszcze operacji.";
+      if(result.unsupported && result.unsupported.length) note += " ("+result.unsupported.join(", ")+" — jeszcze niedostępne)";
+      videoSetStatus(note, false, true);
+      return;
+    }
+    return videoRunActionsSequentially(actions).then(function(){
+      var msg = result.note || "Gotowe.";
+      if(result.unsupported && result.unsupported.length){
+        msg += " Uwaga: "+result.unsupported.join(", ")+" — te funkcje jeszcze nie są dostępne.";
+      }
+      videoSetStatus(msg, false);
+      if(ta) ta.value = "";
+    });
+  }).catch(function(err){
+    videoSetStatus("Błąd: "+((err && err.message) || err), false, true);
+  });
+}
+function videoExportSave(){
+  var current = videoEditor.history[videoEditor.activeIndex];
+  if(!current || !current.blob) return;
+  var blob = current.blob;
+  var baseName = (videoEditor.fileName||"wideo").replace(/\.[^.]+$/,"");
+  var suggestedName = baseName+"_edytowane"+(videoEditor.activeIndex===0?videoEditor.inputExt:".mp4");
+  if(window.showSaveFilePicker){
+    window.showSaveFilePicker({suggestedName:suggestedName, types:[{description:"Wideo", accept:{"video/mp4":[".mp4"]}}]})
+      .then(function(handle){
+        return handle.createWritable().then(function(writable){
+          return writable.write(blob).then(function(){ return writable.close(); });
+        });
+      })
+      .then(function(){ videoSetStatus("Zapisano na dysku.", false); })
+      .catch(function(err){
+        if(err && err.name==="AbortError") return;
+        videoSetStatus("Nie udało się zapisać: "+((err && err.message) || err), false, true);
+      });
+  } else {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = suggestedName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    videoSetStatus("Pobrano plik — Twoja przeglądarka nie obsługuje wyboru folderu, więc plik trafił do domyślnego folderu pobierania.", false);
+  }
 }
 
 /* ================= INSTAGRAM / FACEBOOK ================= */
