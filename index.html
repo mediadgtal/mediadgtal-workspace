@@ -1479,6 +1479,8 @@ function defaultState(){
   };
   s.clientsBackupSheetId = null;
   s.clientsBackupSheetUrl = null;
+  s.crmBackupSheetId = null;
+  s.crmBackupSheetUrl = null;
 
   s.igAccounts = [
     {id:"ig1", handle:"@damian.gogulski", bio:"Marketing dla branży tanecznej — MediaDGtal", initials:"DA",
@@ -1793,7 +1795,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); }
+function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -4538,6 +4540,8 @@ window.onGCalTokenReady = function(){
   scheduleHabitsBackupPush();
   ensureClientsBackupSheet();
   scheduleClientsBackupPush();
+  ensureCrmBackupSheet();
+  scheduleCrmBackupPush();
   crmFlushPendingT4ASync();
 };
 function renderKalendarz(el){
@@ -7377,6 +7381,67 @@ function flushClientsBackupPush(){
   }).catch(function(){ clientsBackupStatus = "error"; });
 }
 
+/* ---- Kopia zapasowa Bazy kontaktów w osobnym arkuszu Google Sheets ---- */
+var crmBackupSyncTimer = null;
+var crmBackupPending = false;
+var crmBackupCreating = false;
+var crmBackupStatus = "idle";
+function ensureCrmBackupSheet(){
+  if(!window.__gcalToken || state.crmBackupSheetId || crmBackupCreating) return;
+  crmBackupCreating = true;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      properties:{title:"Baza kontaktów — kopia zapasowa (system)"},
+      sheets:[{properties:{title:"RAW"}}]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    crmBackupCreating = false;
+    if(data.spreadsheetId){
+      state.crmBackupSheetId = data.spreadsheetId;
+      state.crmBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      save(); renderAll();
+    }
+  }).catch(function(){ crmBackupCreating = false; });
+}
+function scheduleCrmBackupPush(){
+  if(!window.__gcalToken || !state.crmBackupSheetId) return;
+  crmBackupPending = true;
+  if(crmBackupSyncTimer) clearTimeout(crmBackupSyncTimer);
+  crmBackupSyncTimer = setTimeout(flushCrmBackupPush, 1500);
+}
+function flushCrmBackupPush(){
+  if(!crmBackupPending) return;
+  crmBackupPending = false;
+  if(!window.__gcalToken || !state.crmBackupSheetId) return;
+
+  var rawRows = [["id","nazwa","osoba kontaktowa","miasto","kategoria","system","ig","fb","strona","mail","telefon","status marketing","status tool4arts","ostatni kontakt","otagowano","blisko zamknięcia","notatki","data importu","usunięto"]];
+  state.crmContacts.forEach(function(c){
+    rawRows.push([
+      c.id, c.name||"", c.contactPerson||"", c.city||"", c.category||"", c.system||"",
+      c.ig||"", c.fb||"", c.website||"", c.email||"", c.phone||"",
+      c.status ? crmStatusLabel(c.status) : "", crmT4ALabel(c)||"",
+      c.lastContact||"", c.taggedAt||"", c.hot?"TAK":"NIE", c.notes||"", c.importedAt||"", c.deletedAt||""
+    ]);
+  });
+
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.crmBackupSheetId+"/values:batchUpdate", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      valueInputOption:"RAW",
+      data:[{range:"RAW!A1", values: rawRows}]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    crmBackupStatus = r.ok ? "ok" : "error";
+  }).catch(function(){ crmBackupStatus = "error"; });
+}
+
 /* ================= CRM REAKTYWACJA ================= */
 var crmSubview = "priorytety"; // przeglad | import | kosz
 var crmImportPending = null; // {headerRow, dataRows, map, fileName}
@@ -8175,6 +8240,17 @@ function renderCRM(el){
     '<button class="'+(crmSubview==="import"?"active":"")+'" onclick="crmSetSubview(\'import\')">Import</button>'+
     '<button class="'+(crmSubview==="kosz"?"active":"")+'" onclick="crmSetSubview(\'kosz\')">Kosz'+(koszCount?" ("+koszCount+")":"")+'</button>'+
     '</div>';
+
+  if(window.__gcalToken){
+    if(!state.crmBackupSheetId){
+      html += '<div class="stub-note">Tworzę arkusz kopii zapasowej Bazy kontaktów…</div>';
+      ensureCrmBackupSheet();
+    } else {
+      html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
+        (crmBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
+        ' — <a href="'+state.crmBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+    }
+  }
 
   var active = crmActiveContacts();
   var total = active.length;
