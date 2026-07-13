@@ -345,7 +345,7 @@
   .ig-preview-headtext{flex:1; display:flex; flex-direction:column; line-height:1.25}
   .ig-preview-headtext b{font-size:13px}
   .ig-preview-headtext span{font-size:11px; color:#8e8e8e}
-  .ig-preview-imgwrap{position:relative; width:100%; aspect-ratio:1/1; background:#000; display:flex; align-items:center; justify-content:center}
+  .ig-preview-imgwrap{position:relative; width:100%; aspect-ratio:4/5; background:#000; display:flex; align-items:center; justify-content:center}
   .ig-preview-img{width:100%; height:100%; object-fit:cover; display:block}
   .ig-preview-noimg{color:#8e8e8e; font-size:13px; background:#fafafa; text-align:center; padding:20px}
   .ig-preview-imgwrap.ig-preview-broken .ig-preview-img{display:none}
@@ -2437,6 +2437,7 @@ function renderPosty(el){
   else { html += renderPostyPulpit(); }
 
   el.innerHTML = html;
+  if(postySubtab==="szkic") renderImagesPreview("szkImages","szkImagesPreview");
 }
 function postyDateInFilter(dateStr){
   if(!dateStr) return postyDateFilter==="wszystkie";
@@ -3171,8 +3172,9 @@ function openPostModal(opts){
     '<div class="field"><label>Data (opcjonalnie)</label><input type="date" id="pmDate" value="'+(opts.date||"")+'"></div>'+
     '<div class="field"><label>Opis na Facebooku</label><textarea id="pmCaptionFb" rows="3" placeholder="Treść publikowana pod postem na Facebooku...">'+escapeHtml(opts.captionFb||"")+'</textarea></div>'+
     '<div class="field"><label>Opis na Instagramie</label><textarea id="pmCaptionIg" rows="3" placeholder="Treść publikowana pod postem na Instagramie...">'+escapeHtml(opts.captionIg||"")+'</textarea></div>'+
-    '<div class="field"><label>Zdjęcia (linki, jeden na linię — pierwszy = główny)</label><textarea id="pmImages" rows="2" placeholder="https://...">'+escapeHtml(opts.images||"")+'</textarea>'+
-      '<span style="font-size:11px; color:var(--muted)">Zwykły link "Udostępnij" z Google Drive (drive.google.com/file/d/...) zadziała automatycznie — plik musi mieć ustawione "Każdy, kto ma link". Z Google Zdjęć/Canva wklej bezpośredni link do pliku (kończący się np. na .jpg/.png).</span></div>'+
+    '<div class="field"><label>Zdjęcia (linki, jeden na linię — pierwszy = główny)</label><textarea id="pmImages" rows="2" placeholder="https://..." oninput="renderImagesPreview(\'pmImages\',\'pmImagesPreview\')">'+escapeHtml(opts.images||"")+'</textarea>'+
+      '<span style="font-size:11px; color:var(--muted)">Zwykły link "Udostępnij" z Google Drive (drive.google.com/file/d/...) zadziała automatycznie — plik musi mieć ustawione "Każdy, kto ma link". Z Google Zdjęć/Canva wklej bezpośredni link do pliku (kończący się np. na .jpg/.png). Kolejność linków w tym polu = kolejność w karuzeli — użyj strzałek poniżej, żeby ją poprawić.</span>'+
+      '<div id="pmImagesPreview"></div></div>'+
     '<div class="field"><label>Wideo (link, opcjonalnie — dla rolki/filmu)</label><input type="text" id="pmVideo" value="'+escapeHtml(opts.video||"")+'" placeholder="https://..."></div>'+
     '<div class="field" id="pmCarouselWrap"><label style="display:flex; align-items:center; gap:8px; cursor:pointer">'+
       '<input type="checkbox" id="pmCarousel" onchange="updatePostModalVisibility()"'+(opts.isCarousel?" checked":"")+'> Karuzela na Instagramie (na Facebooku wrzucę tylko główne zdjęcie + cały tekst)'+
@@ -3186,6 +3188,7 @@ function openPostModal(opts){
   document.body.insertAdjacentHTML("beforeend", html);
   window.__postModalCtx = opts;
   updatePostModalVisibility();
+  renderImagesPreview("pmImages","pmImagesPreview");
 }
 function updatePostModalVisibility(){
   var platform = document.getElementById("pmPlatform").value;
@@ -3221,6 +3224,37 @@ function normalizeVideoUrl(url){
   if(!url) return url;
   var id = driveFileIdFromUrl(url);
   return id ? ("https://drive.google.com/uc?export=view&id="+id) : url;
+}
+function imagesLinesFromTextarea(textareaId){
+  var ta = document.getElementById(textareaId);
+  return ta ? ta.value.split("\n").map(function(s){return s.trim();}).filter(Boolean) : [];
+}
+function renderImagesPreview(textareaId, previewId){
+  var wrap = document.getElementById(previewId);
+  if(!wrap) return;
+  var lines = imagesLinesFromTextarea(textareaId);
+  if(!lines.length){ wrap.innerHTML = ""; return; }
+  wrap.innerHTML = '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">'+lines.map(function(url, i){
+    return '<div style="width:72px; text-align:center">'+
+      '<div style="position:relative; width:72px; height:90px; border-radius:6px; overflow:hidden; background:var(--sidebar-bg)">'+
+      '<img src="'+escapeHtml(normalizeImageUrl(url))+'" style="width:100%; height:100%; object-fit:cover" onerror="this.style.opacity=\'.15\'">'+
+      '<span style="position:absolute; top:2px; left:2px; background:rgba(0,0,0,.6); color:#fff; font-size:10px; padding:1px 5px; border-radius:999px">'+(i+1)+'</span>'+
+      '</div>'+
+      '<div style="margin-top:3px; font-size:14px">'+
+      (i>0 ? '<span onclick="moveImageLine(\''+textareaId+'\',\''+previewId+'\','+i+',-1)" style="cursor:pointer" title="Przenieś wcześniej">◀</span>' : '<span style="opacity:.2">◀</span>')+
+      '&nbsp;&nbsp;'+
+      (i<lines.length-1 ? '<span onclick="moveImageLine(\''+textareaId+'\',\''+previewId+'\','+i+',1)" style="cursor:pointer" title="Przenieś później">▶</span>' : '<span style="opacity:.2">▶</span>')+
+      '</div></div>';
+  }).join("")+'</div>';
+}
+function moveImageLine(textareaId, previewId, idx, dir){
+  var ta = document.getElementById(textareaId);
+  var lines = imagesLinesFromTextarea(textareaId);
+  var j = idx+dir;
+  if(j<0 || j>=lines.length) return;
+  var tmp = lines[idx]; lines[idx] = lines[j]; lines[j] = tmp;
+  ta.value = lines.join("\n");
+  renderImagesPreview(textareaId, previewId);
 }
 function savePostModal(){
   var title = document.getElementById("pmTitle").value.trim();
@@ -3313,7 +3347,7 @@ function renderPostySzkic(){
     html += '<div class="field"><label>Opis na Facebooku</label><textarea id="szkCaptionFb" rows="4">'+escapeHtml(active.captionFb||"")+'</textarea></div>';
     html += '<div class="field"><label>Opis na Instagramie</label><textarea id="szkCaptionIg" rows="4">'+escapeHtml(active.captionIg||"")+'</textarea></div>';
     html += '<div class="field"><label>CTA</label><input type="text" id="szkCta" value="'+escapeHtml(active.cta||"")+'"></div>';
-    html += '<div class="field"><label>Zdjęcia (linki, jeden na linię)</label><textarea id="szkImages" rows="2">'+escapeHtml((active.images||[]).join("\n"))+'</textarea></div>';
+    html += '<div class="field"><label>Zdjęcia (linki, jeden na linię — kolejność = kolejność w karuzeli)</label><textarea id="szkImages" rows="2" oninput="renderImagesPreview(\'szkImages\',\'szkImagesPreview\')">'+escapeHtml((active.images||[]).join("\n"))+'</textarea><div id="szkImagesPreview"></div></div>';
     html += '<div class="field"><label>Wideo (link, opcjonalnie — dla rolki/filmu)</label><input type="text" id="szkVideo" value="'+escapeHtml(active.video||"")+'"></div>';
     html += '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:10px">'+
       '<button class="btn danger small" onclick="deleteIdea(\''+active.id+'\')">Usuń</button>'+
