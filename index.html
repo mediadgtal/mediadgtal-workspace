@@ -1762,6 +1762,10 @@ function defaultState(){
     {id:uid("fin"), month:'2026-07', category:'firmowe', name:'Google Workspace', amount:92.99, method:'karta'},
     {id:uid("fin"), month:'2026-07', category:'osobiste', name:'Borys', amount:1000.0, method:'karta'}
   ];
+  s.financeSeededMonths = {};
+  s.financeBackupSheetId = null;
+  s.financeBackupSheetUrl = null;
+  s.financeBackupYear = null;
 
   s.notifications = [
     {id:uid("nt"), text:"Dane w zakładce Instagram zaktualizowane.", read:false, date: todayStr()},
@@ -1797,7 +1801,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); }
+function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); scheduleFinanceBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -3989,10 +3993,11 @@ function saveMeasurement(platform){
 }
 
 /* ================= FINANSE ================= */
-var FINANCE_CATEGORIES = [["przychody","Przychody"],["firmowe","Wydatki firmowe"],["osobiste","Moje wydatki"],["oszczednosci","Oszczędności"]];
-var FINANCE_CATEGORY_LABEL = {przychody:"Przychody", firmowe:"Wydatki firmowe", osobiste:"Moje wydatki", oszczednosci:"Oszczędności"};
+var FINANCE_CATEGORIES = [["przychody","Przychody"],["firmowe","Wydatki firmowe"],["osobiste","Moje wydatki"],["oszczednosci","Oszczędności"],["inwestycje","Inwestycje"]];
+var FINANCE_CATEGORY_LABEL = {przychody:"Przychody", firmowe:"Wydatki firmowe", osobiste:"Moje wydatki", oszczednosci:"Oszczędności", inwestycje:"Inwestycje"};
 var financeSubview = "przychody";
-var financeMonth = null;
+var financeTab = null; // "YYYY-MM" albo "TOTAL"
+var financeYear = null;
 function fmtPln(n){
   return (n||0).toLocaleString("pl-PL",{minimumFractionDigits:2, maximumFractionDigits:2})+" zł";
 }
@@ -4000,35 +4005,104 @@ function financeMonthLabel(iso){
   var parts = iso.split("-");
   return monthName(parseInt(parts[1],10)-1)+" "+parts[0];
 }
-function financeAvailableMonths(){
-  var set = {};
-  state.financeEntries.forEach(function(e){ set[e.month]=true; });
-  set[todayStr().slice(0,7)] = true;
-  return Object.keys(set).sort();
+function ensureRecurringFirmoweEntries(){
+  // Wydatki firmowe są powtarzalne co miesiąc — jeśli bieżący miesiąc kalendarzowy nie był jeszcze
+  // "zasiany", skopiuj do niego nazwy wydatków firmowych z ostatniego miesiąca, w którym jakieś były,
+  // z kwotą 0 zł (do uzupełnienia ręcznie). Miesiąc jest znaczony jako obsłużony raz na zawsze, żeby
+  // ręczne usunięcie tych pozycji przez Damiana nie powodowało ich odtwarzania przy kolejnym renderze.
+  var curYm = todayStr().slice(0,7);
+  if(!state.financeSeededMonths) state.financeSeededMonths = {};
+  if(state.financeSeededMonths[curYm]) return;
+  state.financeSeededMonths[curYm] = true;
+  var existingNames = {};
+  state.financeEntries.filter(function(e){ return e.month===curYm && e.category==="firmowe"; }).forEach(function(e){ existingNames[e.name]=true; });
+  var priorMonths = Array.from(new Set(
+    state.financeEntries.filter(function(e){ return e.category==="firmowe" && e.month<curYm; }).map(function(e){ return e.month; })
+  )).sort();
+  if(priorMonths.length){
+    var lastYm = priorMonths[priorMonths.length-1];
+    state.financeEntries.filter(function(e){ return e.month===lastYm && e.category==="firmowe"; }).forEach(function(e){
+      if(existingNames[e.name]) return;
+      existingNames[e.name] = true;
+      state.financeEntries.push({id:uid("fin"), month:curYm, category:"firmowe", name:e.name, amount:0, method:e.method, createdAt:todayStr()});
+    });
+  }
+  save();
+}
+function financeMonthSummary(ym){
+  var byCategory = {};
+  FINANCE_CATEGORIES.forEach(function(c){ byCategory[c[0]] = 0; });
+  state.financeEntries.filter(function(e){ return e.month===ym; }).forEach(function(e){
+    byCategory[e.category] = (byCategory[e.category]||0) + (+e.amount||0);
+  });
+  var zysk = (byCategory.przychody||0) - (byCategory.firmowe||0) - (byCategory.osobiste||0);
+  return {byCategory:byCategory, zysk:zysk};
 }
 function setFinanceSubview(v){ financeSubview=v; renderAll(); }
-function setFinanceMonth(v){ financeMonth=v; renderAll(); }
+function setFinanceTab(v){ financeTab=v; renderAll(); }
+function changeFinanceYear(delta){
+  financeYear = (financeYear||new Date().getFullYear()) + delta;
+  if(financeTab && financeTab!=="TOTAL"){ financeTab = financeYear+"-"+financeTab.split("-")[1]; }
+  renderAll();
+}
 function renderFinanse(el){
-  var months = financeAvailableMonths();
-  if(!financeMonth || months.indexOf(financeMonth)===-1) financeMonth = months[months.length-1];
+  ensureRecurringFirmoweEntries();
+  var now = new Date();
+  var realCurYm = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  if(!financeYear) financeYear = now.getFullYear();
+  if(!financeTab) financeTab = realCurYm;
+  var yr = String(financeYear);
 
-  var html = '<div class="tabsw">';
+  var html = '';
+  if(!window.__gcalToken){
+    html += '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
+  } else if(!state.financeBackupSheetId){
+    html += '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
+    ensureFinanceBackupSheet();
+  } else {
+    html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
+      (financeBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
+      ' — <a href="'+state.financeBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+  }
+
+  html += '<div class="tabsw">';
   FINANCE_CATEGORIES.forEach(function(c){
     html += '<button class="'+(financeSubview===c[0]?"active":"")+'" onclick="setFinanceSubview(\''+c[0]+'\')">'+c[1]+'</button>';
   });
   html += '</div>';
 
-  html += '<div class="row" style="justify-content:space-between; align-items:center; margin:14px 0; flex-wrap:wrap; gap:10px">'+
-    '<select onchange="setFinanceMonth(this.value)" style="width:auto">'+
-    months.map(function(m){ return '<option value="'+m+'"'+(m===financeMonth?" selected":"")+'>'+financeMonthLabel(m)+'</option>'; }).join("")+
-    '</select>'+
-    '<button class="btn" onclick="openFinanceModal({month:financeMonth, category:financeSubview})">+ Dodaj</button>'+
+  html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
+    '<span style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Rok</span>'+
+    '<button class="btn secondary small" onclick="changeFinanceYear(-1)">◀</button>'+
+    '<b style="font-size:14px; min-width:40px; text-align:center">'+yr+'</b>'+
+    '<button class="btn secondary small" onclick="changeFinanceYear(1)">▶</button>'+
     '</div>';
 
-  var entries = state.financeEntries.filter(function(e){ return e.month===financeMonth && e.category===financeSubview; });
-  var total = entries.reduce(function(s,e){ return s+e.amount; }, 0);
-  var cardTotal = entries.filter(function(e){ return e.method==="karta"; }).reduce(function(s,e){ return s+e.amount; }, 0);
-  var cashTotal = entries.filter(function(e){ return e.method==="gotowka"; }).reduce(function(s,e){ return s+e.amount; }, 0);
+  html += '<div class="chiprow">';
+  for(var m=1;m<=12;m++){
+    var ym = yr+"-"+String(m).padStart(2,"0");
+    var cls = "chip";
+    if(financeTab===ym) cls += " active";
+    if(ym===realCurYm) cls += " chip-current"; else if(ym<realCurYm) cls += " chip-past";
+    html += '<span class="'+cls+'" onclick="setFinanceTab(\''+ym+'\')">'+HABIT_MONTH_ABBR[m-1]+'</span>';
+  }
+  html += '<span class="chip'+(financeTab==="TOTAL"?" active":"")+'" onclick="setFinanceTab(\'TOTAL\')" style="font-weight:700; border-color:var(--accent)">TOTAL</span>';
+  html += '</div>';
+
+  if(financeTab==="TOTAL"){
+    html += renderFinanseTotal(yr);
+    el.innerHTML = html;
+    return;
+  }
+
+  html += '<div class="row" style="justify-content:flex-end; margin:10px 0 14px">'+
+    '<button class="btn" onclick="openFinanceModal({month:financeTab, category:financeSubview})">+ Dodaj</button>'+
+    '</div>';
+
+  var entries = state.financeEntries.filter(function(e){ return e.month===financeTab && e.category===financeSubview; });
+  var total = entries.reduce(function(s,e){ return s+(+e.amount||0); }, 0);
+  var cardTotal = entries.filter(function(e){ return e.method==="karta"; }).reduce(function(s,e){ return s+(+e.amount||0); }, 0);
+  var cashTotal = entries.filter(function(e){ return e.method==="gotowka"; }).reduce(function(s,e){ return s+(+e.amount||0); }, 0);
 
   html += '<div class="kpi-row">'+
     '<div><div class="k-value">'+fmtPln(total)+'</div><div class="k-label">Suma — '+FINANCE_CATEGORY_LABEL[financeSubview]+'</div></div>'+
@@ -4039,24 +4113,53 @@ function renderFinanse(el){
   if(!entries.length){
     html += '<div class="empty">Brak pozycji w tym miesiącu.</div>';
   } else {
-    html += '<table><tr><th>Nazwa</th><th style="text-align:right">Kwota</th><th>Sposób płatności</th><th></th></tr>';
+    var TD = 'padding:6px 8px; font-size:12.5px';
+    var TH = 'padding:6px 8px; font-size:11px';
+    html += '<div class="card"><table><tr>'+
+      '<th style="'+TH+'">Nazwa</th><th style="'+TH+'; text-align:right">Kwota</th><th style="'+TH+'">Sposób płatności</th><th style="'+TH+'">Data dodania</th><th></th></tr>';
     entries.slice().sort(function(a,b){ return b.amount-a.amount; }).forEach(function(e){
       html += '<tr onclick="openFinanceModal({id:\''+e.id+'\'})" style="cursor:pointer">'+
-        '<td>'+escapeHtml(e.name)+'</td>'+
-        '<td style="text-align:right">'+fmtPln(e.amount)+'</td>'+
-        '<td>'+(e.method==="gotowka"?"💵 Gotówka":"💳 Karta")+'</td>'+
-        '<td style="text-align:right"><button class="btn danger small" onclick="event.stopPropagation(); deleteFinanceEntry(\''+e.id+'\')">Usuń</button></td>'+
+        '<td style="'+TD+'">'+escapeHtml(e.name)+'</td>'+
+        '<td style="'+TD+'; text-align:right">'+fmtPln(e.amount)+'</td>'+
+        '<td style="'+TD+'">'+(e.method==="gotowka"?"💵 Gotówka":"💳 Karta")+'</td>'+
+        '<td style="'+TD+'; color:var(--muted)">'+(e.createdAt?fmtDate(e.createdAt):'—')+'</td>'+
+        '<td style="'+TD+'; text-align:right"><button class="btn danger small" onclick="event.stopPropagation(); deleteFinanceEntry(\''+e.id+'\')">Usuń</button></td>'+
         '</tr>';
     });
-    html += '</table>';
+    html += '</table></div>';
   }
   el.innerHTML = html;
+}
+function renderFinanseTotal(yr){
+  var html = '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid" style="width:100%"><thead><tr>'+
+    '<th style="position:sticky; left:0; background:var(--bg)">Miesiąc</th>';
+  FINANCE_CATEGORIES.forEach(function(c){ html += '<th style="text-align:right">'+c[1]+'</th>'; });
+  html += '<th style="text-align:right">Zysk</th></tr></thead><tbody>';
+  var yearSums = {}; FINANCE_CATEGORIES.forEach(function(c){ yearSums[c[0]]=0; });
+  var yearZysk = 0;
+  for(var m=1;m<=12;m++){
+    var ym = yr+"-"+String(m).padStart(2,"0");
+    var s = financeMonthSummary(ym);
+    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600">'+monthName(m-1)+'</td>';
+    FINANCE_CATEGORIES.forEach(function(c){
+      yearSums[c[0]] += s.byCategory[c[0]]||0;
+      html += '<td style="text-align:right">'+fmtPln(s.byCategory[c[0]])+'</td>';
+    });
+    yearZysk += s.zysk;
+    html += '<td style="text-align:right; font-weight:700; color:'+(s.zysk>=0?"var(--success)":"var(--danger)")+'">'+fmtPln(s.zysk)+'</td></tr>';
+  }
+  html += '<tr style="font-weight:700"><td style="position:sticky; left:0; background:var(--bg)">Rok '+yr+'</td>';
+  FINANCE_CATEGORIES.forEach(function(c){ html += '<td style="text-align:right; color:var(--accent)">'+fmtPln(yearSums[c[0]])+'</td>'; });
+  html += '<td style="text-align:right; color:'+(yearZysk>=0?"var(--success)":"var(--danger)")+'">'+fmtPln(yearZysk)+'</td></tr>';
+  html += '</tbody></table></div></div>';
+  return html;
 }
 function openFinanceModal(opts){
   opts = opts || {};
   var isEdit = !!opts.id;
   var entry = isEdit ? state.financeEntries.filter(function(e){ return e.id===opts.id; })[0] : null;
-  var month = entry ? entry.month : (opts.month || financeMonth);
+  var defaultMonth = (financeTab && financeTab!=="TOTAL") ? financeTab : todayStr().slice(0,7);
+  var month = entry ? entry.month : (opts.month || defaultMonth);
   var category = entry ? entry.category : (opts.category || financeSubview);
   var catOptions = FINANCE_CATEGORIES.map(function(c){
     return '<option value="'+c[0]+'"'+(category===c[0]?" selected":"")+'>'+c[1]+'</option>';
@@ -4096,9 +4199,9 @@ function saveFinanceModal(){
     var e = state.financeEntries.filter(function(x){ return x.id===ctx.id; })[0];
     if(e){ e.name=name; e.amount=amount; e.category=category; e.month=month; e.method=method; }
   } else {
-    state.financeEntries.push({id:uid("fin"), month:month, category:category, name:name, amount:amount, method:method});
+    state.financeEntries.push({id:uid("fin"), month:month, category:category, name:name, amount:amount, method:method, createdAt:todayStr()});
   }
-  financeSubview = category; financeMonth = month;
+  financeSubview = category; financeTab = month;
   closeFinanceModal();
   save(); renderAll();
 }
@@ -4114,6 +4217,134 @@ function deleteFinanceEntry(id){
   if(!confirm("Usunąć tę pozycję?")) return;
   state.financeEntries = state.financeEntries.filter(function(x){ return x.id!==id; });
   save(); renderAll();
+}
+
+/* ---- Kopia zapasowa Finansów w osobnym arkuszu Google Sheets ---- */
+var financeBackupSyncTimer = null;
+var financeBackupPending = false;
+var financeBackupCreating = false;
+var financeBackupStatus = "idle";
+function ensureFinanceBackupSheet(){
+  if(!window.__gcalToken || state.financeBackupSheetId || financeBackupCreating) return;
+  financeBackupCreating = true;
+  var yr = new Date().getFullYear();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      properties:{title:"Finanse — kopia zapasowa (system) "+yr},
+      sheets:[{properties:{title:"TOTAL"}}]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    financeBackupCreating = false;
+    if(data.spreadsheetId){
+      state.financeBackupSheetId = data.spreadsheetId;
+      state.financeBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      state.financeBackupYear = yr;
+      save(); renderAll();
+    }
+  }).catch(function(){ financeBackupCreating = false; });
+}
+function scheduleFinanceBackupPush(){
+  if(!window.__gcalToken || !state.financeBackupSheetId) return;
+  var yr = new Date().getFullYear();
+  if(!state.financeBackupYear){
+    state.financeBackupYear = yr;
+    fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+":batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({requests:[{updateSpreadsheetProperties:{properties:{title:"Finanse — kopia zapasowa (system) "+yr}, fields:"title"}}]})
+    }).catch(function(){});
+  } else if(state.financeBackupYear !== yr){
+    state.financeBackupSheetId = null;
+    state.financeBackupSheetUrl = null;
+    state.financeBackupYear = null;
+    ensureFinanceBackupSheet();
+    return;
+  }
+  financeBackupPending = true;
+  if(financeBackupSyncTimer) clearTimeout(financeBackupSyncTimer);
+  financeBackupSyncTimer = setTimeout(flushFinanceBackupPush, 1500);
+}
+function financeBackupMonthTabName(ym){
+  var p = ym.split("-"), y=+p[0], m=+p[1];
+  return monthName(m-1)+" "+y;
+}
+function flushFinanceBackupPush(){
+  if(!financeBackupPending) return;
+  financeBackupPending = false;
+  if(!window.__gcalToken || !state.financeBackupSheetId) return;
+  var backupYear = String(state.financeBackupYear || new Date().getFullYear());
+
+  var totalHeader = ["MIESIĄC"].concat(FINANCE_CATEGORIES.map(function(c){return c[1].toUpperCase();})).concat(["ZYSK"]);
+  var totalRows = [totalHeader];
+  var yearSums = {}; FINANCE_CATEGORIES.forEach(function(c){ yearSums[c[0]]=0; });
+  var yearZysk = 0;
+  for(var m=1;m<=12;m++){
+    var ym = backupYear+"-"+String(m).padStart(2,"0");
+    var s = financeMonthSummary(ym);
+    var row = [monthName(m-1)];
+    FINANCE_CATEGORIES.forEach(function(c){ yearSums[c[0]] += s.byCategory[c[0]]||0; row.push(s.byCategory[c[0]]||0); });
+    yearZysk += s.zysk;
+    row.push(s.zysk);
+    totalRows.push(row);
+  }
+  var yearRow = ["Rok "+backupYear];
+  FINANCE_CATEGORIES.forEach(function(c){ yearRow.push(yearSums[c[0]]); });
+  yearRow.push(yearZysk);
+  totalRows.push(yearRow);
+
+  // Osobna zakładka na każdy miesiąc (nazwa, kategoria, kwota, sposób płatności, data dodania) —
+  // dokładnie jak widok "Finanse" w systemie, jeden miesiąc naraz, żeby nic nie było ze sobą pomieszane.
+  var monthsPresent = Array.from(new Set(
+    state.financeEntries.filter(function(e){ return e.month.slice(0,4)===backupYear; }).map(function(e){ return e.month; })
+  )).sort();
+  var catOrder = FINANCE_CATEGORIES.map(function(c){return c[0];});
+  function financeMonthGrid(ym){
+    var rows = [["Kategoria","Nazwa","Kwota","Sposób płatności","Data dodania"]];
+    state.financeEntries.filter(function(e){ return e.month===ym; })
+      .sort(function(a,b){ return catOrder.indexOf(a.category)-catOrder.indexOf(b.category); })
+      .forEach(function(e){
+        rows.push([FINANCE_CATEGORY_LABEL[e.category]||e.category, e.name, e.amount, e.method==="gotowka"?"Gotówka":"Karta", e.createdAt||""]);
+      });
+    return rows;
+  }
+
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId, {
+    headers:{Authorization:"Bearer "+window.__gcalToken}
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+    return r.json();
+  }).then(function(meta){
+    var existingTitles = (meta.sheets||[]).map(function(s){ return s.properties.title; });
+    var structRequests = [];
+    monthsPresent.forEach(function(ym){
+      var tabName = financeBackupMonthTabName(ym);
+      if(existingTitles.indexOf(tabName)===-1){ structRequests.push({addSheet:{properties:{title:tabName}}}); }
+    });
+    if(!structRequests.length) return Promise.resolve();
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+":batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({requests:structRequests})
+    });
+  }).then(function(){
+    var valuesData = [{range:"TOTAL!A1", values: totalRows}];
+    monthsPresent.forEach(function(ym){
+      valuesData.push({range:"'"+financeBackupMonthTabName(ym)+"'!A1", values: financeMonthGrid(ym)});
+    });
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({valueInputOption:"RAW", data: valuesData})
+    });
+  }).then(function(r){
+    if(r && r.status===401){ window.__gcalToken=null; }
+    financeBackupStatus = (r && r.ok) ? "ok" : "error";
+  }).catch(function(){ financeBackupStatus = "error"; });
 }
 
 /* ================= ZADANIA ================= */
@@ -4544,6 +4775,8 @@ window.onGCalTokenReady = function(){
   scheduleClientsBackupPush();
   ensureCrmBackupSheet();
   scheduleCrmBackupPush();
+  ensureFinanceBackupSheet();
+  scheduleFinanceBackupPush();
   crmFlushPendingT4ASync();
 };
 function renderKalendarz(el){
