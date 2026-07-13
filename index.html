@@ -5252,7 +5252,7 @@ function ensureHabitsBackupSheet(){
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
     body: JSON.stringify({
       properties:{title:"Nawyki — kopia zapasowa (system)"},
-      sheets:[{properties:{title:"TOTAL"}},{properties:{title:"RAW"}},{properties:{title:"RAPORTY"}}]
+      sheets:[{properties:{title:"TOTAL"}},{properties:{title:"RAPORTY"}}]
     })
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
@@ -5289,33 +5289,6 @@ function flushHabitsBackupPush(){
     totalRows.push(row);
   });
 
-  // Siatka dzień-po-dniu, pogrupowana wg miesiąca — czytelna 1:1 z widokiem "Nawyki" w systemie,
-  // zamiast jednego nieczytelnego JSON-a na nawyk. Obejmuje każdy miesiąc, w którym cokolwiek odhaczono
-  // (łącznie z historycznymi, zaimportowanymi wcześniej danymi), nie tylko bieżący rok.
-  var allMonthsSet = {};
-  state.habits.forEach(function(h){
-    Object.keys(h.log||{}).forEach(function(dateKey){ allMonthsSet[dateKey.slice(0,7)] = true; });
-  });
-  var monthList = Object.keys(allMonthsSet).sort();
-  var rawHeader = ["Miesiąc","Nawyk"];
-  for(var dd=1; dd<=31; dd++){ rawHeader.push(String(dd)); }
-  rawHeader.push("Wyk.","Dni","%");
-  var rawRows = [rawHeader];
-  monthList.forEach(function(ym){
-    var mParts = ym.split("-"), my = +mParts[0], mm = +mParts[1];
-    var dim = daysInMonth(my, mm);
-    state.habits.forEach(function(h){
-      var st = habitMonthStats(h, ym);
-      var row = [ym, h.name];
-      for(var d=1; d<=31; d++){
-        if(d>dim){ row.push(""); }
-        else { row.push((h.log && h.log[ym+"-"+String(d).padStart(2,"0")]) ? "TAK" : "NIE"); }
-      }
-      row.push(st.done, st.days, st.pct+"%");
-      rawRows.push(row);
-    });
-  });
-
   var reportRows = [["miesiac","dni","raport"]];
   Object.keys(state.habitReports||{}).sort().forEach(function(ym){
     var rows = state.habitReports[ym];
@@ -5323,20 +5296,75 @@ function flushHabitsBackupPush(){
     (rows||[]).forEach(function(r){ reportRows.push([ym, r.value||"", r.label||""]); });
   });
 
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId+"/values:batchUpdate", {
-    method:"POST",
-    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({
-      valueInputOption:"RAW",
-      data:[
-        {range:"TOTAL!A1", values: totalRows},
-        {range:"RAW!A1", values: rawRows},
-        {range:"RAPORTY!A1", values: reportRows}
-      ]
-    })
+  // Osobna zakładka na każdy miesiąc (dokładnie jak widok "Nawyki" w systemie: jeden miesiąc = jedna
+  // siatka nawyk × dzień), zamiast wszystkiego zmieszanego w jednym arkuszu. Obejmuje każdy miesiąc,
+  // w którym cokolwiek odhaczono (łącznie z historycznymi danymi), nie tylko bieżący rok.
+  var allMonthsSet = {};
+  state.habits.forEach(function(h){
+    Object.keys(h.log||{}).forEach(function(dateKey){ allMonthsSet[dateKey.slice(0,7)] = true; });
+  });
+  var monthList = Object.keys(allMonthsSet).sort();
+  function habitMonthTabName(ym){
+    var p = ym.split("-"), y=+p[0], m=+p[1];
+    return monthName(m-1)+" "+y;
+  }
+  function habitMonthGrid(ym){
+    var p = ym.split("-"), y=+p[0], m=+p[1];
+    var dim = daysInMonth(y,m);
+    var header = ["Nawyk"];
+    for(var d=1; d<=dim; d++){ header.push(String(d)); }
+    header.push("Wyk.","Dni","%");
+    var rows = [header];
+    state.habits.forEach(function(h){
+      var st = habitMonthStats(h, ym);
+      var row = [h.name];
+      for(var d=1; d<=dim; d++){
+        row.push((h.log && h.log[ym+"-"+String(d).padStart(2,"0")]) ? "TAK" : "NIE");
+      }
+      row.push(st.done, st.days, st.pct+"%");
+      rows.push(row);
+    });
+    return rows;
+  }
+
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId, {
+    headers:{Authorization:"Bearer "+window.__gcalToken}
   }).then(function(r){
-    if(r.status===401){ window.__gcalToken=null; }
-    habitsBackupStatus = r.ok ? "ok" : "error";
+    if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+    return r.json();
+  }).then(function(meta){
+    var existing = (meta.sheets||[]).map(function(s){ return s.properties; });
+    var existingTitles = existing.map(function(p){ return p.title; });
+    var structRequests = [];
+    monthList.forEach(function(ym){
+      var tabName = habitMonthTabName(ym);
+      if(existingTitles.indexOf(tabName)===-1){ structRequests.push({addSheet:{properties:{title:tabName}}}); }
+    });
+    // Stary arkusz "RAW" (jeden JSON na nawyk) jest teraz zastąpiony osobnymi zakładkami per miesiąc — usuń go, jeśli został z wcześniejszej wersji kopii zapasowej.
+    var oldRaw = existing.filter(function(p){ return p.title==="RAW"; })[0];
+    if(oldRaw){ structRequests.push({deleteSheet:{sheetId:oldRaw.sheetId}}); }
+    if(!structRequests.length) return Promise.resolve();
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId+":batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({requests:structRequests})
+    });
+  }).then(function(){
+    var valuesData = [
+      {range:"TOTAL!A1", values: totalRows},
+      {range:"RAPORTY!A1", values: reportRows}
+    ];
+    monthList.forEach(function(ym){
+      valuesData.push({range:"'"+habitMonthTabName(ym)+"'!A1", values: habitMonthGrid(ym)});
+    });
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({valueInputOption:"RAW", data: valuesData})
+    });
+  }).then(function(r){
+    if(r && r.status===401){ window.__gcalToken=null; }
+    habitsBackupStatus = (r && r.ok) ? "ok" : "error";
   }).catch(function(){ habitsBackupStatus = "error"; });
 }
 
