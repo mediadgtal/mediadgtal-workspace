@@ -1447,6 +1447,7 @@ function defaultState(){
   s.habitReports = {};
   s.habitsBackupSheetId = null;
   s.habitsBackupSheetUrl = null;
+  s.habitsBackupYear = null;
 
   s.clientsGoals = {
     "2026-01":8000,"2026-02":9000,"2026-03":10000,"2026-04":15000,"2026-05":13000,"2026-06":17000,
@@ -1481,6 +1482,7 @@ function defaultState(){
   s.clientsBackupSheetUrl = null;
   s.crmBackupSheetId = null;
   s.crmBackupSheetUrl = null;
+  s.crmBackupYear = null;
 
   s.igAccounts = [
     {id:"ig1", handle:"@damian.gogulski", bio:"Marketing dla branży tanecznej — MediaDGtal", initials:"DA",
@@ -5247,11 +5249,12 @@ var habitsBackupStatus = "idle"; // idle|ok|error
 function ensureHabitsBackupSheet(){
   if(!window.__gcalToken || state.habitsBackupSheetId || habitsBackupCreating) return;
   habitsBackupCreating = true;
+  var yr = new Date().getFullYear();
   fetch("https://sheets.googleapis.com/v4/spreadsheets", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
     body: JSON.stringify({
-      properties:{title:"Nawyki — kopia zapasowa (system)"},
+      properties:{title:"Nawyki — kopia zapasowa (system) "+yr},
       sheets:[{properties:{title:"TOTAL"}},{properties:{title:"RAPORTY"}}]
     })
   }).then(function(r){
@@ -5262,6 +5265,7 @@ function ensureHabitsBackupSheet(){
     if(data.spreadsheetId){
       state.habitsBackupSheetId = data.spreadsheetId;
       state.habitsBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      state.habitsBackupYear = yr;
       save();
       renderAll();
     }
@@ -5269,6 +5273,23 @@ function ensureHabitsBackupSheet(){
 }
 function scheduleHabitsBackupPush(){
   if(!window.__gcalToken || !state.habitsBackupSheetId) return;
+  var yr = new Date().getFullYear();
+  if(!state.habitsBackupYear){
+    // Arkusz sprzed wprowadzenia oznaczania rokiem w tytule — dopisz rok jednorazowo, bez tworzenia nowego pliku.
+    state.habitsBackupYear = yr;
+    fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId+":batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({requests:[{updateSpreadsheetProperties:{properties:{title:"Nawyki — kopia zapasowa (system) "+yr}, fields:"title"}}]})
+    }).catch(function(){});
+  } else if(state.habitsBackupYear !== yr){
+    // Zmiana roku — stary arkusz zostaje jako archiwum (przestaje się aktualizować), zaczynamy nowy.
+    state.habitsBackupSheetId = null;
+    state.habitsBackupSheetUrl = null;
+    state.habitsBackupYear = null;
+    ensureHabitsBackupSheet();
+    return;
+  }
   habitsBackupPending = true;
   if(habitsBackupSyncTimer) clearTimeout(habitsBackupSyncTimer);
   habitsBackupSyncTimer = setTimeout(flushHabitsBackupPush, 1500);
@@ -5289,19 +5310,20 @@ function flushHabitsBackupPush(){
     totalRows.push(row);
   });
 
+  var backupYear = String(state.habitsBackupYear || yr);
   var reportRows = [["miesiac","dni","raport"]];
-  Object.keys(state.habitReports||{}).sort().forEach(function(ym){
+  Object.keys(state.habitReports||{}).filter(function(ym){ return ym.slice(0,4)===backupYear; }).sort().forEach(function(ym){
     var rows = state.habitReports[ym];
     if(typeof rows === "string"){ reportRows.push([ym, "", rows]); return; }
     (rows||[]).forEach(function(r){ reportRows.push([ym, r.value||"", r.label||""]); });
   });
 
   // Osobna zakładka na każdy miesiąc (dokładnie jak widok "Nawyki" w systemie: jeden miesiąc = jedna
-  // siatka nawyk × dzień), zamiast wszystkiego zmieszanego w jednym arkuszu. Obejmuje każdy miesiąc,
-  // w którym cokolwiek odhaczono (łącznie z historycznymi danymi), nie tylko bieżący rok.
+  // siatka nawyk × dzień), zamiast wszystkiego zmieszanego w jednym arkuszu. Ograniczone do roku, który
+  // reprezentuje ten konkretny plik (każdy rok dostaje własny arkusz — patrz scheduleHabitsBackupPush).
   var allMonthsSet = {};
   state.habits.forEach(function(h){
-    Object.keys(h.log||{}).forEach(function(dateKey){ allMonthsSet[dateKey.slice(0,7)] = true; });
+    Object.keys(h.log||{}).filter(function(dateKey){ return dateKey.slice(0,4)===backupYear; }).forEach(function(dateKey){ allMonthsSet[dateKey.slice(0,7)] = true; });
   });
   var monthList = Object.keys(allMonthsSet).sort();
   function habitMonthTabName(ym){
@@ -7441,11 +7463,12 @@ var crmBackupStatus = "idle";
 function ensureCrmBackupSheet(){
   if(!window.__gcalToken || state.crmBackupSheetId || crmBackupCreating) return;
   crmBackupCreating = true;
+  var yr = new Date().getFullYear();
   fetch("https://sheets.googleapis.com/v4/spreadsheets", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
     body: JSON.stringify({
-      properties:{title:"Baza kontaktów — kopia zapasowa (system)"},
+      properties:{title:"Baza kontaktów — kopia zapasowa (system) "+yr},
       sheets:[{properties:{title:"RAW"}}]
     })
   }).then(function(r){
@@ -7456,12 +7479,30 @@ function ensureCrmBackupSheet(){
     if(data.spreadsheetId){
       state.crmBackupSheetId = data.spreadsheetId;
       state.crmBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      state.crmBackupYear = yr;
       save(); renderAll();
     }
   }).catch(function(){ crmBackupCreating = false; });
 }
 function scheduleCrmBackupPush(){
   if(!window.__gcalToken || !state.crmBackupSheetId) return;
+  var yr = new Date().getFullYear();
+  if(!state.crmBackupYear){
+    // Arkusz sprzed wprowadzenia oznaczania rokiem w tytule — dopisz rok jednorazowo, bez tworzenia nowego pliku.
+    state.crmBackupYear = yr;
+    fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.crmBackupSheetId+":batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({requests:[{updateSpreadsheetProperties:{properties:{title:"Baza kontaktów — kopia zapasowa (system) "+yr}, fields:"title"}}]})
+    }).catch(function(){});
+  } else if(state.crmBackupYear !== yr){
+    // Zmiana roku — stary arkusz zostaje jako archiwum (przestaje się aktualizować), zaczynamy nowy.
+    state.crmBackupSheetId = null;
+    state.crmBackupSheetUrl = null;
+    state.crmBackupYear = null;
+    ensureCrmBackupSheet();
+    return;
+  }
   crmBackupPending = true;
   if(crmBackupSyncTimer) clearTimeout(crmBackupSyncTimer);
   crmBackupSyncTimer = setTimeout(flushCrmBackupPush, 1500);
