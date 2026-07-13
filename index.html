@@ -5289,8 +5289,32 @@ function flushHabitsBackupPush(){
     totalRows.push(row);
   });
 
-  var rawRows = [["id","name","log_json"]];
-  state.habits.forEach(function(h){ rawRows.push([h.id, h.name, JSON.stringify(h.log||{})]); });
+  // Siatka dzień-po-dniu, pogrupowana wg miesiąca — czytelna 1:1 z widokiem "Nawyki" w systemie,
+  // zamiast jednego nieczytelnego JSON-a na nawyk. Obejmuje każdy miesiąc, w którym cokolwiek odhaczono
+  // (łącznie z historycznymi, zaimportowanymi wcześniej danymi), nie tylko bieżący rok.
+  var allMonthsSet = {};
+  state.habits.forEach(function(h){
+    Object.keys(h.log||{}).forEach(function(dateKey){ allMonthsSet[dateKey.slice(0,7)] = true; });
+  });
+  var monthList = Object.keys(allMonthsSet).sort();
+  var rawHeader = ["Miesiąc","Nawyk"];
+  for(var dd=1; dd<=31; dd++){ rawHeader.push(String(dd)); }
+  rawHeader.push("Wyk.","Dni","%");
+  var rawRows = [rawHeader];
+  monthList.forEach(function(ym){
+    var mParts = ym.split("-"), my = +mParts[0], mm = +mParts[1];
+    var dim = daysInMonth(my, mm);
+    state.habits.forEach(function(h){
+      var st = habitMonthStats(h, ym);
+      var row = [ym, h.name];
+      for(var d=1; d<=31; d++){
+        if(d>dim){ row.push(""); }
+        else { row.push((h.log && h.log[ym+"-"+String(d).padStart(2,"0")]) ? "TAK" : "NIE"); }
+      }
+      row.push(st.done, st.days, st.pct+"%");
+      rawRows.push(row);
+    });
+  });
 
   var reportRows = [["miesiac","dni","raport"]];
   Object.keys(state.habitReports||{}).sort().forEach(function(ym){
