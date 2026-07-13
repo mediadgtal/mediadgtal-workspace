@@ -1054,6 +1054,11 @@ function prevMonthKey(ym){
   if(m<1){ m=12; y--; }
   return y+"-"+String(m).padStart(2,"0");
 }
+function nextMonthKey(ym){
+  var p = ym.split("-"), y=+p[0], m=+p[1]+1;
+  if(m>12){ m=1; y++; }
+  return y+"-"+String(m).padStart(2,"0");
+}
 function clientMonthSummary(ym){
   var rows = ((state.clientsMonthly && state.clientsMonthly[ym]) || []).filter(function(r){return r.nazwa;});
   var wynagrodzenia = rows.reduce(function(s,r){return s+(+r.wynagrodzenie||0);},0);
@@ -7125,7 +7130,9 @@ function renderKlienciMonth(ym){
       var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg)"' : '';
       html += '<td'+stickyStyle+'>'+klientCellDisplay(r, f)+'</td>';
     });
-    html += '<td><button class="linklike" onclick="openClientRowModal(\''+ym+'\',\''+r.id+'\')">Edytuj</button></td></tr>';
+    html += '<td style="white-space:nowrap"><button class="linklike" onclick="openClientRowModal(\''+ym+'\',\''+r.id+'\')">Edytuj</button> '+
+      (r.nazwa ? '<button class="linklike" title="Skopiuj klienta do '+nextMonthKey(ym)+' z automatycznym przeliczeniem Ilości Wsp. i dat" onclick="advanceClientToNextMonth(\''+ym+'\',\''+r.id+'\')">Przenieś dalej</button>' : '')+
+      '</td></tr>';
   });
   html += '</tbody></table></div></div>';
 
@@ -7267,6 +7274,26 @@ function addClientRow(){
   var row = mkClient("","","","",0,0,0,0,"","","","","","");
   state.clientsMonthly[klienciTab].push(row);
   pushKlienciUndo({type:"add", ym:klienciTab, rowId:row.id});
+  save(); renderAll();
+}
+function advanceClientToNextMonth(ym, rowId){
+  var rows = state.clientsMonthly[ym]||[];
+  var r = rows.filter(function(x){ return x.id===rowId; })[0];
+  if(!r) return;
+  var nextYm = nextMonthKey(ym);
+  // "Ilość Wsp." = liczba miesięcy współpracy — jeden okres rozliczeniowy (Okres w dniach / 30) to tyle miesięcy doliczamy.
+  var monthsForPeriod = Math.max(1, Math.round((+r.okresDni||30)/30));
+  var newIloscWsp = (+r.iloscWsp||0) + monthsForPeriod;
+  var newStart = computeKoniecDate(r) || (nextYm+"-01");
+  var newRow = mkClient(
+    r.nazwa, r.lokalizacja, "", "Kontynuacja",
+    r.wynagrodzenie, r.budzetRekl, newIloscWsp, r.okresDni,
+    "Start", newStart, "", r.cel||"", r.ocenaWsp||"", r.notatki||""
+  );
+  if(!state.clientsMonthly[nextYm]) state.clientsMonthly[nextYm] = [];
+  state.clientsMonthly[nextYm].push(newRow);
+  pushKlienciUndo({type:"add", ym:nextYm, rowId:newRow.id});
+  klienciTab = nextYm;
   save(); renderAll();
 }
 function deleteClientRow(ym, rowId){
@@ -7794,6 +7821,13 @@ function crmSystemOptions(selected){
   var html = '<option value=""'+(!selected?" selected":"")+'>— nie wybrano —</option>';
   CRM_SYSTEMS.forEach(function(s){
     html += '<option value="'+s+'"'+(selected===s?" selected":"")+'>'+s+'</option>';
+  });
+  return html;
+}
+function crmStatusOptions(selected){
+  var html = '<option value=""'+(!selected?" selected":"")+'>— brak —</option>';
+  CRM_STATUSES.forEach(function(s){
+    html += '<option value="'+s.id+'"'+(selected===s.id?" selected":"")+'>'+s.label+'</option>';
   });
   return html;
 }
@@ -8424,14 +8458,14 @@ function renderCrmBaza(){
     html += '<tr data-crm-row-id="'+c.id+'">'+
       '<td><div style="'+CLAMP2+'" title="'+escapeHtml(c.name||"")+'">'+escapeHtml(c.name||"")+'</div></td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.city)+'</td>'+
-      '<td style="'+TRUNC+'">'+crmCell(c.category)+'</td>'+
-      '<td style="'+TRUNC+'">'+crmCell(c.system)+'</td>'+
+      '<td style="'+TRUNC+'"><select onchange="crmSetCategory(\''+c.id+'\', this.value)" style="width:100%; font-size:12px; padding:4px 6px">'+crmCategoryOptions(c.category)+'</select></td>'+
+      '<td style="'+TRUNC+'"><select onchange="crmSetSystem(\''+c.id+'\', this.value)" style="width:100%; font-size:12px; padding:4px 6px">'+crmSystemOptions(c.system)+'</select></td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(igUrl)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(fbUrl)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(webUrl)+'</td>'+
       '<td style="'+TRUNC+'">'+crmEmailCell(c.email)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.phone)+'</td>'+
-      '<td style="'+TRUNC+'">'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td style="'+TRUNC+'"><select onchange="crmSetStatus(\''+c.id+'\', this.value)" style="width:100%; font-size:12px; padding:4px 6px">'+crmStatusOptions(c.status)+'</select></td>'+
       '<td style="'+TRUNC+'">'+(crmT4ALabel(c)?crmT4ATag(c):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td style="'+TRUNC+'">'+(c.lastContact?fmtDate(c.lastContact):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button></td>'+
