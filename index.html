@@ -391,12 +391,18 @@
 
   .ceo-header{display:flex; align-items:center; gap:18px; flex-wrap:wrap}
   .ceo-avatar{width:84px; height:84px; border-radius:50%; object-fit:cover; border:2.5px solid var(--accent); flex:0 0 84px}
-  .inv3d-stage{position:relative; height:440px; margin:0 auto; perspective:1200px; cursor:grab; touch-action:none; user-select:none}
-  .inv3d-stage:active{cursor:grabbing}
-  .inv3d-ring{position:absolute; inset:0; transform-style:preserve-3d}
-  .inv3d-photo{position:absolute; left:50%; top:50%; width:220px; margin-left:-110px; margin-top:-220px; border-radius:12px; box-shadow:0 10px 40px rgba(0,0,0,.5); backface-visibility:hidden; pointer-events:none}
-  .inv3d-item{position:absolute; left:50%; top:50%; width:70px; height:70px; margin-left:-35px; margin-top:-35px; border-radius:50%; background:var(--sidebar-bg); border:2px solid var(--accent); display:flex; align-items:center; justify-content:center; font-size:24px; box-shadow:0 4px 14px rgba(0,0,0,.4); pointer-events:none}
-  .inv3d-item-label{position:absolute; bottom:-18px; left:0; right:0; text-align:center; font-size:9.5px; color:var(--muted-light); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .charsheet-modal .modal-box{max-width:780px}
+  .charsheet-layout{display:flex; gap:16px; align-items:center; justify-content:center; flex-wrap:wrap}
+  .charsheet-slots{display:flex; flex-direction:column; gap:10px}
+  .charsheet-slot{width:56px; height:56px; border-radius:8px; background:var(--sidebar-bg); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:22px}
+  .charsheet-slot.empty{opacity:.35; border-style:dashed}
+  .charsheet-portrait-wrap{flex:0 0 auto; perspective:1000px; cursor:grab; touch-action:none; user-select:none}
+  .charsheet-portrait-wrap:active{cursor:grabbing}
+  .charsheet-portrait{width:230px; display:block; border-radius:12px; box-shadow:0 10px 40px rgba(0,0,0,.5); backface-visibility:hidden; transition:transform .05s linear; pointer-events:none}
+  .charsheet-stats{flex:1 1 180px; min-width:180px}
+  .charsheet-stat-row{display:flex; justify-content:space-between; font-size:13px; color:var(--muted-light); padding:5px 0; border-bottom:1px solid var(--border)}
+  .charsheet-stat-row b{color:var(--accent)}
+  .charsheet-gold{margin-top:12px; font-size:15px; font-weight:700; color:var(--accent); text-align:right}
   .ceo-header-info{flex:1; min-width:200px}
   .ceo-name{font-size:17px; font-weight:700; color:#fff}
   .ceo-class{color:var(--accent); font-weight:600; font-size:14px}
@@ -8190,14 +8196,23 @@ function ceoInventoryIcon(item){
   if(s.indexOf("make")!==-1 || s.indexOf("zapier")!==-1 || s.indexOf("automat")!==-1) return "⚙️";
   return "🎒";
 }
+/* Faza 3.1 — przebudowa na układ "karty postaci" (Diablo 4), po feedbacku Damiana że
+   pierwsza wersja (obracana karta z przedmiotami na orbicie) w ogóle nie przypominała
+   tego o co prosił. To wciąż jedno płaskie zdjęcie, nie prawdziwy model 3D — więc obrót
+   jest CELOWO ograniczony do wąskiego zakresu (±28°), żeby nigdy nie pokazać "krawędzi"
+   płaskiej fotografii tak jak zrobiłoby to pełne 360°. Prawdziwe "zobacz plecy postaci"
+   wymagałoby albo kilku zdjęć pod różnymi kątami (możemy dorobić, jeśli Damian je da),
+   albo osobnego modelu 3D — żadnego z nich nie mamy.  */
 var inv3dRotY = 0, inv3dDragging = false, inv3dDragStartX = 0, inv3dDragStartRot = 0;
+var INV3D_MAX_TILT = 28;
 function ceoUpdateInv3dTransform(){
-  var ring = document.getElementById("inv3dRing");
-  if(ring) ring.style.transform = "rotateY("+inv3dRotY+"deg)";
+  var img = document.getElementById("charsheetPortrait");
+  if(img) img.style.transform = "rotateY("+inv3dRotY+"deg)";
 }
 function ceoInv3dPointerMove(e){
   if(!inv3dDragging) return;
-  inv3dRotY = inv3dDragStartRot + (e.clientX-inv3dDragStartX)*0.4;
+  var raw = inv3dDragStartRot + (e.clientX-inv3dDragStartX)*0.3;
+  inv3dRotY = Math.max(-INV3D_MAX_TILT, Math.min(INV3D_MAX_TILT, raw));
   ceoUpdateInv3dTransform();
 }
 function ceoInv3dPointerUp(){
@@ -8222,23 +8237,34 @@ function closeInv3dModal(){
 function openInv3dModal(){
   closeInv3dModal();
   var items = state.ceo.inventory||[];
-  var n = items.length;
-  var itemsHtml = items.map(function(item,i){
-    var angle = n ? Math.round(360/n*i) : 0;
-    return '<div class="inv3d-item" style="transform:rotateY('+angle+'deg) translateZ(210px)">'+ceoInventoryIcon(item)+
-      '<div class="inv3d-item-label">'+escapeHtml(item)+'</div></div>';
+  var left = [], right = [];
+  for(var i=0;i<10;i++){
+    var item = items[i];
+    var slotHtml = item
+      ? '<div class="charsheet-slot" title="'+escapeHtml(item)+'">'+ceoInventoryIcon(item)+'</div>'
+      : '<div class="charsheet-slot empty"></div>';
+    (i%2===0 ? left : right).push(slotHtml);
+  }
+  var lvl = ceoCharLevelInfo();
+  var statsHtml = Object.keys(CEO_ATTRIBUTES).map(function(k){
+    var def = CEO_ATTRIBUTES[k];
+    return '<div class="charsheet-stat-row"><span>'+def.icon+' '+def.label+'</span><b>'+ceoAttributeValue(k)+'</b></div>';
   }).join("");
   var html = '<div class="modal-overlay" id="inv3dModal" data-close="closeInv3dModal">'+
-    '<div class="modal-box card" style="max-width:560px; text-align:center">'+
-    '<h3 style="margin-top:0">🎒 Inventory</h3>'+
-    '<div class="inv3d-stage" id="inv3dStage">'+
-      '<div class="inv3d-ring" id="inv3dRing">'+
-        '<img class="inv3d-photo" src="data:image/jpeg;base64,'+AVATAR_FULL_B64+'" alt="Damian">'+
-        itemsHtml+
+    '<div class="modal-box card charsheet-modal">'+
+    '<h3 style="margin-top:0">'+escapeHtml(ceoRank(lvl.level))+' · Poziom '+lvl.level+'</h3>'+
+    '<div class="charsheet-layout">'+
+      '<div class="charsheet-slots">'+left.join("")+'</div>'+
+      '<div class="charsheet-portrait-wrap" id="inv3dStage">'+
+        '<img class="charsheet-portrait" id="charsheetPortrait" src="data:image/jpeg;base64,'+AVATAR_FULL_B64+'" alt="Damian">'+
+      '</div>'+
+      '<div class="charsheet-slots">'+right.join("")+'</div>'+
+      '<div class="charsheet-stats">'+statsHtml+
+        '<div class="charsheet-gold">🪙 '+state.ceo.gold.toLocaleString("pl-PL")+'</div>'+
       '</div>'+
     '</div>'+
     (items.length ? '' : '<div class="empty" style="margin-top:8px">Inventory jest puste — dodaj przedmioty w sekcji poniżej.</div>')+
-    '<div style="font-size:11px; color:var(--muted); margin-top:8px">Przeciągnij, żeby obrócić.</div>'+
+    '<div style="font-size:11px; color:var(--muted); margin-top:10px">Przeciągnij portret, żeby lekko go przechylić.</div>'+
     '<button class="btn secondary small" style="margin-top:10px" onclick="closeInv3dModal()">Zamknij</button>'+
     '</div></div>';
   document.body.insertAdjacentHTML("beforeend", html);
