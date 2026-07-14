@@ -1035,6 +1035,12 @@ function migrateState(s){
     if(!c.raidBosses) c.raidBosses = {};
     if(c.worldBoss===undefined) c.worldBoss = null;
     if(!c.imperiumDone) c.imperiumDone = {};
+    if(!c.xpByCategoryThisWeek) c.xpByCategoryThisWeek = {};
+    if(c.xpByCategoryWeekStart===undefined) c.xpByCategoryWeekStart = null;
+    if(c.restedXpRemaining==null) c.restedXpRemaining = 0;
+    if(!c.vacationMode) c.vacationMode = {active:false, endDate:null};
+    if(c.streakFreezeMonth===undefined) c.streakFreezeMonth = null;
+    if(c.streakFreezeStock==null) c.streakFreezeStock = 0;
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1562,7 +1568,13 @@ function defaultState(){
     seasonFrames: [],
     raidBosses: {},
     worldBoss: null,
-    imperiumDone: {}
+    imperiumDone: {},
+    xpByCategoryThisWeek: {},
+    xpByCategoryWeekStart: null,
+    restedXpRemaining: 0,
+    vacationMode: {active:false, endDate:null},
+    streakFreezeMonth: null,
+    streakFreezeStock: 0
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
   s.ceo.skillActive = {};
@@ -6624,12 +6636,60 @@ function dateMinusDays(dateStr, n){
   d.setDate(d.getDate()-n);
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
+/* Faza 3 — Tryb Urlop (sekcja 10): auto-wyłącza się sam po endDate. */
+function ceoVacationActive(){
+  var v = state.ceo.vacationMode;
+  if(!v || !v.active) return false;
+  if(v.endDate && todayStr()>v.endDate){ v.active = false; return false; }
+  return true;
+}
+function ceoSetVacationMode(days){
+  if(!days){ state.ceo.vacationMode = {active:false, endDate:null}; save(); renderAll(); return; }
+  var end = new Date(); end.setDate(end.getDate()+days);
+  state.ceo.vacationMode = {active:true, endDate: end.getFullYear()+"-"+String(end.getMonth()+1).padStart(2,"0")+"-"+String(end.getDate()).padStart(2,"0")};
+  save(); renderAll();
+}
+/* Faza 3 — Zamrożenie streaka (sekcja 10): 2 darmowe/mies. + atrybut Duch (+1/10pkt),
+   dokłada się miesięcznie (nie resetuje w dół — kupione a niewykorzystane zostają). */
+function ceoEnsureMonthlyStreakFreezes(){
+  var ym = todayStr().slice(0,7);
+  if(state.ceo.streakFreezeMonth!==ym){
+    state.ceo.streakFreezeMonth = ym;
+    state.ceo.streakFreezeStock = (state.ceo.streakFreezeStock||0) + 2 + ceoAttributeTierCount("duch");
+    save();
+  }
+}
+function ceoBuyStreakFreeze(){
+  if(state.ceo.gold<100){ alert("Za mało Gold."); return; }
+  state.ceo.gold -= 100;
+  ceoEnsureMonthlyStreakFreezes();
+  state.ceo.streakFreezeStock = (state.ceo.streakFreezeStock||0)+1;
+  save(); renderAll();
+}
 function ceoBumpStreak(){
   var today = todayStr();
   if(state.ceo.lastActiveDate===today) return;
+  ceoEnsureMonthlyStreakFreezes();
+  if(ceoVacationActive()){ state.ceo.lastActiveDate = today; return; } // streak zamrożony na czas urlopu
   var yesterday = dateMinusDays(today,1);
-  state.ceo.streak = (state.ceo.lastActiveDate===yesterday) ? (state.ceo.streak||0)+1 : 1;
+  if(state.ceo.lastActiveDate===yesterday){
+    state.ceo.streak = (state.ceo.streak||0)+1;
+  } else if(state.ceo.lastActiveDate && state.ceo.streakFreezeStock>0){
+    state.ceo.streakFreezeStock--; // zamrożenie zużyte automatycznie zamiast zerować streak
+    state.ceo.streak = (state.ceo.streak||0)+1;
+  } else {
+    state.ceo.streak = 1;
+  }
   state.ceo.lastActiveDate = today;
+}
+/* Faza 3 — Rested XP (sekcja 10): po ≥2 dniach przerwy pierwsze 500 XP po powrocie
+   liczy się podwójnie. Sprawdzane RAZ, na starcie renderCEO(), zanim jakikolwiek
+   addCeoXp zdąży przez ceoBumpStreak nadpisać lastActiveDate na dziś. */
+function ceoCheckRestedXp(){
+  var today = todayStr();
+  if(state.ceo.lastActiveDate===today || !state.ceo.lastActiveDate) return;
+  var gap = Math.floor((new Date(today+"T00:00:00")-new Date(state.ceo.lastActiveDate+"T00:00:00"))/86400000);
+  if(gap>=2) state.ceo.restedXpRemaining = 500;
 }
 function addCeoXp(skillKey, amount, isEpic){
   if(!CEO_SKILL_DEFS[skillKey]) skillKey = "strategie";
@@ -6663,6 +6723,13 @@ function addCeoXp(skillKey, amount, isEpic){
        (seasonTheme.boostEpic && isEpic)) xpMult += (seasonTheme.boostPct||0)/100;
     // Faza 3 — faza bossa "Wściekłość" (<70% HP): +25% XP.
     if(ceoBossPhase()==="wsciekłość") xpMult += 0.25;
+    // Faza 3 — Rested XP (sekcja 10): pierwsze 500 XP po powrocie z ≥2-dniowej przerwy
+    // liczone podwójnie, konsumowane z puli w miarę zdobywania.
+    if((state.ceo.restedXpRemaining||0)>0){
+      var restedCovered = Math.min(amount, state.ceo.restedXpRemaining);
+      xpMult += restedCovered/amount;
+      state.ceo.restedXpRemaining -= restedCovered;
+    }
   }
   var xpGain = Math.round(amount*xpMult);
 
@@ -6673,6 +6740,12 @@ function addCeoXp(skillKey, amount, isEpic){
   // Faza 3 — Paragon (sekcja 6.2): od Prestige 3+ każde zdobyte XP karmi też osobną,
   // nigdy nie resetowaną pulę Paragon.
   if(xpGain>0 && (state.ceo.prestige||0)>=3) state.ceo.paragonXp = (state.ceo.paragonXp||0)+xpGain;
+  // Faza 3 — AI Mentor 2.0 (sekcja 9.3): XP tego tygodnia wg kategorii, do wykrywania dysbalansu.
+  if(xpGain>0){
+    var wkStart = currentWeekDates()[0];
+    if(state.ceo.xpByCategoryWeekStart!==wkStart){ state.ceo.xpByCategoryWeekStart = wkStart; state.ceo.xpByCategoryThisWeek = {}; }
+    state.ceo.xpByCategoryThisWeek[cat] = (state.ceo.xpByCategoryThisWeek[cat]||0)+xpGain;
+  }
 
   var mult = 1 + 0.05*(state.ceo.prestige||0);
   // Faza 2 — Tier I: +5% Gold z XP w TYM skillu. Mistrzostwo+: +0,5% Gold globalnie
@@ -7321,6 +7394,7 @@ function ceoTierIVBonusTaskId(){
 function ceoGenerateDailyQuests(){
   var today = todayStr();
   if(state.ceo.dailyQuestsGeneratedDate===today) return;
+  if(ceoVacationActive()) return; // Faza 3 — Tryb Urlop: dailies wyłączone
   state.ceo.dailyQuestsGeneratedDate = today;
 
   var existingGenKeys = {};
@@ -7406,6 +7480,7 @@ function ceoGenerateDailyQuests(){
 }
 function renderCEO(el){
   setTopActions('');
+  ceoCheckRestedXp();
   ceoCheckHabitThresholds();
   ceoCheckAchievements();
   ceoCreditRevenueDelta();
@@ -7431,6 +7506,7 @@ function renderCEO(el){
   '</div>';
 
   html += renderCeoSeason();
+  html += renderCeoRhythm();
   html += renderCeoMentor();
   html += renderCeoAttributes();
   html += renderCeoSpecialization();
@@ -7529,6 +7605,27 @@ function renderCeoSpecialization(){
     '</div>';
   });
   html += '</div></div>';
+  return html;
+}
+function renderCeoRhythm(){
+  ceoEnsureMonthlyStreakFreezes();
+  var v = state.ceo.vacationMode;
+  var vacActive = ceoVacationActive();
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🧘 Rytm i regeneracja</h3>';
+  if((state.ceo.restedXpRemaining||0)>0){
+    html += '<div class="stub-note" style="margin-bottom:8px">😴 Rested XP: pozostało '+state.ceo.restedXpRemaining+' XP liczone podwójnie (wróciłeś po przerwie — przerwa to premia, nie kara).</div>';
+  }
+  html += '<div style="font-size:12.5px; color:var(--muted-light); margin-bottom:8px">Zamrożenia streaka w zapasie: <b style="color:var(--accent)">'+(state.ceo.streakFreezeStock||0)+'</b> (2/mies. + atrybut Duch, zużywają się same przy pominiętym dniu) '+
+    '<button class="linklike" onclick="ceoBuyStreakFreeze()">Kup kolejne (100g)</button></div>';
+  if(vacActive){
+    html += '<div class="stub-note">🏖️ Tryb Urlop aktywny do '+fmtDate(v.endDate)+' — dzienne questy wyłączone, streak zamrożony. <button class="linklike" onclick="ceoSetVacationMode(0)">Zakończ teraz</button></div>';
+  } else {
+    html += '<div class="row" style="gap:8px">'+
+      '<button class="btn secondary small" onclick="ceoSetVacationMode(7)">Włącz Tryb Urlop (7 dni)</button>'+
+      '<button class="btn secondary small" onclick="ceoSetVacationMode(14)">14 dni</button>'+
+    '</div>';
+  }
+  html += '</div>';
   return html;
 }
 function renderCeoSeason(){
@@ -7764,10 +7861,14 @@ function renderCeoEconomy(){
   return html;
 }
 
-function ceoWeakestSkill(){
+/* Faza 3 — AI Mentor 2.0 (sekcja 9.3): najsłabszy skill WZGLĘDEM CELÓW KWARTAŁU, nie
+   absolutnie — dokument explicite: "Rodzicielstwo Lv.0 nie jest problemem, Sprzedaż
+   Lv.0 jest". Cele kwartału = boss/frakcje/quest chains są napędzane przez skille
+   biznesowe, więc ograniczamy się do kategorii "biznes". */
+function ceoWeakestBizSkill(){
   var weakest = null, min = Infinity;
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){
-    if(!ceoSkillActive(k)) return;
+    if(CEO_SKILL_DEFS[k].cat!=="biznes" || !ceoSkillActive(k)) return;
     var lvl = ceoSkillLevelInfo(k).level;
     if(lvl<min){ min=lvl; weakest=k; }
   });
@@ -7775,15 +7876,41 @@ function ceoWeakestSkill(){
 }
 function ceoMentorInsight(){
   var lines = [];
-  var todayS = todayStr();
   var mainItems = state.tasks.filter(function(t){return t.scope==="dzien" && !t.deletedAt;});
   var doneToday = mainItems.filter(function(t){return t.done;}).length;
   if(mainItems.length>0){
     lines.push('Dziś odhaczone '+doneToday+' / '+mainItems.length+' zadań głównych.'+(doneToday<mainItems.length ? ' Zostało jeszcze '+(mainItems.length-doneToday)+' do zrobienia.' : ' Wszystko zrobione — dobra robota!'));
   }
-  var weakest = ceoWeakestSkill();
-  if(weakest){
-    lines.push('Najsłabsza umiejętność to '+CEO_SKILL_DEFS[weakest].icon+' '+CEO_SKILL_DEFS[weakest].label+' — warto tam dorzucić trochę uwagi.');
+  var weakestBiz = ceoWeakestBizSkill();
+  if(weakestBiz){
+    var wi = ceoSkillLevelInfo(weakestBiz);
+    lines.push('Względem celów biznesowych najsłabiej wypada '+CEO_SKILL_DEFS[weakestBiz].icon+' '+CEO_SKILL_DEFS[weakestBiz].label+' (Lv.'+wi.level+') — to warto podciągnąć najpierw, nie skille poboczne.');
+  }
+  // Faza 3 — konkretna rekomendacja z liczbą (Pipeline z CRM, ten sam sygnał co P1
+  // generatora zadań dnia, tu jako narracyjna podpowiedź zamiast zadania).
+  var lastProspect = (state.crmContacts||[]).filter(function(c){ return !c.deletedAt && c.importedAt; })
+    .sort(function(a,b){ return b.importedAt.localeCompare(a.importedAt); })[0];
+  if(lastProspect){
+    var daysSince = Math.floor((Date.now()-new Date(lastProspect.importedAt+"T00:00:00").getTime())/86400000);
+    if(daysSince>=5) lines.push('Pipeline pusty od '+daysSince+' dni (ostatni prospekt: '+escapeHtml(lastProspect.name)+') — dodaj 5 nowych prospektów do CRM, żeby nie stracić tempa.');
+  }
+  // Faza 3 — ostrzeżenie o dysbalansie XP tygodnia (np. 80% ze Zdrowia, 5% ze Sprzedaży).
+  var weekXp = state.ceo.xpByCategoryThisWeek||{};
+  var weekTotal = Object.keys(weekXp).reduce(function(s,c){ return s+weekXp[c]; }, 0);
+  if(weekTotal>=200){
+    var bizPct = Math.round(((weekXp.biznes||0)/weekTotal)*100);
+    var maxCat = null, maxPct = 0;
+    Object.keys(weekXp).forEach(function(c){
+      var pct = Math.round((weekXp[c]/weekTotal)*100);
+      if(pct>maxPct){ maxPct=pct; maxCat=c; }
+    });
+    if(maxCat && maxCat!=="biznes" && maxPct>=70 && bizPct<=15){
+      lines.push('Dysbalans tygodnia: '+maxPct+'% XP z „'+CEO_CAT_LABEL[maxCat]+'”, tylko '+bizPct+'% z „Biznes” — biznes powinien wygrywać z farmieniem nawyków.');
+    }
+  }
+  // Artefakt Kompas Stratega: dodatkowa podpowiedź liczona z pełnych danych tygodnia.
+  if(ceoArtifactBuilt("kompas_stratega") && weekTotal>0){
+    lines.push('🧭 Kompas Stratega: w tym tygodniu '+weekTotal+' XP łącznie — Biznes '+Math.round(((weekXp.biznes||0)/weekTotal)*100)+'%, Zdrowie '+Math.round(((weekXp.zdrowie||0)/weekTotal)*100)+'%, Osobiste '+Math.round(((weekXp.osobiste||0)/weekTotal)*100)+'%.');
   }
   var months = Object.keys(state.ceo.monthlyXpHistory).sort();
   if(months.length>=2){
