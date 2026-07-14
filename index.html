@@ -685,24 +685,66 @@ var CEO_BONUS_DEFAULT_TEMPLATES = [
   {label:"Naucz się czegoś nowego (kurs/artykuł/video)", xp:30, skill:"wiedza"},
   {label:"Zero social media scrollowania bez celu", xp:20, skill:"mental"}
 ];
+/* Faza 3 — rozbudowa achievementów (sekcja 11): serie stopniowane brąz/srebro/złoto/
+   platyna/diament, zawsze jest następny stopień. Klienci przeniesione w całości do
+   CEO_BRAND_ACHIEVEMENTS (spec: liczone OSOBNO per marka, nie łącznie). */
+var CEO_RARITY_ICON = {brąz:"🥉", srebro:"🥈", złoto:"🥇", platyna:"💠", diament:"💎"};
 var CEO_ACHIEVEMENTS = [
-  {id:"client1", label:"Pierwszy klient", desc:"Pozyskaj pierwszego klienta", check:function(){ return ceoTotalUniqueClients()>=1; }},
-  {id:"client10", label:"10 klientów", desc:"Obsłuż 10 różnych klientów", check:function(){ return ceoTotalUniqueClients()>=10; }},
-  {id:"client100", label:"100 klientów", desc:"Obsłuż 100 różnych klientów", check:function(){ return ceoTotalUniqueClients()>=100; }},
-  {id:"rev100k", label:"Pierwsze 100 000 zł", desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=100000; }},
-  {id:"rev500k", label:"500 000 zł", desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=500000; }},
-  {id:"rev1m", label:"1 000 000 zł", desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=1000000; }}
+  {id:"rev10k",  label:"10 000 zł", rarity:"brąz",    desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=10000; }},
+  {id:"rev50k",  label:"50 000 zł", rarity:"srebro",  desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=50000; }},
+  {id:"rev100k", label:"100 000 zł", rarity:"złoto",  desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=100000; }},
+  {id:"rev250k", label:"250 000 zł", rarity:"złoto",  desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=250000; }},
+  {id:"rev500k", label:"500 000 zł", rarity:"platyna",desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=500000; }},
+  {id:"rev1m",   label:"1 000 000 zł", rarity:"diament", desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=1000000; }},
+  {id:"rev2m",   label:"2 000 000 zł", rarity:"diament", desc:"Łączny przychód od początku śledzenia", check:function(){ return ceoTotalRevenue()>=2000000; }},
+  {id:"reels10",  label:"10 rolek", rarity:"brąz",   desc:"Łącznie opublikowanych rolek", check:function(){ return ceoTotalReelsPublished()>=10; }},
+  {id:"reels50",  label:"50 rolek", rarity:"srebro", desc:"Łącznie opublikowanych rolek", check:function(){ return ceoTotalReelsPublished()>=50; }},
+  {id:"reels100", label:"100 rolek", rarity:"złoto", desc:"Łącznie opublikowanych rolek", check:function(){ return ceoTotalReelsPublished()>=100; }},
+  {id:"reels250", label:"250 rolek", rarity:"platyna", desc:"Łącznie opublikowanych rolek", check:function(){ return ceoTotalReelsPublished()>=250; }},
+  {id:"reels500", label:"500 rolek", rarity:"diament", desc:"Łącznie opublikowanych rolek", check:function(){ return ceoTotalReelsPublished()>=500; }},
+  {id:"followers1k",  label:"1000 followersów", rarity:"brąz",    desc:"Łącznie IG+FB", check:function(){ return ceoLiveFollowersTotal()>=1000; }},
+  {id:"followers2500",label:"2500 followersów", rarity:"srebro",  desc:"Łącznie IG+FB", check:function(){ return ceoLiveFollowersTotal()>=2500; }},
+  {id:"followers5k",  label:"5000 followersów", rarity:"złoto",   desc:"Łącznie IG+FB", check:function(){ return ceoLiveFollowersTotal()>=5000; }},
+  {id:"followers10k", label:"10 000 followersów", rarity:"platyna", desc:"Łącznie IG+FB", check:function(){ return ceoLiveFollowersTotal()>=10000; }},
+  {id:"followers25k", label:"25 000 followersów", rarity:"diament", desc:"Łącznie IG+FB", check:function(){ return ceoLiveFollowersTotal()>=25000; }},
+  {id:"streak7",   label:"Streak 7 dni", rarity:"brąz",   desc:"Dni z rzędu z jakąkolwiek aktywnością", check:function(){ return (state.ceo.streak||0)>=7; }},
+  {id:"streak30",  label:"Streak 30 dni", rarity:"srebro", desc:"Dni z rzędu z jakąkolwiek aktywnością", check:function(){ return (state.ceo.streak||0)>=30; }},
+  {id:"streak100", label:"Streak 100 dni", rarity:"złoto", desc:"Dni z rzędu z jakąkolwiek aktywnością", check:function(){ return (state.ceo.streak||0)>=100; }},
+  {id:"streak365", label:"Streak 365 dni", rarity:"diament", desc:"Dni z rzędu z jakąkolwiek aktywnością", check:function(){ return (state.ceo.streak||0)>=365; }},
+  {id:"workouts50",   label:"50 treningów", rarity:"brąz",   desc:"Łącznie zaliczonych treningów", check:function(){ return ceoLifetimeHabitCount("cwiczenia")>=50; }},
+  {id:"workouts150",  label:"150 treningów", rarity:"srebro", desc:"Łącznie zaliczonych treningów", check:function(){ return ceoLifetimeHabitCount("cwiczenia")>=150; }},
+  {id:"workouts500",  label:"500 treningów", rarity:"złoto", desc:"Łącznie zaliczonych treningów", check:function(){ return ceoLifetimeHabitCount("cwiczenia")>=500; }},
+  {id:"workouts1000", label:"1000 treningów", rarity:"diament", desc:"Łącznie zaliczonych treningów", check:function(){ return ceoLifetimeHabitCount("cwiczenia")>=1000; }},
+  {id:"dance100",  label:"100 zajęć tanecznych", rarity:"brąz",   desc:"Łącznie poprowadzonych zajęć", check:function(){ return ceoLifetimeHabitCount("taniec")>=100; }},
+  {id:"dance500",  label:"500 zajęć tanecznych", rarity:"złoto", desc:"Łącznie poprowadzonych zajęć", check:function(){ return ceoLifetimeHabitCount("taniec")>=500; }},
+  {id:"dance1000", label:"1000 zajęć tanecznych", rarity:"diament", desc:"Łącznie poprowadzonych zajęć", check:function(){ return ceoLifetimeHabitCount("taniec")>=1000; }},
+  {id:"hidden_nocny_marek", label:"Nocny Marek na odwrót", rarity:"złoto", hidden:true, desc:"30× sen przed 00", check:function(){ return ceoLifetimeHabitCount("sen")>=30; }},
+  {id:"hidden_czlowiek_renesansu", label:"Człowiek renesansu", rarity:"platyna", hidden:true, desc:"Wszystkie aktywne skille ≥ Tier I", check:function(){
+    var active = Object.keys(CEO_SKILL_DEFS).filter(ceoSkillActive);
+    return active.length>0 && active.every(function(k){ return ceoSkillTier(k)>=1; });
+  }},
+  {id:"hidden_comeback", label:"Comeback", rarity:"srebro", hidden:true, desc:"Powrót po 7+ dniach przerwy i komplet dziennych questów", check:function(){
+    if((state.ceo.lastGapDays||0)<7) return false;
+    var today = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.deletedAt; });
+    return today.length>0 && today.every(function(t){ return t.done; });
+  }}
 ];
 var CEO_BRAND_ACHIEVEMENTS = {
   MediaDGtal: [
-    {id:"mdg_client1", label:"Pierwszy klient MediaDGtal", check:function(){ return ceoTotalUniqueClients()>=1; }},
-    {id:"mdg_client10", label:"10 klientów MediaDGtal", check:function(){ return ceoTotalUniqueClients()>=10; }},
-    {id:"mdg_client50", label:"50 klientów MediaDGtal", check:function(){ return ceoTotalUniqueClients()>=50; }}
+    {id:"mdg_client1", label:"Pierwszy klient MediaDGtal", rarity:"brąz", check:function(){ return ceoTotalUniqueClients()>=1; }},
+    {id:"mdg_client5", label:"5 klientów MediaDGtal", rarity:"brąz", check:function(){ return ceoTotalUniqueClients()>=5; }},
+    {id:"mdg_client10", label:"10 klientów MediaDGtal", rarity:"srebro", check:function(){ return ceoTotalUniqueClients()>=10; }},
+    {id:"mdg_client25", label:"25 klientów MediaDGtal", rarity:"złoto", check:function(){ return ceoTotalUniqueClients()>=25; }},
+    {id:"mdg_client50", label:"50 klientów MediaDGtal", rarity:"platyna", check:function(){ return ceoTotalUniqueClients()>=50; }},
+    {id:"mdg_client100", label:"100 klientów MediaDGtal", rarity:"diament", check:function(){ return ceoTotalUniqueClients()>=100; }}
   ],
   tool4arts: [
-    {id:"t4a_client1", label:"Pierwszy klient Tool4Arts", check:function(){ return (state.ceo.tool4artsClientCount||0)>=1; }},
-    {id:"t4a_client10", label:"10 klientów Tool4Arts", check:function(){ return (state.ceo.tool4artsClientCount||0)>=10; }},
-    {id:"t4a_client50", label:"50 klientów Tool4Arts", check:function(){ return (state.ceo.tool4artsClientCount||0)>=50; }}
+    {id:"t4a_client1", label:"Pierwszy klient Tool4Arts", rarity:"brąz", check:function(){ return (state.ceo.tool4artsClientCount||0)>=1; }},
+    {id:"t4a_client5", label:"5 klientów Tool4Arts", rarity:"brąz", check:function(){ return (state.ceo.tool4artsClientCount||0)>=5; }},
+    {id:"t4a_client10", label:"10 klientów Tool4Arts", rarity:"srebro", check:function(){ return (state.ceo.tool4artsClientCount||0)>=10; }},
+    {id:"t4a_client25", label:"25 klientów Tool4Arts", rarity:"złoto", check:function(){ return (state.ceo.tool4artsClientCount||0)>=25; }},
+    {id:"t4a_client50", label:"50 klientów Tool4Arts", rarity:"platyna", check:function(){ return (state.ceo.tool4artsClientCount||0)>=50; }},
+    {id:"t4a_client100", label:"100 klientów Tool4Arts", rarity:"diament", check:function(){ return (state.ceo.tool4artsClientCount||0)>=100; }}
   ]
 };
 var CEO_SKILL_MILESTONES_SEED = {
@@ -1041,6 +1083,7 @@ function migrateState(s){
     if(!c.vacationMode) c.vacationMode = {active:false, endDate:null};
     if(c.streakFreezeMonth===undefined) c.streakFreezeMonth = null;
     if(c.streakFreezeStock==null) c.streakFreezeStock = 0;
+    if(c.lastGapDays==null) c.lastGapDays = 0;
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1574,7 +1617,8 @@ function defaultState(){
     restedXpRemaining: 0,
     vacationMode: {active:false, endDate:null},
     streakFreezeMonth: null,
-    streakFreezeStock: 0
+    streakFreezeStock: 0,
+    lastGapDays: 0
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
   s.ceo.skillActive = {};
@@ -6689,6 +6733,7 @@ function ceoCheckRestedXp(){
   var today = todayStr();
   if(state.ceo.lastActiveDate===today || !state.ceo.lastActiveDate) return;
   var gap = Math.floor((new Date(today+"T00:00:00")-new Date(state.ceo.lastActiveDate+"T00:00:00"))/86400000);
+  state.ceo.lastGapDays = gap; // Faza 3 — achievement ukryty "Comeback" (≥7 dni przerwy)
   if(gap>=2) state.ceo.restedXpRemaining = 500;
 }
 function addCeoXp(skillKey, amount, isEpic){
@@ -6856,6 +6901,20 @@ function ceoTotalRevenue(){
   Object.keys(months).forEach(function(ym){ sum += ceoMonthFinanceData(ym).revenue; });
   return sum;
 }
+/* Faza 3 — pomocnicze do rozbudowy achievementów (sekcja 11): sumy z realnych danych,
+   nie z osobnych liczników które trzeba by ręcznie utrzymywać. */
+function ceoTotalReelsPublished(){
+  return (state.posts||[]).filter(function(p){ return !p.deletedAt && p.stage==="opublikowany" && p.video; }).length;
+}
+function ceoLifetimeHabitCount(skillKey){
+  var total = 0;
+  var curYear = new Date().getFullYear();
+  state.habits.forEach(function(h){
+    if(ceoHabitMapping(h.name).skill!==skillKey) return;
+    for(var y=2023;y<=curYear;y++) total += habitYearStats(h, String(y)).done;
+  });
+  return total;
+}
 function ceoCheckAchievements(){
   var changed = false;
   CEO_ACHIEVEMENTS.forEach(function(a){
@@ -6899,13 +6958,13 @@ function renderCeoBrandTracks(){
   html += '<div><h4>MediaDGtal — klienci: '+ceoTotalUniqueClients()+'</h4>';
   CEO_BRAND_ACHIEVEMENTS.MediaDGtal.forEach(function(a){
     var unlocked = state.ceo.achievementsUnlocked.indexOf(a.id)!==-1;
-    html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?"🏆":"🔒")+' '+escapeHtml(a.label)+'</span></div>';
+    html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?(CEO_RARITY_ICON[a.rarity]||"🏆"):"🔒")+' '+escapeHtml(a.label)+'</span></div>';
   });
   html += '</div>';
   html += '<div><h4>Tool4Arts — klienci: '+(state.ceo.tool4artsClientCount||0)+' <button class="linklike" onclick="ceoAdjustTool4artsClients(1)">+1</button> <button class="linklike" onclick="ceoAdjustTool4artsClients(-1)">-1</button></h4>';
   CEO_BRAND_ACHIEVEMENTS.tool4arts.forEach(function(a){
     var unlocked = state.ceo.achievementsUnlocked.indexOf(a.id)!==-1;
-    html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?"🏆":"🔒")+' '+escapeHtml(a.label)+'</span></div>';
+    html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?(CEO_RARITY_ICON[a.rarity]||"🏆"):"🔒")+' '+escapeHtml(a.label)+'</span></div>';
   });
   html += '</div>';
   html += '</div></div>';
@@ -7826,10 +7885,13 @@ function renderCeoAchievements(){
   var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🏆 Achievements</h3><div class="ceo-ach-grid">';
   CEO_ACHIEVEMENTS.forEach(function(a){
     var unlocked = state.ceo.achievementsUnlocked.indexOf(a.id)!==-1;
+    var icon = unlocked ? (CEO_RARITY_ICON[a.rarity]||"🏆") : "🔒";
+    var label = (a.hidden && !unlocked) ? "???" : a.label;
+    var desc = (a.hidden && !unlocked) ? "Ukryty — odkryjesz go działaniem." : a.desc;
     html += '<div class="ceo-ach-card'+(unlocked?" unlocked":"")+'">'+
-      '<div class="ceo-ach-icon">'+(unlocked?"🏆":"🔒")+'</div>'+
-      '<div class="ceo-ach-label">'+escapeHtml(a.label)+'</div>'+
-      '<div class="ceo-ach-desc">'+escapeHtml(a.desc)+'</div></div>';
+      '<div class="ceo-ach-icon">'+icon+'</div>'+
+      '<div class="ceo-ach-label">'+escapeHtml(label)+'</div>'+
+      '<div class="ceo-ach-desc">'+escapeHtml(desc)+'</div></div>';
   });
   html += '</div></div>';
   return html;
