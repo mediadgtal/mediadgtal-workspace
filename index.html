@@ -969,27 +969,9 @@ function migrateState(s){
     if(c.rewardBudgetPct==null) c.rewardBudgetPct = 10;
     if(!c.rewardLog) c.rewardLog = [];
     c.rewards.forEach(function(r){ if(r.costPln==null) r.costPln = 0; if(r.brand===undefined) r.brand = null; });
-    if(!c.ceoResetAug2026){
-      c.ceoResetAug2026 = true;
-      Object.keys(CEO_SKILL_DEFS).forEach(function(k){ c.skills[k] = 0; });
-      c.gold = 0;
-      c.streak = 0;
-      c.lastActiveDate = null;
-      c.prestige = 0;
-      c.achievementsUnlocked = [];
-      c.claimedHabitThresholds = {};
-      c.epicQuests = [];
-      c.sideQuests.forEach(function(q){ q.done = false; });
-      c.bonusQuests.forEach(function(q){ q.doneToday = false; q.lastDoneDate = null; });
-      c.talentUnlocked = {};
-      c.monthlyXpHistory = {};
-      c.bosses = {};
-      c.tool4artsClientCount = 0;
-      c.rewardLog = [];
-      Object.keys(c.skillMilestones).forEach(function(k){
-        c.skillMilestones[k].forEach(function(m){ if(m.type==="manual") m.done = false; });
-      });
-    }
+    // Damian zdecydował 2026-07-14: bez resetu na sierpień, liczymy postęp od dziś —
+    // ten flag tylko zaznacza migrację jako obsłużoną, nic już nie zeruje.
+    if(c.ceoResetAug2026==null) c.ceoResetAug2026 = true;
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
