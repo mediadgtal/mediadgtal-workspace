@@ -605,6 +605,8 @@ var CEO_SKILL_DEFS = {
   majatek:{label:"Majątek", icon:"💰", cat:"biznes"},
   akcje:{label:"Akcje", icon:"📈", cat:"biznes"},
   marketing:{label:"Marketing", icon:"🎯", cat:"biznes"},
+  sprzedaz:{label:"Sprzedaż", icon:"💬", cat:"biznes"},
+  marka_osobista:{label:"Marka Osobista", icon:"📣", cat:"biznes"},
   tool4arts:{label:"Tool4Arts", icon:"🤝", cat:"biznes"},
   strategie:{label:"Strategie", icon:"🧠", cat:"biznes"},
   automatyzacje:{label:"Automatyzacje", icon:"⚙️", cat:"biznes"},
@@ -618,7 +620,8 @@ var CEO_SKILL_DEFS = {
   komunikacja:{label:"Komunikacja", icon:"🎤", cat:"osobiste"},
   angielski:{label:"Angielski", icon:"🇬🇧", cat:"osobiste"},
   rodzicielstwo:{label:"Rodzicielstwo", icon:"👨", cat:"osobiste"},
-  zwiazek:{label:"Związek", icon:"❤️", cat:"osobiste"}
+  zwiazek:{label:"Związek", icon:"❤️", cat:"osobiste"},
+  taniec:{label:"Taniec", icon:"💃", cat:"osobiste"}
 };
 var CEO_CAT_LABEL = {biznes:"Biznes", zdrowie:"Zdrowie", osobiste:"Osobiste"};
 var CEO_CAT_ORDER = ["biznes","zdrowie","osobiste"];
@@ -635,20 +638,37 @@ var CEO_RANKS = [
 var CEO_TASK_CATEGORY_SKILL = {MediaDGtal:"marketing", tool4arts:"tool4arts", Rozwoj:"wiedza", Admin:"automatyzacje"};
 var CEO_HABIT_SKILL_MAP = [
   {match:/brzuszk|pompk|przysiad|bick|siłowni|trening|ćwicz|basen|mobility|fizjo/i, skill:"cwiczenia", xp:50},
-  {match:/medytacj|mental/i, skill:"mental", xp:20},
-  {match:/sen|łóżku|północ|wstani/i, skill:"sen", xp:20},
+  {match:/medytacj|mental/i, skill:"mental", xp:10},
+  {match:/sen|łóżku|północ|wstani/i, skill:"sen", xp:10},
   {match:/suplement|odżywia|jedzeni/i, skill:"odzywianie", xp:15},
-  {match:/książk|czytani|podcast/i, skill:"wiedza", xp:15},
+  {match:/książk|czytani|podcast/i, skill:"wiedza", xp:30},
   {match:/angielsk/i, skill:"angielski", xp:15},
-  {match:/alkohol|fajk|palen/i, skill:"zycie", xp:20}
+  {match:/alkohol|fajk|palen/i, skill:"zycie", xp:20},
+  {match:/tanecz|zajęcia taneczne|taniec/i, skill:"taniec", xp:60}
 ];
 var CEO_EPIC_TEMPLATES = [
   {label:"Nowy klient Tool4Arts", xp:5000, skill:"tool4arts"},
-  {label:"Nowy klient MediaDGtal — 1 miesiąc", xp:500, skill:"marketing"},
-  {label:"Nowy klient MediaDGtal — 2 miesiące", xp:1000, skill:"marketing"},
-  {label:"Nowy klient MediaDGtal — 3 miesiące", xp:2000, skill:"marketing"},
-  {label:"Nowy klient MediaDGtal — 6+ miesięcy", xp:4000, skill:"marketing"}
+  {label:"Nowy klient MediaDGtal — 1 miesiąc", xp:1500, skill:"marketing"},
+  {label:"Nowy klient MediaDGtal — 3 miesiące", xp:3000, skill:"marketing"},
+  {label:"Nowy klient MediaDGtal — 6+ miesięcy", xp:5000, skill:"marketing"}
 ];
+/* Faza 1 — tabela wag XP wg sekcji 8.1 specyfikacji rpg-system-rozbudowa.md.
+   Centralne źródło dla nowych automatycznych hooków (CRM/Posty/Finanse/Tool4Arts). */
+var CEO_XP_TABLE = {
+  prospectAdded:   {xp:30,  skill:"sprzedaz",  label:"Nowy prospekt w CRM"},
+  outreachSent:    {xp:40,  skill:"sprzedaz",  label:"Kontakt odświeżony"},
+  discoveryCall:   {xp:250, skill:"sprzedaz",  label:"Rozmowa / demo"},
+  postPublished:   {xp:100, skill:"marketing", label:"Opublikowany post"},
+  reelPublished:   {xp:200, skill:"marka_osobista", label:"Opublikowana rolka"},
+  revenuePer100:   {xp:10,  skill:"cashflow",  label:"Przychód"},
+  financeReview:   {xp:300, skill:"cashflow",  label:"Przegląd finansów"}
+};
+/* Dzienne limity antyexploitowe (sekcja 9.2) — po przekroczeniu akcja w CRM/Postach
+   dalej działa normalnie, tylko przestaje naliczać bonusowe XP tego dnia. */
+var CEO_DAILY_CAPS = {
+  prospectAdded: 10,
+  outreachSent: 15
+};
 var CEO_BONUS_DEFAULT_TEMPLATES = [
   {label:"Dzień bez telefonu po 20:00", xp:30, skill:"mental"},
   {label:"Coś miłego dla Marty", xp:40, skill:"zwiazek"},
@@ -892,7 +912,6 @@ function migrateState(s){
     });
   });
   if(!s.brands || !s.brands.length) s.brands = ["MediaDGtal","tool4arts"];
-  if(!s.driveMonthFolders) s.driveMonthFolders = {};
   if(!s.agentRequests) s.agentRequests = [];
   if(!s.crmContacts) s.crmContacts = [];
   if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
@@ -922,6 +941,8 @@ function migrateState(s){
     var c = s.ceo;
     if(!c.skills) c.skills = {};
     Object.keys(CEO_SKILL_DEFS).forEach(function(k){ if(!c.skills[k]) c.skills[k] = 0; });
+    if(!c.skillActive) c.skillActive = {};
+    Object.keys(CEO_SKILL_DEFS).forEach(function(k){ if(c.skillActive[k]===undefined) c.skillActive[k] = true; });
     if(c.gold==null) c.gold = 0;
     if(!c.epicQuests) c.epicQuests = [];
     if(!c.sideQuests) c.sideQuests = [];
@@ -972,6 +993,10 @@ function migrateState(s){
     // Damian zdecydował 2026-07-14: bez resetu na sierpień, liczymy postęp od dziś —
     // ten flag tylko zaznacza migrację jako obsłużoną, nic już nie zeruje.
     if(c.ceoResetAug2026==null) c.ceoResetAug2026 = true;
+    if(!c.dailyEventCounts) c.dailyEventCounts = {};
+    if(!c.revenueXpBaseline) c.revenueXpBaseline = {};
+    if(c.dailyQuestsGeneratedDate===undefined) c.dailyQuestsGeneratedDate = null;
+    if(!c.financeReviewMonths) c.financeReviewMonths = [];
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1423,8 +1448,6 @@ function defaultState(){
 
   s.ideaCategories = {MediaDGtal:[], tool4arts:["Edukacyjne","Uderzające w ból","Do kursantów"]};
 
-  s.driveMonthFolders = {};
-
   s.agentRequests = [];
 
   s.ceo = {
@@ -1476,9 +1499,15 @@ function defaultState(){
     tool4artsClientCount: 0,
     rewardBudgetPct: 10,
     rewardLog: [],
-    ceoResetAug2026: true
+    ceoResetAug2026: true,
+    dailyEventCounts: {},
+    revenueXpBaseline: {},
+    dailyQuestsGeneratedDate: null,
+    financeReviewMonths: []
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
+  s.ceo.skillActive = {};
+  Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skillActive[k] = true; });
   s.ceo.rewards.forEach(function(r){ if(r.costPln==null) r.costPln = 0; if(r.brand===undefined) r.brand = null; });
 
   s.hasla = [];
@@ -2585,8 +2614,7 @@ function renderPostyZaplanowane(){
   var byDate = {};
   items.forEach(function(p){ (byDate[p.date] = byDate[p.date]||[]).push(p); });
 
-  var html = renderDriveImportPanel();
-  html += '<div class="card">';
+  var html = '<div class="card">';
   html += '<div class="cal-header"><button class="btn secondary small" onclick="changeZapMonth(-1)">←</button>'+
     '<h2>'+monthName(zapMonth)+' '+zapYear+'</h2>'+
     '<button class="btn secondary small" onclick="changeZapMonth(1)">→</button></div>';
@@ -2611,129 +2639,6 @@ function renderPostyZaplanowane(){
   }
   html += '</div></div></div>';
   return html;
-}
-function zapMonthKey(){
-  var now = new Date();
-  var y = zapYear===undefined ? now.getFullYear() : zapYear;
-  var m = zapMonth===undefined ? now.getMonth() : zapMonth;
-  return y+"-"+String(m+1).padStart(2,"0");
-}
-function renderDriveImportPanel(){
-  if(!window.__gcalToken){
-    return '<div class="stub-note">Import grafik z Dysku Google wyłączony. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby go włączyć.</div>';
-  }
-  var ym = zapMonthKey();
-  var saved = (state.driveMonthFolders[postyFilter] && state.driveMonthFolders[postyFilter][ym]) || "";
-  return '<div class="card" style="margin-bottom:16px">'+
-    '<div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">'+
-      '<input type="text" id="driveMonthFolderUrl" placeholder="Link do folderu Dysku z podfolderami dla '+monthName(zapMonth===undefined?new Date().getMonth():zapMonth)+'..." value="'+escapeHtml(saved)+'" style="flex:1; min-width:220px">'+
-      '<button class="btn secondary small" onclick="importDriveMonthFolder()" id="driveImportBtn">Zaciągnij z Dysku</button>'+
-    '</div>'+
-    '<div style="font-size:11px; color:var(--muted); margin-top:6px">Podfoldery muszą mieć w nazwie datę (np. "10.07 Karuzela" albo "2026-07-10") — po niej dopasowujemy do publikacji. Zdjęcia z podfolderu trafią jako galeria posta, plik tekstowy z "fb"/"ig" w nazwie jako opis odpowiednio dla Facebooka/Instagrama (jeden plik bez oznaczenia = ten sam opis dla obu).</div>'+
-    '<div id="driveImportStatus" style="font-size:12.5px; color:var(--muted-light); margin-top:8px"></div>'+
-    '</div>';
-}
-function extractDriveFolderId(url){
-  var m = (url||"").match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if(m) return m[1];
-  m = (url||"").match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : null;
-}
-function extractDateFromFolderName(name, year){
-  var m = name.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if(m) return m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0");
-  m = name.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
-  if(m) return m[3]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");
-  m = name.match(/(\d{1,2})\.(\d{1,2})(?!\d)/);
-  if(m) return year+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");
-  return null;
-}
-function driveApiListChildren(folderId){
-  var q = "'"+folderId+"' in parents and trashed=false";
-  var url = "https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields="+encodeURIComponent("files(id,name,mimeType)")+"&pageSize=1000";
-  return fetch(url, {headers:{Authorization:"Bearer "+window.__gcalToken}}).then(function(r){
-    if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
-    return r.json();
-  }).then(function(j){ return j.files||[]; });
-}
-function driveFetchTextContent(file){
-  var url = file.mimeType==="application/vnd.google-apps.document"
-    ? "https://www.googleapis.com/drive/v3/files/"+file.id+"/export?mimeType=text/plain"
-    : "https://www.googleapis.com/drive/v3/files/"+file.id+"?alt=media";
-  return fetch(url, {headers:{Authorization:"Bearer "+window.__gcalToken}}).then(function(r){ return r.text(); });
-}
-function importDriveMonthFolder(){
-  var input = document.getElementById("driveMonthFolderUrl");
-  var statusEl = document.getElementById("driveImportStatus");
-  var btn = document.getElementById("driveImportBtn");
-  var url = input.value.trim();
-  var folderId = extractDriveFolderId(url);
-  if(!folderId){ statusEl.textContent = "To nie wygląda na link do folderu Google Drive."; return; }
-  var ym = zapMonthKey();
-  var year = ym.split("-")[0];
-  if(!state.driveMonthFolders[postyFilter]) state.driveMonthFolders[postyFilter] = {};
-  state.driveMonthFolders[postyFilter][ym] = url;
-  save();
-  btn.disabled = true;
-  statusEl.textContent = "Wczytywanie listy podfolderów...";
-  driveApiListChildren(folderId).then(function(children){
-    var subfolders = children.filter(function(f){ return f.mimeType==="application/vnd.google-apps.folder"; });
-    if(!subfolders.length){ statusEl.textContent = "Brak podfolderów w tym folderze."; btn.disabled=false; return; }
-    statusEl.textContent = "Znaleziono "+subfolders.length+" podfolderów, wczytuję zawartość...";
-    var matched = [], unmatched = [];
-    subfolders.forEach(function(f){
-      var date = extractDateFromFolderName(f.name, year);
-      if(date) matched.push({folder:f, date:date}); else unmatched.push(f.name);
-    });
-    Promise.all(matched.map(function(m){
-      return driveApiListChildren(m.folder.id).then(function(files){
-        var images = files.filter(function(f){ return f.mimeType.indexOf("image/")===0; })
-          .sort(function(a,b){ return a.name<b.name?-1:(a.name>b.name?1:0); })
-          .map(function(f){ return "https://drive.google.com/thumbnail?id="+f.id+"&sz=w1000"; });
-        var videoFile = files.filter(function(f){ return f.mimeType.indexOf("video/")===0; })[0];
-        var textFiles = files.filter(function(f){ return f.mimeType==="text/plain" || f.mimeType==="application/vnd.google-apps.document" || /\.txt$/i.test(f.name); });
-        var fbFile = textFiles.filter(function(f){ return /fb|facebook/i.test(f.name); })[0];
-        var igFile = textFiles.filter(function(f){ return /ig|insta/i.test(f.name); })[0];
-        var soloFile = (!fbFile && !igFile) ? textFiles[0] : null;
-        var textPromises = [];
-        if(fbFile) textPromises.push(driveFetchTextContent(fbFile).then(function(t){ m.captionFb = t; }));
-        if(igFile) textPromises.push(driveFetchTextContent(igFile).then(function(t){ m.captionIg = t; }));
-        if(soloFile) textPromises.push(driveFetchTextContent(soloFile).then(function(t){ m.captionFb = t; m.captionIg = t; }));
-        return Promise.all(textPromises).then(function(){
-          m.images = images;
-          m.video = videoFile ? "https://drive.google.com/uc?export=view&id="+videoFile.id : null;
-          m.folderName = m.folder.name;
-        });
-      });
-    })).then(function(){
-      var created = 0, updated = 0;
-      matched.forEach(function(m){
-        var post = state.posts.filter(function(p){ return !p.deletedAt && p.brand===postyFilter && p.date===m.date; })[0];
-        if(!post){
-          post = {id:uid("post"), title:m.folderName, brand:postyFilter, stage:"zaplanowany", category:null, date:m.date, platform:"fbig", isCarousel:m.images.length>1, fbImage:"", captionFb:"", captionIg:""};
-          state.posts.unshift(post);
-          created++;
-        } else {
-          updated++;
-        }
-        post.images = m.images;
-        if(m.video) post.video = m.video;
-        if(post.platform==="fbig") post.isCarousel = m.images.length>1;
-        if(m.captionFb!=null && !post.captionFb) post.captionFb = m.captionFb;
-        if(m.captionIg!=null && !post.captionIg) post.captionIg = m.captionIg;
-      });
-      save(); renderAll();
-      var msg = "Gotowe — dopasowano "+matched.length+" ("+created+" nowych, "+updated+" zaktualizowanych).";
-      if(unmatched.length) msg += " Bez daty w nazwie (pominięte): "+unmatched.join(", ")+".";
-      var el2 = document.getElementById("driveImportStatus");
-      if(el2) el2.textContent = msg;
-      var btn2 = document.getElementById("driveImportBtn");
-      if(btn2) btn2.disabled = false;
-    });
-  }).catch(function(e){
-    statusEl.textContent = e.message==="401" ? "Sesja Google wygasła — kliknij ponownie \"Połącz z Google\" i spróbuj jeszcze raz." : "Coś poszło nie tak przy wczytywaniu z Dysku.";
-    btn.disabled = false;
-  });
 }
 var __previewImgIdx = 0;
 var __previewView = "ig"; // "ig" albo "fb"
@@ -6390,12 +6295,20 @@ function ceoRank(level){
 }
 function ceoClass(){
   var totals = {biznes:0, zdrowie:0, osobiste:0};
-  Object.keys(CEO_SKILL_DEFS).forEach(function(k){ totals[CEO_SKILL_DEFS[k].cat] += (state.ceo.skills[k]||0); });
+  Object.keys(CEO_SKILL_DEFS).forEach(function(k){ if(ceoSkillActive(k)) totals[CEO_SKILL_DEFS[k].cat] += (state.ceo.skills[k]||0); });
   var max = Math.max(totals.biznes, totals.zdrowie, totals.osobiste);
   if(max===0) return "Debiutant";
   if(totals.biznes===max) return "Strateg Biznesu";
   if(totals.zdrowie===max) return "Wojownik Formy";
   return "Mędrzec Życia";
+}
+function ceoSkillActive(key){
+  return !state.ceo.skillActive || state.ceo.skillActive[key]!==false;
+}
+function ceoToggleSkillActive(key){
+  if(!state.ceo.skillActive) state.ceo.skillActive = {};
+  state.ceo.skillActive[key] = !ceoSkillActive(key);
+  save(); renderAll();
 }
 function dateMinusDays(dateStr, n){
   var d = new Date(dateStr+"T00:00:00");
@@ -6419,6 +6332,32 @@ function addCeoXp(skillKey, amount){
   if(amount>0) ceoBumpStreak();
   state.ceo.monthlyXpHistory[todayStr().slice(0,7)] = ceoTotalXp();
   save();
+}
+/* Faza 1 — limit antyexploitowy (sekcja 9.2): zwraca true i zużywa 1 z dziennej puli
+   danego zdarzenia, false gdy limit już wyczerpany (akcja w UI dalej działa, po prostu bez XP). */
+function ceoDailyCapOk(eventKey){
+  var cap = CEO_DAILY_CAPS[eventKey];
+  if(!cap) return true;
+  var day = todayStr();
+  if(!state.ceo.dailyEventCounts[day]) state.ceo.dailyEventCounts[day] = {};
+  var used = state.ceo.dailyEventCounts[day][eventKey] || 0;
+  if(used>=cap) return false;
+  state.ceo.dailyEventCounts[day][eventKey] = used+1;
+  return true;
+}
+/* Faza 1 — cooldown 48h (sekcja 9.2): zdarzenia wpisywane wstecz o >48h nie naliczają XP. */
+function ceoWithin48h(dateStr){
+  if(!dateStr) return true;
+  var d = new Date(dateStr+"T00:00:00");
+  if(isNaN(d)) return true;
+  return (Date.now() - d.getTime()) <= 48*3600*1000;
+}
+/* Faza 1 — przyznaje XP za wpis z CEO_XP_TABLE, respektując dzienny limit gdy zdefiniowany. */
+function ceoAwardXpEvent(eventKey, skillOverride){
+  var def = CEO_XP_TABLE[eventKey];
+  if(!def) return;
+  if(!ceoDailyCapOk(eventKey)) return;
+  addCeoXp(skillOverride||def.skill, def.xp);
 }
 function ceoHabitMapping(name){
   for(var i=0;i<CEO_HABIT_SKILL_MAP.length;i++){
@@ -6800,8 +6739,12 @@ function renderCeoSkills(){
       var def = CEO_SKILL_DEFS[k];
       var info = ceoSkillLevelInfo(k);
       var challengeCount = (state.ceo.skillMilestones[k]||[]).length;
-      html += '<div class="ceo-skill-card">'+
-        '<div class="ceo-skill-head"><span>'+def.icon+' '+def.label+'</span><span class="ceo-skill-lvl">Lv.'+info.level+'/100</span></div>'+
+      var active = ceoSkillActive(k);
+      html += '<div class="ceo-skill-card"'+(active?'':' style="opacity:.5"')+'>'+
+        '<div class="ceo-skill-head"><span>'+def.icon+' '+def.label+'</span>'+
+        '<span style="display:flex; align-items:center; gap:6px">'+
+        '<button class="linklike" title="'+(active?"Uśpij skill (pomijany w agregacjach i generatorze zadań)":"Obudź skill")+'" onclick="ceoToggleSkillActive(\''+k+'\')">'+(active?"⚡":"😴")+'</button>'+
+        '<span class="ceo-skill-lvl">Lv.'+info.level+'/100</span></span></div>'+
         '<div class="ceo-xpbar small"><div class="ceo-xpbar-fill" style="width:'+info.level+'%"></div></div>'+
         '<div class="ceo-skill-xp">XP aktywności: '+info.xp+' <button class="linklike" onclick="promptCeoManualXp(\''+k+'\')">+XP</button></div>'+
         '<button class="linklike" style="margin-top:4px" onclick="toggleCeoSkillChallenges(\''+k+'\')">Wyzwania ('+challengeCount+')'+(ceoSkillChallengesOpen[k]?" ▲":" ▼")+'</button>'+
