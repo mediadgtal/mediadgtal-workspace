@@ -1024,6 +1024,14 @@ function migrateState(s){
     if(c.specialization===undefined) c.specialization = null;
     if(c.specializationFreeChangeUsedSeason===undefined) c.specializationFreeChangeUsedSeason = null;
     if(c.talentRespecFreeUsedSeason===undefined) c.talentRespecFreeUsedSeason = null;
+    if(!c.elixirs) c.elixirs = {};
+    if(c.activeSkupienia===undefined) c.activeSkupienia = false;
+    if(c.odwagaExpiresAt==null) c.odwagaExpiresAt = 0;
+    if(!c.artifactFragments) c.artifactFragments = {};
+    if(!c.artifactsBuilt) c.artifactsBuilt = {};
+    if(c.season===undefined) c.season = null;
+    if(!c.seasonHistory) c.seasonHistory = [];
+    if(!c.seasonFrames) c.seasonFrames = [];
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1540,7 +1548,15 @@ function defaultState(){
     paragonBonuses: {},
     specialization: null,
     specializationFreeChangeUsedSeason: null,
-    talentRespecFreeUsedSeason: null
+    talentRespecFreeUsedSeason: null,
+    elixirs: {},
+    activeSkupienia: false,
+    odwagaExpiresAt: 0,
+    artifactFragments: {},
+    artifactsBuilt: {},
+    season: null,
+    seasonHistory: [],
+    seasonFrames: []
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
   s.ceo.skillActive = {};
@@ -2426,6 +2442,8 @@ function toggleTask(id){
   if(t.scope==="dzien" && state.ceo){
     var xpAmt = t.ceoXp||25;
     if(t.generated && id===ceoTierIVBonusTaskId()) xpAmt *= 2; // Faza 2 — Tier IV: podwójny XP z 1 questa dziennie
+    var usingSkupienia = t.done && state.ceo.activeSkupienia;
+    if(usingSkupienia){ xpAmt *= 2; state.ceo.activeSkupienia = false; } // Faza 3 — Eliksir Skupienia
     var skillKey = t.ceoSkill || CEO_TASK_CATEGORY_SKILL[t.category] || "strategie";
     addCeoXp(skillKey, t.done ? xpAmt : -xpAmt);
     if(t.done && t.ceoOnComplete==="financeReview"){
@@ -6406,6 +6424,48 @@ function ceoCurrentSeasonKey(){
   var q = Math.floor(d.getMonth()/3)+1;
   return d.getFullYear()+"-Q"+q;
 }
+/* Faza 3 — Sezony kwartalne + Przepustka Sezonowa (sekcja 6.1). Motywy — dokument daje
+   3 konkretne przykłady (Q3/Q4/Q1), Q2 nie ma podanego motywu w spec, więc zostaje
+   neutralny zamiast wymyślonego. Sezonowe XP to osobna, równoległa pula (nie wypiera
+   realnego XP skilli) karmiona 1:1 z każdym zdobytym XP w addCeoXp. */
+function ceoCurrentQuarter(){ return Math.floor(new Date().getMonth()/3)+1; }
+var CEO_SEASON_THEMES = {
+  1: {name:"Fundamenty", desc:"Motyw: zdrowie i system — mnożnik XP za skille zdrowotne", boostCat:"zdrowie", boostPct:50},
+  3: {name:"Ofensywa Tool4Arts", desc:"Motyw: mnożnik XP za questy Tool4Arts", boostSkill:"tool4arts", boostPct:50},
+  4: {name:"Żniwa", desc:"Motyw: mnożnik XP za domykanie umów (epic questy klienckie)", boostEpic:true, boostPct:50}
+};
+function ceoCurrentSeasonTheme(){ return CEO_SEASON_THEMES[ceoCurrentQuarter()] || {name:"Sezon otwarty", desc:"Bez motywu tego kwartału"}; }
+var CEO_SEASON_TIER_XP = 1000;
+var CEO_SEASON_MAX_TIER = 50;
+function ceoSeasonTier(xp){ return Math.min(CEO_SEASON_MAX_TIER, Math.floor((xp||0)/CEO_SEASON_TIER_XP)); }
+function ceoSeasonTierReward(tier){
+  return {gold:50+tier*10, chest:tier%5===0, frame: tier===25?"Ramka Awangardy":(tier===50?"Ramka Legendy Sezonu":null)};
+}
+function ceoSeasonEnsure(){
+  var key = ceoCurrentSeasonKey();
+  if(state.ceo.season && state.ceo.season.key===key) return;
+  if(state.ceo.season){
+    state.ceo.seasonHistory.unshift({key:state.ceo.season.key, xp:state.ceo.season.xp, tier:ceoSeasonTier(state.ceo.season.xp)});
+    state.ceo.seasonHistory = state.ceo.seasonHistory.slice(0,8);
+  }
+  state.ceo.season = {key:key, xp:0, claimedTiers:[]};
+  save();
+}
+function ceoClaimSeasonTier(tier){
+  ceoSeasonEnsure();
+  if(tier>ceoSeasonTier(state.ceo.season.xp) || state.ceo.season.claimedTiers.indexOf(tier)!==-1) return;
+  state.ceo.season.claimedTiers.push(tier);
+  var reward = ceoSeasonTierReward(tier);
+  state.ceo.gold += reward.gold;
+  if(reward.chest) ceoOpenLootChest();
+  if(reward.frame && state.ceo.seasonFrames.indexOf(reward.frame)===-1) state.ceo.seasonFrames.push(reward.frame);
+}
+function ceoClaimAllSeasonTiers(){
+  ceoSeasonEnsure();
+  var maxTier = ceoSeasonTier(state.ceo.season.xp);
+  for(var t=1;t<=maxTier;t++) ceoClaimSeasonTier(t);
+  save(); renderAll();
+}
 /* Faza 3 — Specjalizacje (sekcja 2.3): od Lv.10, +25% XP w domenie, zmiana raz/sezon
    za darmo, kolejne w tym samym sezonie za 1000 Gold (sekcja 8.2). */
 var CEO_SPECIALIZATIONS = {
@@ -6429,6 +6489,62 @@ function ceoChooseSpecialization(key){
   }
   state.ceo.specialization = key;
   save(); renderAll();
+}
+/* Faza 3 — Eliksiry i Artefakty (sekcja 8.4). Eliksiry: kupowane za Gold, zużywalne.
+   Artefakty: budowane z fragmentów zdobywanych ze skrzynek (ceoOpenLootChest),
+   permanentny pasyw po zbudowaniu. Realne itemy z Inventory (tylko te, dla których
+   spec podaje konkretny pasyw — Claude Max, Canva; reszta to flavor bez wymyślonych
+   bonusów, których dokument nie definiuje). */
+var CEO_ELIXIRS = {
+  skupienia: {label:"🔮 Eliksir Skupienia", desc:"×2 XP z następnego questa głównego", cost:150},
+  odwaga: {label:"🗡️ Eliksir Odwagi", desc:"×1,5 XP z questów Sprzedaż przez 24h", cost:200},
+  kamien_powrotu: {label:"💎 Kamień Powrotu", desc:"Naprawia 1 przerwany streak wstecz", cost:300}
+};
+function ceoBuyElixir(key){
+  var e = CEO_ELIXIRS[key];
+  if(!e) return;
+  if(state.ceo.gold<e.cost){ alert("Za mało Gold."); return; }
+  state.ceo.gold -= e.cost;
+  state.ceo.elixirs[key] = (state.ceo.elixirs[key]||0)+1;
+  save(); renderAll();
+}
+function ceoUseElixir(key){
+  if(!(state.ceo.elixirs[key]>0)) return;
+  if(key==="skupienia"){
+    state.ceo.activeSkupienia = true;
+  } else if(key==="odwaga"){
+    state.ceo.odwagaExpiresAt = Date.now()+24*3600*1000;
+  } else if(key==="kamien_powrotu"){
+    state.ceo.lastActiveDate = dateMinusDays(todayStr(),1);
+  } else return;
+  state.ceo.elixirs[key]--;
+  save(); renderAll();
+}
+var CEO_ARTIFACTS = {
+  mikrofon_mowcy: {label:"🎙️ Mikrofon Mówcy", desc:"+5% XP Komunikacja na stałe", fragmentsNeeded:5, buffSkill:"komunikacja", buffXpPct:5},
+  kompas_stratega: {label:"🧭 Kompas Stratega", desc:"Co poniedziałek dodatkowa podpowiedź AI-Mentora z pełnych danych", fragmentsNeeded:5},
+  buty_tancerza: {label:"👟 Buty Tancerza", desc:"Questy Taniec dają +20% Gold", fragmentsNeeded:5, buffSkill:"taniec", buffGoldPct:20}
+};
+function ceoArtifactBuilt(key){ return !!state.ceo.artifactsBuilt[key]; }
+function ceoBuildArtifact(key){
+  var a = CEO_ARTIFACTS[key];
+  if(!a || ceoArtifactBuilt(key)) return;
+  if((state.ceo.artifactFragments[key]||0)<a.fragmentsNeeded) return;
+  state.ceo.artifactFragments[key] -= a.fragmentsNeeded;
+  state.ceo.artifactsBuilt[key] = true;
+  save(); renderAll();
+}
+var CEO_INVENTORY_BUFFS = {
+  "Claude Max": {skills:["automatyzacje"], xpPct:10},
+  "Canva": {skills:["marketing","marka_osobista"], xpPct:5}
+};
+function ceoInventoryXpBuffPct(skillKey){
+  var total = 0;
+  (state.ceo.inventory||[]).forEach(function(item){
+    var b = CEO_INVENTORY_BUFFS[item];
+    if(b && b.skills.indexOf(skillKey)!==-1) total += b.xpPct;
+  });
+  return total;
 }
 var CEO_ROMAN_NUMERALS = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
 function ceoRankRow(level){
@@ -6494,11 +6610,23 @@ function addCeoXp(skillKey, amount, isEpic){
     if(state.ceo.specialization && CEO_SPECIALIZATIONS[state.ceo.specialization].skills.indexOf(skillKey)!==-1) xpMult += 0.25;
     // Faza 3 — drzewko talentów (sekcja 4): odblokowane węzły dają %XP w swoim skillu.
     xpMult += ceoTalentBuffPct(skillKey, "buffXpPct")/100;
+    // Faza 3 — Artefakty/Inventory (sekcja 8.4): Mikrofon Mówcy, Claude Max, Canva.
+    if(ceoArtifactBuilt("mikrofon_mowcy") && skillKey==="komunikacja") xpMult += 0.05;
+    xpMult += ceoInventoryXpBuffPct(skillKey)/100;
+    // Faza 3 — Eliksir Odwagi: ×1,5 XP Sprzedaż przez 24h od użycia.
+    if(skillKey==="sprzedaz" && Date.now()<(state.ceo.odwagaExpiresAt||0)) xpMult += 0.5;
+    // Faza 3 — motyw sezonu kwartalnego (sekcja 6.1).
+    var seasonTheme = ceoCurrentSeasonTheme();
+    if((seasonTheme.boostCat && cat===seasonTheme.boostCat) ||
+       (seasonTheme.boostSkill && skillKey===seasonTheme.boostSkill) ||
+       (seasonTheme.boostEpic && isEpic)) xpMult += (seasonTheme.boostPct||0)/100;
   }
   var xpGain = Math.round(amount*xpMult);
 
   state.ceo.skills[skillKey] += xpGain;
   if(state.ceo.skills[skillKey]<0) state.ceo.skills[skillKey] = 0;
+  // Faza 3 — Przepustka Sezonowa: sezonowe XP rośnie 1:1 z realnym XP.
+  if(xpGain>0){ ceoSeasonEnsure(); state.ceo.season.xp += xpGain; }
   // Faza 3 — Paragon (sekcja 6.2): od Prestige 3+ każde zdobyte XP karmi też osobną,
   // nigdy nie resetowaną pulę Paragon.
   if(xpGain>0 && (state.ceo.prestige||0)>=3) state.ceo.paragonXp = (state.ceo.paragonXp||0)+xpGain;
@@ -6518,6 +6646,8 @@ function addCeoXp(skillKey, amount, isEpic){
   if(ceoCharLevelInfo().level>=20) mult += 0.05;
   // Faza 3 — drzewko talentów (sekcja 4): odblokowane węzły dają %Gold w swoim skillu.
   mult += ceoTalentBuffPct(skillKey, "buffGoldPct")/100;
+  // Faza 3 — Artefakt Buty Tancerza: +20% Gold z questów Taniec.
+  if(ceoArtifactBuilt("buty_tancerza") && skillKey==="taniec") mult += 0.20;
 
   state.ceo.gold = Math.max(0, state.ceo.gold + Math.round(amount*0.5*mult));
   if(amount>0) ceoBumpStreak();
@@ -6722,7 +6852,17 @@ function ceoOpenLootChest(){
   var r = ceoRollLootRarity();
   var gold = Math.round(r.goldMin + Math.random()*(r.goldMax-r.goldMin));
   state.ceo.gold += gold;
-  state.ceo.lootLog.unshift({id:uid("loot"), rarity:r.id, label:r.label, gold:gold, date:todayStr()});
+  var logEntry = {id:uid("loot"), rarity:r.id, label:r.label, gold:gold, date:todayStr()};
+  // Faza 3 — 25% szans na fragment nieukończonego jeszcze Artefaktu (sekcja 8.4).
+  if(Math.random()<0.25){
+    var candidates = Object.keys(CEO_ARTIFACTS).filter(function(k){ return !ceoArtifactBuilt(k); });
+    if(candidates.length){
+      var pick = candidates[Math.floor(Math.random()*candidates.length)];
+      state.ceo.artifactFragments[pick] = (state.ceo.artifactFragments[pick]||0)+1;
+      logEntry.fragment = CEO_ARTIFACTS[pick].label;
+    }
+  }
+  state.ceo.lootLog.unshift(logEntry);
   state.ceo.lootLog = state.ceo.lootLog.slice(0,20);
   save();
 }
@@ -6793,7 +6933,7 @@ function renderCeoContracts(){
   });
   if(state.ceo.lootLog.length){
     html += '<div style="margin-top:10px; font-size:11.5px; color:var(--muted)">Ostatnie łupy: '+
-      state.ceo.lootLog.slice(0,5).map(function(l){ return l.label+' (🪙'+l.gold+')'; }).join(' · ')+'</div>';
+      state.ceo.lootLog.slice(0,5).map(function(l){ return l.label+' (🪙'+l.gold+')'+(l.fragment?' + fragment '+l.fragment:''); }).join(' · ')+'</div>';
   }
   html += '</div>';
   return html;
@@ -7213,6 +7353,7 @@ function renderCEO(el){
     '<div class="ceo-gold">🪙 '+state.ceo.gold.toLocaleString("pl-PL")+'<span>Gold</span></div>'+
   '</div>';
 
+  html += renderCeoSeason();
   html += renderCeoMentor();
   html += renderCeoAttributes();
   html += renderCeoSpecialization();
@@ -7228,6 +7369,7 @@ function renderCEO(el){
   html += renderCeoPrestige(lvl);
   html += renderCeoKpi();
   html += renderCeoEconomy();
+  html += renderCeoElixirsArtifacts();
   html += renderCeoInventoryGuildFactions();
   html += renderCeoTimeline();
   html += renderCeoRanking();
@@ -7308,6 +7450,23 @@ function renderCeoSpecialization(){
     '</div>';
   });
   html += '</div></div>';
+  return html;
+}
+function renderCeoSeason(){
+  ceoSeasonEnsure();
+  var theme = ceoCurrentSeasonTheme();
+  var tier = ceoSeasonTier(state.ceo.season.xp);
+  var xpInTier = (state.ceo.season.xp||0) - tier*CEO_SEASON_TIER_XP;
+  var unclaimedCount = 0;
+  for(var t=1;t<=tier;t++){ if(state.ceo.season.claimedTiers.indexOf(t)===-1) unclaimedCount++; }
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🏆 Sezon '+state.ceo.season.key+' — '+escapeHtml(theme.name)+'</h3>'+
+    '<div style="font-size:12px; color:var(--muted-light); margin-bottom:8px">'+escapeHtml(theme.desc)+'</div>'+
+    '<div style="font-size:12.5px; color:var(--muted-light); margin-bottom:6px">Przepustka sezonowa: szczebel '+tier+'/'+CEO_SEASON_MAX_TIER+' ('+xpInTier+'/'+CEO_SEASON_TIER_XP+' Sezonowego XP do kolejnego)</div>'+
+    '<div class="ceo-xpbar"><div class="ceo-xpbar-fill" style="width:'+Math.round(xpInTier/CEO_SEASON_TIER_XP*100)+'%"></div></div>';
+  if(unclaimedCount>0) html += '<button class="btn small" style="margin-top:10px" onclick="ceoClaimAllSeasonTiers()">Odbierz nagrody ('+unclaimedCount+')</button>';
+  if(state.ceo.seasonFrames.length) html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Ramki: '+state.ceo.seasonFrames.join(", ")+'</div>';
+  if(state.ceo.seasonHistory.length) html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Poprzednie sezony: '+state.ceo.seasonHistory.slice(0,4).map(function(s){ return s.key+' (szczebel '+s.tier+')'; }).join(' · ')+'</div>';
+  html += '</div>';
   return html;
 }
 function renderCeoAttributes(){
@@ -7643,6 +7802,34 @@ function renderCeoTalentTree(){
     });
     html += '</div>';
   });
+  html += '</div>';
+  return html;
+}
+function renderCeoElixirsArtifacts(){
+  var html = '<div class="ceo-quest-cols" style="margin-top:16px">';
+
+  html += '<div class="card"><h3 style="margin-top:0">🧪 Eliksiry</h3>';
+  Object.keys(CEO_ELIXIRS).forEach(function(key){
+    var e = CEO_ELIXIRS[key];
+    var have = state.ceo.elixirs[key]||0;
+    html += '<div class="ceo-quest-item"><span><b>'+e.label+'</b> — '+escapeHtml(e.desc)+' <span class="ceo-quest-xp">x'+have+'</span></span>'+
+      '<span style="white-space:nowrap"><button class="linklike" onclick="ceoBuyElixir(\''+key+'\')">Kup ('+e.cost+'g)</button>'+
+      (have>0?' <button class="linklike" onclick="ceoUseElixir(\''+key+'\')">Użyj</button>':'')+'</span></div>';
+  });
+  html += '</div>';
+
+  html += '<div class="card"><h3 style="margin-top:0">🏺 Artefakty</h3>';
+  Object.keys(CEO_ARTIFACTS).forEach(function(key){
+    var a = CEO_ARTIFACTS[key];
+    var built = ceoArtifactBuilt(key);
+    var frags = state.ceo.artifactFragments[key]||0;
+    html += '<div class="ceo-quest-item"><span><b>'+a.label+'</b>'+(built?' <span class="ceo-quest-xp">Zbudowany ✅</span>':'')+'<br><span style="font-size:11px; color:var(--muted)">'+escapeHtml(a.desc)+'</span></span>'+
+      (built?'':'<span style="white-space:nowrap">'+frags+'/'+a.fragmentsNeeded+' fragmentów '+
+        (frags>=a.fragmentsNeeded?'<button class="linklike" onclick="ceoBuildArtifact(\''+key+'\')">Zbuduj</button>':'')+'</span>')+
+    '</div>';
+  });
+  html += '<div style="font-size:10.5px; color:var(--muted); margin-top:6px">Fragmenty: 25% szansy ze skrzynek z łupem.</div></div>';
+
   html += '</div>';
   return html;
 }
