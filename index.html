@@ -2387,7 +2387,13 @@ function toggleTask(id){
   pushZadUndo({type:"toggle", id:id, prevDone:t.done, prevCompletedAt:t.completedAt});
   t.done = !t.done; t.completedAt = t.done ? todayStr() : null;
   if(t.scope==="dzien" && state.ceo){
-    addCeoXp(CEO_TASK_CATEGORY_SKILL[t.category] || "strategie", t.done ? 25 : -25);
+    var xpAmt = t.ceoXp||25;
+    var skillKey = t.ceoSkill || CEO_TASK_CATEGORY_SKILL[t.category] || "strategie";
+    addCeoXp(skillKey, t.done ? xpAmt : -xpAmt);
+    if(t.done && t.ceoOnComplete==="financeReview"){
+      var ym = todayStr().slice(0,7);
+      if(state.ceo.financeReviewMonths.indexOf(ym)===-1) state.ceo.financeReviewMonths.push(ym);
+    }
   }
   save(); renderAll();
 }
@@ -3175,12 +3181,16 @@ function savePostModal(){
   var fbImage = isCarousel ? normalizeImageUrl(document.getElementById("pmFbImage").value) : "";
   var video = normalizeVideoUrl(document.getElementById("pmVideo").value.trim()) || null;
   var ctx = window.__postModalCtx || {};
+  var prevStage = null;
   if(ctx.id){
     var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
-    if(p){ p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.captionFb=captionFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; p.video=video; }
+    if(p){ prevStage = p.stage; p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.captionFb=captionFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; p.video=video; }
   } else {
     state.posts.unshift({id:uid("post"), title:title, brand:brand, stage:stage, category:null, date:date, platform:platform,
       captionFb:captionFb, captionIg:captionIg, images:images, isCarousel:isCarousel, fbImage:fbImage, video:video});
+  }
+  if(stage==="opublikowany" && prevStage!=="opublikowany"){
+    ceoAwardXpEvent(video ? "reelPublished" : "postPublished");
   }
   closePostModal();
   save(); renderAll();
@@ -6396,8 +6406,26 @@ function ceoTotalUniqueClients(){
   });
   return Object.keys(names).length;
 }
+/* Faza 1 — poprawka: state.finance[] to martwy jednorazowy import z 2026-07-06, żywy
+   Finanse tab pisze do state.financeEntries[] od tamtej pory. Dla miesięcy, które mają
+   już jakikolwiek wpis w financeEntries, to jest źródło prawdy; starszy state.finance[]
+   zostaje tylko jako fallback dla miesięcy sprzed migracji na financeEntries. */
+function ceoMonthFinanceData(ym){
+  var hasLive = (state.financeEntries||[]).some(function(e){ return e.month===ym; });
+  if(hasLive){
+    var byCat = financeMonthSummary(ym).byCategory;
+    return {revenue: byCat.przychody||0, bizCost: byCat.firmowe||0, personalCost: byCat.osobiste||0};
+  }
+  var legacy = (state.finance||[]).filter(function(x){ return x.month===ym; })[0];
+  return legacy ? {revenue:legacy.revenue||0, bizCost:legacy.bizCost||0, personalCost:legacy.personalCost||0} : {revenue:0, bizCost:0, personalCost:0};
+}
 function ceoTotalRevenue(){
-  return (state.finance||[]).reduce(function(sum,f){ return sum+(f.revenue||0); }, 0);
+  var months = {};
+  (state.financeEntries||[]).forEach(function(e){ months[e.month] = true; });
+  (state.finance||[]).forEach(function(f){ months[f.month] = true; });
+  var sum = 0;
+  Object.keys(months).forEach(function(ym){ sum += ceoMonthFinanceData(ym).revenue; });
+  return sum;
 }
 function ceoCheckAchievements(){
   var changed = false;
@@ -6419,6 +6447,13 @@ function ceoCheckAchievements(){
 }
 function ceoAdjustTool4artsClients(delta){
   state.ceo.tool4artsClientCount = Math.max(0, (state.ceo.tool4artsClientCount||0)+delta);
+  if(delta>0){
+    var t = CEO_EPIC_TEMPLATES.filter(function(x){ return x.skill==="tool4arts"; })[0];
+    if(t){
+      state.ceo.epicQuests.unshift({id:uid("eq"), label:t.label, xp:t.xp, skill:t.skill, date:todayStr()});
+      addCeoXp(t.skill, t.xp);
+    }
+  }
   ceoCheckAchievements();
   save(); renderAll();
 }
@@ -6448,8 +6483,27 @@ function renderCeoBrandTracks(){
   return html;
 }
 function ceoCurrentMonthFinance(){
+  return ceoMonthFinanceData(todayStr().slice(0,7));
+}
+/* Faza 1 — hook różnicowy (snapshot-diff): przy każdym renderze CEO porównuje realny
+   przychód miesiąca z ostatnio "uznanym" baseline'em i dolicza XP tylko za dodatni
+   przyrost (10 XP/100 zł) — bezpieczne wobec edycji/usuwania wpisów w Finansach, bo
+   zawsze liczy z aktualnej prawdy zamiast gonić każde miejsce mutacji financeEntries. */
+function ceoCreditRevenueDelta(){
   var ym = todayStr().slice(0,7);
-  return (state.finance||[]).filter(function(x){return x.month===ym;})[0] || {revenue:0, bizCost:0, personalCost:0};
+  var revenue = ceoMonthFinanceData(ym).revenue;
+  var baseline = state.ceo.revenueXpBaseline[ym] || 0;
+  var delta = revenue - baseline;
+  if(delta>=100){
+    var xp = Math.floor(delta/100)*CEO_XP_TABLE.revenuePer100.xp;
+    state.ceo.revenueXpBaseline[ym] = baseline + Math.floor(delta/100)*100;
+    addCeoXp(CEO_XP_TABLE.revenuePer100.skill, xp);
+  } else if(delta<0){
+    // korekta w dół (np. usunięty błędny wpis) — nigdy nie odbieramy XP wstecznie,
+    // tylko obniżamy baseline żeby przyszłe przyrosty znów liczyły się poprawnie
+    state.ceo.revenueXpBaseline[ym] = revenue;
+    save();
+  }
 }
 function ceoNewClientsThisMonth(){
   var ym = todayStr().slice(0,7);
@@ -6471,11 +6525,11 @@ function ceoCurrentBoss(){
     state.ceo.bosses[ym] = {
       name: "Boss "+monthName(+ym.split("-")[1]-1)+" "+ym.split("-")[0],
       conditions: [
-        {id:uid("bc"), label:"15 000 zł przychodu w tym miesiącu", type:"auto-revenue", target:15000},
-        {id:uid("bc"), label:"3 nowych klientów", type:"auto-clients", target:3},
-        {id:uid("bc"), label:"20 nowych rolek", type:"manual-counter", target:20, current:0},
-        {id:uid("bc"), label:"15 treningów", type:"auto-workouts", target:15},
-        {id:uid("bc"), label:"MVP Tool4Arts", type:"manual-check", manualDone:false}
+        {id:uid("bc"), label:"15 000 zł przychodu w tym miesiącu", type:"auto-revenue", target:15000, weight:0.35},
+        {id:uid("bc"), label:"3 nowych klientów", type:"auto-clients", target:3, weight:0.25},
+        {id:uid("bc"), label:"20 nowych rolek", type:"manual-counter", target:20, current:0, weight:0.20},
+        {id:uid("bc"), label:"15 treningów", type:"auto-workouts", target:15, weight:0.10},
+        {id:uid("bc"), label:"MVP Tool4Arts", type:"manual-check", manualDone:false, weight:0.10}
       ],
       defeated:false
     };
@@ -6637,10 +6691,101 @@ function redeemCeoReward(id){
 }
 
 /* ================= CEO — render ================= */
+/* Faza 1 — generator zadań głównych dnia (sekcja 5.2). Dokłada 1-3 zadania "Główne"
+   do state.tasks (scope:"dzien", generated:true) wg priorytetów Pipeline/Content/Boss/
+   Finanse-Tool4Arts, raz dziennie, idempotentnie (genKey chroni przed duplikatami). */
+function ceoGenerateDailyQuests(){
+  var today = todayStr();
+  if(state.ceo.dailyQuestsGeneratedDate===today) return;
+  state.ceo.dailyQuestsGeneratedDate = today;
+
+  var existingGenKeys = {};
+  state.tasks.forEach(function(t){ if(t.generated && !t.done && !t.deletedAt && t.genKey) existingGenKeys[t.genKey] = true; });
+
+  var candidates = [];
+
+  // P1 — Pipeline (re-użycie crmPriorityBuckets/crmDaysSince z Baza kontaktów)
+  if(ceoSkillActive("sprzedaz")){
+    var buckets = crmPriorityBuckets();
+    var stale = (buckets.reaktywacja||[]).concat(buckets.followup||[])
+      .filter(function(c){ return crmDaysSince(c)>3 && crmDaysSince(c)!==Infinity; })
+      .sort(function(a,b){ return crmDaysSince(b)-crmDaysSince(a); })[0];
+    if(stale){
+      candidates.push({genKey:"pipeline_reactivate_"+stale.id, title:"Odezwij się do "+stale.name+" ("+crmDaysSince(stale)+" dni bez kontaktu)", xp:150, skill:"sprzedaz", category:"MediaDGtal", pri:1});
+    }
+    var weekStart = currentWeekDates()[0];
+    var newThisWeek = (state.crmContacts||[]).filter(function(c){ return !c.deletedAt && c.importedAt && c.importedAt>=weekStart; }).length;
+    if(newThisWeek===0){
+      candidates.push({genKey:"pipeline_new_w"+weekStart, title:"Dodaj 5 nowych prospektów do CRM", xp:250, skill:"sprzedaz", category:"MediaDGtal", pri:2});
+    }
+  }
+
+  // P2 — Content (harmonogram publikacji + tempo rolek vs cel bossa)
+  if(ceoSkillActive("marketing")){
+    (state.contentCalendar||[]).filter(function(c){ return !c.deletedAt && c.date===today; }).forEach(function(c){
+      var hasPost = (state.posts||[]).some(function(p){ return !p.deletedAt && p.brand===c.brand && p.date===today && (p.stage==="opublikowany"||p.stage==="zaplanowany"); });
+      if(!hasPost){
+        candidates.push({genKey:"content_publish_"+c.id, title:"Opublikuj "+(c.format||"post")+" wg harmonogramu ("+c.brand+")", xp:150, skill:"marketing", category:c.brand==="tool4arts"?"tool4arts":"MediaDGtal", pri:1});
+      }
+    });
+    var bossForReel = ceoCurrentBoss();
+    var reelCond = bossForReel.conditions.filter(function(c){ return c.type==="manual-counter"; })[0];
+    if(reelCond && ceoSkillActive("marka_osobista")){
+      var dom = +today.slice(8,10);
+      var dim = new Date(+today.slice(0,4), +today.slice(5,7), 0).getDate();
+      var expectedPace = reelCond.target * (dom/dim);
+      if((reelCond.current||0) < expectedPace*0.7){
+        candidates.push({genKey:"content_reel_"+today, title:"Nagraj rolkę — tempo poniżej celu bossa ("+(reelCond.current||0)+"/"+reelCond.target+")", xp:200, skill:"marka_osobista", category:"MediaDGtal", pri:2});
+      }
+    }
+  }
+
+  // P3 — Boss: cel z najniższym postępem
+  var boss = ceoCurrentBoss();
+  var worst = null, worstProgress = 1;
+  boss.conditions.forEach(function(c){
+    var p = ceoConditionProgress(c);
+    if(p<1 && p<worstProgress){ worstProgress = p; worst = c; }
+  });
+  if(worst){
+    candidates.push({genKey:"boss_"+boss.name+"_"+worst.id, title:"Boss miesiąca: przybliż — "+worst.label, xp:120, skill:"strategie", category:"MediaDGtal", pri:3});
+  }
+
+  // P4 — Finanse / Tool4Arts
+  if(ceoSkillActive("cashflow")){
+    var domF = +today.slice(8,10);
+    var dimF = new Date(+today.slice(0,4), +today.slice(5,7), 0).getDate();
+    var ymNow = today.slice(0,7);
+    if((dimF-domF)<5 && state.ceo.financeReviewMonths.indexOf(ymNow)===-1){
+      candidates.push({genKey:"finance_review_"+ymNow, title:"Uzupełnij finanse / przegląd cashflow (koniec miesiąca)", xp:300, skill:"cashflow", category:"Admin", pri:2, onComplete:"financeReview"});
+    }
+  }
+  if(ceoSkillActive("tool4arts")){
+    var t4aOld = state.tasks.filter(function(t){ return !t.done && !t.deletedAt && t.category==="tool4arts" && (t.scope==="tydzien"||t.scope==="miesiac"); })
+      .sort(function(a,b){ return (a.createdAt||"").localeCompare(b.createdAt||""); })[0];
+    if(t4aOld){
+      var ageDays = Math.floor((Date.now()-new Date(t4aOld.createdAt+"T00:00:00").getTime())/86400000);
+      if(ageDays>7){
+        candidates.push({genKey:"t4a_overdue_"+t4aOld.id, title:"Zaległe (Tool4Arts, "+ageDays+" dni): "+t4aOld.title, xp:100, skill:"tool4arts", category:"tool4arts", pri:2});
+      }
+    }
+  }
+
+  candidates = candidates.filter(function(c){ return !existingGenKeys[c.genKey]; });
+  candidates.sort(function(a,b){ return a.pri-b.pri; });
+  candidates.slice(0,3).forEach(function(c){
+    state.tasks.unshift({id:uid("task"), title:c.title, category:c.category, scope:"dzien", done:false,
+      createdAt:today, completedAt:null, deletedAt:null, generated:true, genKey:c.genKey,
+      ceoXp:c.xp, ceoSkill:c.skill, ceoOnComplete:c.onComplete||null});
+  });
+  save();
+}
 function renderCEO(el){
   setTopActions('');
   ceoCheckHabitThresholds();
   ceoCheckAchievements();
+  ceoCreditRevenueDelta();
+  ceoGenerateDailyQuests();
   state.ceo.monthlyXpHistory[todayStr().slice(0,7)] = ceoTotalXp();
 
   var lvl = ceoCharLevelInfo();
@@ -6758,9 +6903,17 @@ function renderCeoSkills(){
 }
 function renderCeoBoss(){
   var boss = ceoCurrentBoss();
+  // Faza 1 — HP ważone (sekcja 7.1): przychód/klienci/content/zdrowie/produkt nie są
+  // równie ważne. Fallback do równego podziału dla starszych bossów bez pola weight.
+  var fallbackWeight = 1/boss.conditions.length;
+  var totalWeight = 0;
+  boss.conditions.forEach(function(c){ totalWeight += (c.weight!=null ? c.weight : fallbackWeight); });
   var totalProgress = 0;
-  boss.conditions.forEach(function(c){ totalProgress += ceoConditionProgress(c); });
-  var pct = Math.round((totalProgress/boss.conditions.length)*100);
+  boss.conditions.forEach(function(c){
+    var w = (c.weight!=null ? c.weight : fallbackWeight) / totalWeight;
+    totalProgress += ceoConditionProgress(c) * w;
+  });
+  var pct = Math.round(totalProgress*100);
   if(pct>=100 && !boss.defeated){ boss.defeated = true; addCeoXp("strategie", 500); }
   var hpRemaining = 100 - Math.min(100,pct);
   var html = '<div class="card ceo-boss-card" style="margin-top:16px">'+
@@ -6793,10 +6946,11 @@ function renderCeoQuests(){
   var mainItems = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.deletedAt; });
   if(!mainItems.length){ html += '<div class="empty">Brak zadań na dziś.</div>'; }
   mainItems.forEach(function(t){
-    var skill = CEO_TASK_CATEGORY_SKILL[t.category] || "strategie";
+    var skill = t.ceoSkill || CEO_TASK_CATEGORY_SKILL[t.category] || "strategie";
+    var xpAmt = t.ceoXp||25;
     html += '<div class="ceo-quest-item'+(t.done?" done":"")+'" onclick="toggleTask(\''+t.id+'\')">'+
-      '<span>'+(t.done?"✅":"⬜")+' '+escapeHtml(t.title)+'</span>'+
-      '<span class="ceo-quest-xp">+25 '+CEO_SKILL_DEFS[skill].icon+'</span></div>';
+      '<span>'+(t.done?"✅":"⬜")+(t.generated?" 🎲":"")+' '+escapeHtml(t.title)+'</span>'+
+      '<span class="ceo-quest-xp">+'+xpAmt+' '+CEO_SKILL_DEFS[skill].icon+'</span></div>';
   });
   html += '</div>';
 
@@ -8569,6 +8723,7 @@ function saveCrmModal(){
     state.crmMeta.reviewIndex = state.crmContacts.indexOf(newC);
     state.crmMeta.filter = "all";
     crmSubview = "przeglad";
+    ceoAwardXpEvent("prospectAdded");
   }
   closeCrmModal();
   save(); renderAll();
@@ -8788,6 +8943,7 @@ function crmJumpFirstUntagged(){
 function crmSetStatus(id, statusId){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
+  var prevStatus = c.status;
   c.status = statusId;
   c.taggedAt = todayStr();
   var filter = state.crmMeta.filter || "all";
@@ -8795,12 +8951,36 @@ function crmSetStatus(id, statusId){
   var next = crmFindIndex(curIdx, 1, filter);
   if(next===-1) next = curIdx;
   state.crmMeta.reviewIndex = next;
+  if(statusId==="w_rozmowie" && prevStatus!=="w_rozmowie"){
+    ceoAwardXpEvent("discoveryCall");
+  }
+  if(statusId==="klient" && prevStatus!=="klient"){
+    ceoAwardClientWonMdg(c.name);
+  }
   save(); renderAll();
+}
+function ceoAwardClientWonMdg(contactName){
+  var tiers = [
+    {label:"Nowy klient MediaDGtal — 1 miesiąc", xp:1500},
+    {label:"Nowy klient MediaDGtal — 3 miesiące", xp:3000},
+    {label:"Nowy klient MediaDGtal — 6+ miesięcy", xp:5000}
+  ];
+  var choice = prompt('Nowy klient MediaDGtal: "'+contactName+'". Na jaki okres umowa? Wpisz 1, 3 lub 6 (miesiące)', "1");
+  var tier = tiers[0];
+  if(choice && choice.trim()==="3") tier = tiers[1];
+  if(choice && (choice.trim()==="6" || +choice.trim()>=6)) tier = tiers[2];
+  state.ceo.epicQuests.unshift({id:uid("eq"), label:tier.label+' ("'+contactName+'")', xp:tier.xp, skill:"marketing", date:todayStr()});
+  addCeoXp("marketing", tier.xp);
+  ceoCheckAchievements();
 }
 function crmSetLastContact(id, val){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
+  var prevVal = c.lastContact;
   c.lastContact = val;
+  if(val && val!==prevVal && ceoWithin48h(val)){
+    ceoAwardXpEvent("outreachSent");
+  }
   save(); renderAll();
 }
 function crmSetCategory(id, val){
@@ -9171,7 +9351,9 @@ function crmToggleHot(id){
 function crmMarkContactedToday(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
+  var already = c.lastContact===todayStr();
   c.lastContact = todayStr();
+  if(!already) ceoAwardXpEvent("outreachSent");
   save(); renderAll();
 }
 function crmDaysSince(c){
