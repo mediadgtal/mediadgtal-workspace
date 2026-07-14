@@ -9885,7 +9885,7 @@ function openCrmModal(id){
   var existing = null;
   if(id){
     existing = state.crmContacts.filter(function(x){ return x.id===id; })[0];
-    if(existing) opts = {id:existing.id, name:existing.name, city:existing.city, ig:existing.ig, fb:existing.fb, website:existing.website, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category, system:existing.system, contactPerson:existing.contactPerson, status:existing.status, hot:existing.hot};
+    if(existing) opts = {id:existing.id, name:existing.name, city:existing.city, ig:existing.ig, fb:existing.fb, website:existing.website, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category, system:existing.system, contactPerson:existing.contactPerson, status:existing.status, hot:existing.hot, lastContact:existing.lastContact};
   }
   var isEdit = !!opts.id;
   var html = '<div class="modal-overlay" id="crmContactModal" data-close="closeCrmModal">'+
@@ -9897,6 +9897,10 @@ function openCrmModal(id){
     '<div class="field"><label>Kategoria</label><select id="cmCategory">'+crmCategoryOptions(opts.category)+'</select></div>'+
     '<div class="field"><label>System (obecnie używany)</label><select id="cmSystem">'+crmSystemOptions(opts.system)+'</select></div>'+
     '<div class="field"><label>Status — współpraca marketingowa</label><select id="cmStatus">'+crmStatusOptions(opts.status)+'</select></div>'+
+    '<div class="field"><label>Data ostatniego kontaktu (opcjonalnie, ręcznie)</label><div class="row" style="gap:8px">'+
+      '<input type="date" id="cmLastContact" value="'+escapeHtml(opts.lastContact||"")+'" style="flex:1">'+
+      '<button class="btn secondary small" type="button" onclick="document.getElementById(\'cmLastContact\').value=\'\'">✕ Wyczyść</button>'+
+    '</div></div>'+
     '<div class="field"><label style="display:flex; align-items:center; gap:8px; cursor:pointer"><input type="checkbox" id="cmHot" style="width:auto" '+(opts.hot?"checked":"")+'> 🔥 Blisko zamknięcia</label></div>'+
     (isEdit ? crmT4AChecklistHtml(existing) : '')+
     '<div class="field"><label>Instagram (link lub @login)</label><input type="text" id="cmIg" value="'+escapeHtml(opts.ig||"")+'"></div>'+
@@ -9923,6 +9927,7 @@ function saveCrmModal(){
   var category = document.getElementById("cmCategory").value;
   var system = document.getElementById("cmSystem").value;
   var status = document.getElementById("cmStatus").value;
+  var lastContact = document.getElementById("cmLastContact").value;
   var hot = document.getElementById("cmHot").checked;
   var ig = document.getElementById("cmIg").value.trim();
   var fb = document.getElementById("cmFb").value.trim();
@@ -9934,13 +9939,19 @@ function saveCrmModal(){
   if(ctx.id){
     var c = state.crmContacts.filter(function(x){ return x.id===ctx.id; })[0];
     if(c){
-      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, website:c.website, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, contactPerson:c.contactPerson, status:c.status, hot:c.hot}});
+      pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, website:c.website, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system, contactPerson:c.contactPerson, status:c.status, hot:c.hot, lastContact:c.lastContact}});
       if(c.status !== status) c.taggedAt = todayStr();
+      // Ręczna zmiana daty ostatniego kontaktu — te same reguły XP/cooldown co crmSetLastContact
+      // (bez wywoływania jej wprost, żeby nie dublować save()/renderAll() w tym samym zapisie).
+      if(lastContact !== c.lastContact){
+        if(lastContact && ceoWithin48h(lastContact)) ceoAwardXpEvent("outreachSent");
+        c.lastContact = lastContact;
+      }
       c.name=name; c.contactPerson=contactPerson; c.city=city; c.ig=ig; c.fb=fb; c.website=website; c.email=email; c.phone=phone; c.notes=notes; c.category=category; c.system=system; c.status=status; c.hot=hot;
       if(c.t4aSheetRow){ c.t4aDirty = true; crmSyncT4ARow(c); }
     }
   } else {
-    var newC = {id:uid("crmc"), name:name, contactPerson:contactPerson, city:city, ig:ig, fb:fb, website:website, email:email, phone:phone, notes:notes, category:category, system:system, statusT4A:null, status:status||null, lastContact:"", taggedAt: status ? todayStr() : null, hot:hot, deletedAt:null, importedAt:todayStr()};
+    var newC = {id:uid("crmc"), name:name, contactPerson:contactPerson, city:city, ig:ig, fb:fb, website:website, email:email, phone:phone, notes:notes, category:category, system:system, statusT4A:null, status:status||null, lastContact:lastContact||"", taggedAt: status ? todayStr() : null, hot:hot, deletedAt:null, importedAt:todayStr()};
     state.crmContacts.push(newC);
     pushCrmUndo({type:"add", id:newC.id});
     state.crmMeta.reviewIndex = state.crmContacts.indexOf(newC);
