@@ -970,6 +970,13 @@ function migrateState(s){
       {id:uid("fc"), name:"Pilates", status:"Friendly"},
       {id:uid("fc"), name:"Martial Arts", status:"Locked"}
     ];
+    // Faza 2 — backfill rep/xp na istniejących wpisach (nowe pola, stary status→rep startowy).
+    c.guild.forEach(function(g){ if(g.xp==null) g.xp = 0; });
+    c.factions.forEach(function(f){
+      if(f.rep==null){
+        f.rep = f.status==="Friendly" ? 3000 : (f.status==="Neutral" ? 1000 : 0);
+      }
+    });
     if(!c.kpiManual) c.kpiManual = {leady:0, sprzedaz:0, retencja:0, ruch:0, konwersja:0};
     if(!c.timeline) c.timeline = [
       {id:uid("tl"), year:"2024", label:"Pierwszy klient"},
@@ -1000,6 +1007,10 @@ function migrateState(s){
     if(!c.revenueXpBaseline) c.revenueXpBaseline = {};
     if(c.dailyQuestsGeneratedDate===undefined) c.dailyQuestsGeneratedDate = null;
     if(!c.financeReviewMonths) c.financeReviewMonths = [];
+    if(!c.questChains) c.questChains = {};
+    if(c.weeklyContracts===undefined) c.weeklyContracts = null;
+    if(!c.lootLog) c.lootLog = [];
+    if(c.dailyQuestsChestClaimedDate===undefined) c.dailyQuestsChestClaimedDate = null;
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1506,7 +1517,11 @@ function defaultState(){
     dailyEventCounts: {},
     revenueXpBaseline: {},
     dailyQuestsGeneratedDate: null,
-    financeReviewMonths: []
+    financeReviewMonths: [],
+    questChains: {},
+    weeklyContracts: null,
+    lootLog: [],
+    dailyQuestsChestClaimedDate: null
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
   s.ceo.skillActive = {};
@@ -6422,6 +6437,8 @@ function addCeoXp(skillKey, amount, isEpic){
     if(ceoCategoryHasTierV(cat)) xpMult += 0.03;
     xpMult += 0.02*ceoAttributeTierCount("sila");
     if(CEO_ATTRIBUTES.intelekt.skills.indexOf(skillKey)!==-1) xpMult += 0.02*ceoAttributeTierCount("intelekt");
+    // Faza 2 — NPC "Duet założycielski" (sekcja 7.3): programista Lv.5+ → +10% XP Tool4Arts.
+    if(skillKey==="tool4arts" && state.ceo.guild.some(function(g){ return (g.role||"").toLowerCase()==="developer" && ceoGuildLevel(g)>=5; })) xpMult += 0.10;
   }
   var xpGain = Math.round(amount*xpMult);
 
@@ -6622,6 +6639,210 @@ function ceoWorkoutsThisMonth(){
     if(ceoHabitMapping(h.name).skill==="cwiczenia") total += habitMonthStats(h, ym).done;
   });
   return total;
+}
+/* Faza 2 — Skrzynki z łupem (sekcja 8.3): tylko jako nagroda za działanie, nigdy do
+   kupienia za Gold. Bez fragmentów Artefaktów/Eliksirów (Faza 3, sekcja 8.4) — na razie
+   sama Gold, wg rzadkości. */
+var CEO_LOOT_RARITIES = [
+  {id:"zwykla",     label:"Zwykła",     weight:50, goldMin:50,  goldMax:150},
+  {id:"rzadka",     label:"Rzadka",     weight:30, goldMin:150, goldMax:400},
+  {id:"epicka",     label:"Epicka",     weight:15, goldMin:400, goldMax:900},
+  {id:"legendarna", label:"Legendarna", weight:5,  goldMin:900, goldMax:2000}
+];
+function ceoRollLootRarity(){
+  var totalWeight = CEO_LOOT_RARITIES.reduce(function(s,r){ return s+r.weight; },0);
+  var roll = Math.random()*totalWeight;
+  for(var i=0;i<CEO_LOOT_RARITIES.length;i++){
+    roll -= CEO_LOOT_RARITIES[i].weight;
+    if(roll<=0) return CEO_LOOT_RARITIES[i];
+  }
+  return CEO_LOOT_RARITIES[0];
+}
+function ceoOpenLootChest(){
+  var r = ceoRollLootRarity();
+  var gold = Math.round(r.goldMin + Math.random()*(r.goldMax-r.goldMin));
+  state.ceo.gold += gold;
+  state.ceo.lootLog.unshift({id:uid("loot"), rarity:r.id, label:r.label, gold:gold, date:todayStr()});
+  state.ceo.lootLog = state.ceo.lootLog.slice(0,20);
+  save();
+}
+/* Skrzynka za komplet dziennych questów — sprawdzane raz na render, raz dziennie. */
+function ceoCheckDailyQuestChestClaim(){
+  var today = todayStr();
+  if(state.ceo.dailyQuestsChestClaimedDate===today) return;
+  var todays = state.tasks.filter(function(t){ return t.scope==="dzien" && !t.deletedAt; });
+  if(!todays.length || !todays.every(function(t){ return t.done; })) return;
+  state.ceo.dailyQuestsChestClaimedDate = today;
+  ceoOpenLootChest();
+}
+
+/* Faza 2 — Kontrakty tygodniowe (sekcja 5.4): w poniedziałek (albo na żądanie, jeśli
+   tydzień pominięty) system proponuje 5 kontraktów z puli — dokładnie te z dokumentu,
+   gracz wybiera 3. Komplet 3/3 = skrzynka z łupem. */
+var CEO_CONTRACT_POOL = [
+  {id:"c_mdg_calls",     label:"Zleceniodawca: MediaDGtal — 3 rozmowy sprzedażowe",                      xp:800, skill:"sprzedaz"},
+  {id:"c_t4a_outreach",  label:"Zleceniodawca: Tool4Arts — 5 demo-outreach",                              xp:800, skill:"tool4arts"},
+  {id:"c_self",          label:"Zleceniodawca: Ty sam — 4 treningi + 1 dzień bez telefonu po 20",         xp:400, skill:"zycie"},
+  {id:"c_marta",         label:"Zleceniodawca: Marta — wspólny wieczór bez pracy",                        xp:300, skill:"zwiazek"},
+  {id:"c_studio",        label:"Zleceniodawca: Studio X — dowieź raport wyników klientowi przed piątkiem", xp:600, skill:"komunikacja"}
+];
+function ceoCurrentWeekStart(){ return currentWeekDates()[0]; }
+function ceoEnsureWeeklyContracts(){
+  var ws = ceoCurrentWeekStart();
+  if(state.ceo.weeklyContracts && state.ceo.weeklyContracts.weekStart===ws) return;
+  state.ceo.weeklyContracts = {weekStart:ws, offered:CEO_CONTRACT_POOL.map(function(c){ return c.id; }), chosen:[], completed:[]};
+  save();
+}
+function ceoToggleContractChoice(id){
+  ceoEnsureWeeklyContracts();
+  var wc = state.ceo.weeklyContracts;
+  if(wc.completed.indexOf(id)!==-1) return;
+  var idx = wc.chosen.indexOf(id);
+  if(idx!==-1){ wc.chosen.splice(idx,1); }
+  else { if(wc.chosen.length>=3) return; wc.chosen.push(id); }
+  save(); renderAll();
+}
+function ceoCompleteContract(id){
+  ceoEnsureWeeklyContracts();
+  var wc = state.ceo.weeklyContracts;
+  if(wc.chosen.indexOf(id)===-1 || wc.completed.indexOf(id)!==-1) return;
+  var def = CEO_CONTRACT_POOL.filter(function(c){ return c.id===id; })[0];
+  if(!def) return;
+  wc.completed.push(id);
+  addCeoXp(def.skill, def.xp);
+  if(wc.chosen.length===3 && wc.chosen.every(function(cid){ return wc.completed.indexOf(cid)!==-1; })){
+    ceoOpenLootChest();
+  }
+  save(); renderAll();
+}
+function renderCeoContracts(){
+  ceoEnsureWeeklyContracts();
+  var wc = state.ceo.weeklyContracts;
+  var full = wc.chosen.length>=3;
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">📜 Kontrakty tygodniowe</h3>'+
+    '<div style="font-size:11.5px; color:var(--muted); margin-bottom:8px">Wybierz 3 z 5 (tydzień od '+fmtDate(wc.weekStart)+'). Komplet 3/3 = skrzynka z łupem.</div>';
+  CEO_CONTRACT_POOL.forEach(function(c){
+    var chosen = wc.chosen.indexOf(c.id)!==-1;
+    var done = wc.completed.indexOf(c.id)!==-1;
+    html += '<div class="ceo-quest-item'+(done?" done":"")+'">'+
+      '<span>'+(done?"✅":(chosen?"🟡":"⬜"))+' '+escapeHtml(c.label)+'</span>'+
+      '<span class="ceo-quest-xp" style="display:flex; align-items:center; gap:6px">+'+c.xp+
+      (done?'':(chosen ? ' <button class="linklike" onclick="ceoCompleteContract(\''+c.id+'\')">Ukończ</button> <button class="linklike danger" onclick="ceoToggleContractChoice(\''+c.id+'\')">✕</button>'
+        : (full?'':' <button class="linklike" onclick="ceoToggleContractChoice(\''+c.id+'\')">Wybierz</button>')))+
+      '</span></div>';
+  });
+  if(state.ceo.lootLog.length){
+    html += '<div style="margin-top:10px; font-size:11.5px; color:var(--muted)">Ostatnie łupy: '+
+      state.ceo.lootLog.slice(0,5).map(function(l){ return l.label+' (🪙'+l.gold+')'; }).join(' · ')+'</div>';
+  }
+  html += '</div>';
+  return html;
+}
+/* Faza 2 — Quest Chains (sekcja 5.3): 4 łańcuchy fabularne z dokumentu. Kroki typu
+   "auto" sprawdzają się same z realnych danych (jak warunki bossa), reszta to ręczne
+   checkboxy — ten sam dwutorowy wzorzec co ceoConditionProgress, bez nowej architektury.
+   Nieskończona progresja ("Dziesiątka"→"Pięćdziesiątka"...) to świadomie odłożony
+   stretch-goal, nie część Fazy 2 — każdy łańcuch kończy się raz. */
+var CEO_QUEST_CHAIN_TEMPLATES = [
+  {id:"t4a_pierwsza_krew", name:"Pierwsza krew Tool4Arts", skill:"tool4arts", steps:[
+    {label:"Przygotuj listę 20 studiów-prospektów", xp:300, type:"auto", check:function(){ return crmActiveContacts().length>=20; }},
+    {label:"Wyślij 10 spersonalizowanych wiadomości", xp:400, type:"auto", check:function(){ return state.crmContacts.filter(function(c){ return !c.deletedAt && c.lastContact; }).length>=10; }},
+    {label:"Umów 3 demo", xp:600, type:"manual"},
+    {label:"Przeprowadź pierwsze demo", xp:500, type:"manual"},
+    {label:"FINAŁ: Pierwszy płacący klient Tool4Arts", xp:5000, gold:1000, type:"auto", final:true, achievementId:"chain_t4a_pierwsza_krew",
+      check:function(){ return (state.ceo.tool4artsClientCount||0)>=1; }}
+  ]},
+  {id:"autorytet", name:"Autorytet", skill:"marka_osobista", steps:[
+    {label:"30 dni streaka aktywności", xp:600, type:"auto", check:function(){ return (state.ceo.streak||0)>=30; }},
+    {label:"Pierwsze 10 komentarzy pod postami", xp:400, type:"manual"},
+    {label:"1000 followersów łącznie (IG+FB)", xp:800, type:"auto", check:function(){ return ceoLiveFollowersTotal()>=1000; }},
+    {label:"Pierwszy lead z IG", xp:500, type:"manual"},
+    {label:"Pierwszy klient z IG", xp:1000, type:"manual"},
+    {label:"FINAŁ: tytuł „Głos Branży”", xp:8000, type:"manual", final:true, achievementId:"chain_autorytet"}
+  ]},
+  {id:"art_of_move", name:"Art of Move", skill:"tool4arts", steps:[
+    {label:"Onboarding do Tool4Arts zakończony", xp:300, type:"manual"},
+    {label:"Pierwsza kampania Meta Ads live", xp:500, type:"manual"},
+    {label:"Rolka/karuzela ze ścieżką rejestracji opublikowana", xp:400, type:"manual"},
+    {label:"Pierwsze 10 zapisów z kampanii", xp:600, type:"manual"},
+    {label:"FINAŁ: case study opisane jako post", xp:4000, gold:800, type:"manual", final:true, achievementId:"chain_art_of_move"}
+  ]},
+  {id:"fundament_finansowy", name:"Fundament finansowy", skill:"majatek", steps:[
+    {label:"Podział środków z rozliczenia zaplanowany", xp:400, type:"manual"},
+    {label:"Pierwsza transza zainwestowana wg planu", xp:600, type:"manual"},
+    {label:"3 miesiące trzymania się planu", xp:800, type:"manual"},
+    {label:"FINAŁ: tytuł „Architekt Kapitału”", xp:3000, type:"manual", final:true, achievementId:"chain_fundament_finansowy"}
+  ]}
+];
+function ceoQuestChainState(templateId){
+  if(!state.ceo.questChains[templateId]) state.ceo.questChains[templateId] = {stepsDone:[], finishedAt:null};
+  return state.ceo.questChains[templateId];
+}
+function ceoQuestChainStepDone(template, idx){
+  var step = template.steps[idx];
+  if(step.type==="auto") return !!(ceoQuestChainState(template.id).stepsDone[idx] || (step.check && step.check()));
+  return !!ceoQuestChainState(template.id).stepsDone[idx];
+}
+function ceoCompleteQuestChainStep(template, idx){
+  var st = ceoQuestChainState(template.id);
+  if(st.stepsDone[idx]) return;
+  var step = template.steps[idx];
+  st.stepsDone[idx] = true;
+  addCeoXp(template.skill, step.xp, !!step.final);
+  if(step.gold) state.ceo.gold += step.gold;
+  if(step.final){
+    st.finishedAt = todayStr();
+    if(step.achievementId && state.ceo.achievementsUnlocked.indexOf(step.achievementId)===-1){
+      state.ceo.achievementsUnlocked.push(step.achievementId);
+    }
+  }
+  save();
+}
+/* Wywoływane raz na render CEO — dopisuje XP za kroki "auto", które właśnie stały się
+   prawdziwe, dokładnie raz (stepsDone chroni przed ponownym naliczeniem). */
+function ceoQuestChainCheckAuto(){
+  CEO_QUEST_CHAIN_TEMPLATES.forEach(function(template){
+    var st = ceoQuestChainState(template.id);
+    if(st.finishedAt) return;
+    template.steps.forEach(function(step, idx){
+      if(st.stepsDone[idx]) return;
+      if(step.type==="auto" && step.check && step.check()) ceoCompleteQuestChainStep(template, idx);
+    });
+  });
+}
+function ceoToggleQuestChainStep(templateId, idx){
+  var template = CEO_QUEST_CHAIN_TEMPLATES.filter(function(t){ return t.id===templateId; })[0];
+  if(!template) return;
+  var step = template.steps[idx];
+  if(step.type==="auto") return;
+  var st = ceoQuestChainState(templateId);
+  if(st.stepsDone[idx]){
+    st.stepsDone[idx] = false;
+    addCeoXp(template.skill, -step.xp);
+    if(step.gold) state.ceo.gold = Math.max(0, state.ceo.gold-step.gold);
+    if(step.final) st.finishedAt = null;
+    save(); renderAll();
+    return;
+  }
+  ceoCompleteQuestChainStep(template, idx);
+  renderAll();
+}
+function renderCeoQuestChains(){
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🔗 Questy fabularne</h3>';
+  CEO_QUEST_CHAIN_TEMPLATES.forEach(function(template){
+    var st = ceoQuestChainState(template.id);
+    html += '<div class="ceo-talent-group"><div class="ceo-talent-title">'+escapeHtml(template.name)+(st.finishedAt?' <span class="tag tag-stage-opublikowany">Ukończony 🎉</span>':'')+'</div>';
+    template.steps.forEach(function(step, idx){
+      var done = ceoQuestChainStepDone(template, idx);
+      var clickable = step.type==="manual";
+      html += '<div class="ceo-quest-item'+(done?" done":"")+'"'+(clickable?' onclick="ceoToggleQuestChainStep(\''+template.id+'\','+idx+')" style="cursor:pointer"':' style="cursor:default"')+'>'+
+        '<span>'+(done?"✅":"⬜")+' '+escapeHtml(step.label)+(step.type==="auto"?' <span style="font-size:10px; color:var(--muted)">(auto)</span>':'')+'</span>'+
+        '<span class="ceo-quest-xp">+'+step.xp+(step.gold?' 🪙'+step.gold:'')+'</span></div>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
 }
 function ceoCurrentBoss(){
   var ym = todayStr().slice(0,7);
@@ -6912,6 +7133,8 @@ function renderCEO(el){
   ceoCheckAchievements();
   ceoCreditRevenueDelta();
   ceoGenerateDailyQuests();
+  ceoQuestChainCheckAuto();
+  ceoCheckDailyQuestChestClaim();
   state.ceo.monthlyXpHistory[todayStr().slice(0,7)] = ceoTotalXp();
 
   var lvl = ceoCharLevelInfo();
@@ -6935,6 +7158,8 @@ function renderCEO(el){
   html += renderCeoSkills();
   html += renderCeoTalentTree();
   html += renderCeoBoss();
+  html += renderCeoQuestChains();
+  html += renderCeoContracts();
   html += renderCeoQuests();
   html += renderCeoEpicQuests();
   html += renderCeoAchievements();
@@ -7058,7 +7283,7 @@ function renderCeoBoss(){
     totalProgress += ceoConditionProgress(c) * w;
   });
   var pct = Math.round(totalProgress*100);
-  if(pct>=100 && !boss.defeated){ boss.defeated = true; addCeoXp("strategie", 500); }
+  if(pct>=100 && !boss.defeated){ boss.defeated = true; addCeoXp("strategie", 500); ceoOpenLootChest(); }
   var hpRemaining = 100 - Math.min(100,pct);
   var html = '<div class="card ceo-boss-card" style="margin-top:16px">'+
     '<div class="row" style="justify-content:space-between; align-items:center">'+
@@ -7269,15 +7494,28 @@ function renderCeoInventoryGuildFactions(){
   });
   html += '<button class="linklike" onclick="addCeoInventoryItem()">+ Dodaj</button></div>';
 
-  html += '<div class="card"><h3 style="margin-top:0">🛡️ Guild</h3><div style="font-size:11px; color:var(--muted); margin-bottom:8px">Ludzie wokół Ciebie.</div>';
+  html += '<div class="card"><h3 style="margin-top:0">🛡️ Gildia (NPC)</h3><div style="font-size:11px; color:var(--muted); margin-bottom:8px">Ludzie wokół Ciebie — poziom relacji 1-10 (sekcja 7.3).</div>';
   state.ceo.guild.forEach(function(g){
-    html += '<div class="ceo-quest-item"><span><b>'+escapeHtml(g.name)+'</b>'+(g.role?' — '+escapeHtml(g.role):'')+(g.bonus?' <span class="ceo-quest-xp">'+escapeHtml(g.bonus)+'</span>':'')+'</span><button class="linklike danger" onclick="removeCeoGuildMember(\''+g.id+'\')">✕</button></div>';
+    var lvl = ceoGuildLevel(g);
+    var isDev = (g.role||"").toLowerCase()==="developer";
+    html += '<div class="ceo-quest-item"><span><b>'+escapeHtml(g.name)+'</b>'+(g.role?' — '+escapeHtml(g.role):'')+
+      ' <span class="ceo-skill-lvl">Lv.'+lvl+'/10</span>'+
+      (isDev && lvl>=5 ? ' <span class="ceo-quest-xp">Duet założycielski: +10% XP Tool4Arts</span>' : (g.bonus?' <span class="ceo-quest-xp">'+escapeHtml(g.bonus)+'</span>':''))+
+      '</span><span style="white-space:nowrap"><button class="linklike" onclick="ceoAddGuildXp(\''+g.id+'\',10)">+10 XP</button> <button class="linklike danger" onclick="removeCeoGuildMember(\''+g.id+'\')">✕</button></span></div>';
   });
   html += '<button class="linklike" onclick="addCeoGuildMember()">+ Dodaj</button></div>';
 
-  html += '<div class="card"><h3 style="margin-top:0">🏳️ Frakcje</h3><div style="font-size:11px; color:var(--muted); margin-bottom:8px">Branże, w których działasz (klik zmienia status).</div>';
+  html += '<div class="card"><h3 style="margin-top:0">🏳️ Frakcje — reputacja</h3><div style="font-size:11px; color:var(--muted); margin-bottom:8px">Pasek repu 0-10 000 (sekcja 7.2). Auto: klient/rozmowa z branży. Ręcznie: post/współpraca.</div>';
   state.ceo.factions.forEach(function(f){
-    html += '<div class="ceo-quest-item" onclick="cycleCeoFactionStatus(\''+f.id+'\')"><span>'+escapeHtml(f.name)+'</span><span class="ceo-faction-status ceo-faction-'+f.status.toLowerCase()+'">'+escapeHtml(f.status)+'</span></div>';
+    var rep = f.rep||0;
+    var label = ceoFactionStatusLabel(rep);
+    html += '<div class="ceo-quest-item" style="flex-direction:column; align-items:stretch; gap:4px">'+
+      '<div style="display:flex; justify-content:space-between; align-items:center"><span>'+escapeHtml(f.name)+'</span>'+
+      '<span class="ceo-faction-status" style="background:var(--sidebar-bg); color:var(--accent)">'+label+' · '+rep+'/10000</span></div>'+
+      '<div class="ceo-xpbar small"><div class="ceo-xpbar-fill" style="width:'+(rep/100)+'%"></div></div>'+
+      '<div style="text-align:right"><button class="linklike" onclick="ceoManualFactionRep(\''+f.id+'\',100)">+100 (post o branży)</button> '+
+      '<button class="linklike" onclick="ceoManualFactionRep(\''+f.id+'\',1000)">+1000 (współpraca)</button></div>'+
+      '</div>';
   });
   html += '<button class="linklike" onclick="addCeoFaction()">+ Dodaj</button></div>';
 
@@ -7309,15 +7547,52 @@ function removeCeoGuildMember(id){
 function addCeoFaction(){
   var name = prompt("Nazwa branży/frakcji:");
   if(!name) return;
-  state.ceo.factions.push({id:uid("fc"), name:name, status:"Neutral"});
+  state.ceo.factions.push({id:uid("fc"), name:name, status:"Neutral", rep:0});
   save(); renderAll();
 }
-function cycleCeoFactionStatus(id){
-  var f = state.ceo.factions.filter(function(x){return x.id===id;})[0];
+/* Faza 2 — reputacja frakcji (sekcja 7.2): pasek 0-10000 zamiast 3-stanowego cyklu. */
+var CEO_FACTION_REP_THRESHOLDS = [
+  {min:0,     label:"Nieznany"},
+  {min:1000,  label:"Neutralny"},
+  {min:3000,  label:"Przyjazny"},
+  {min:6000,  label:"Szanowany"},
+  {min:9000,  label:"Czczony"},
+  {min:10000, label:"Legendarny"}
+];
+function ceoFactionStatusLabel(rep){
+  var r = CEO_FACTION_REP_THRESHOLDS[0];
+  CEO_FACTION_REP_THRESHOLDS.forEach(function(t){ if(rep>=t.min) r = t; });
+  return r.label;
+}
+function ceoManualFactionRep(id, amount){
+  var f = state.ceo.factions.filter(function(x){ return x.id===id; })[0];
   if(!f) return;
-  var order = ["Locked","Neutral","Friendly"];
-  var idx = order.indexOf(f.status);
-  f.status = order[(idx+1)%order.length];
+  f.rep = Math.max(0, Math.min(10000, (f.rep||0)+amount));
+  save(); renderAll();
+}
+/* Mapowanie kategorii z CRM "Baza kontaktów" na nazwy frakcji CEO — nazwy nie są
+   1:1 (Joga↔Yoga, Sztuki Walki↔Martial Arts, Studia Tańca↔Dance). Akrobatyka nie ma
+   dziś odpowiednika frakcji, celowo brak auto-repu dla niej. */
+var CEO_CATEGORY_TO_FACTION = {
+  "Pole Dance": "Pole Dance",
+  "Studia Tańca": "Dance",
+  "Joga": "Yoga",
+  "Pilates": "Pilates",
+  "Sztuki Walki": "Martial Arts"
+};
+function ceoAddFactionRepForCategory(category, amount){
+  var factionName = CEO_CATEGORY_TO_FACTION[category];
+  if(!factionName) return;
+  var f = state.ceo.factions.filter(function(x){ return x.name===factionName; })[0];
+  if(!f) return;
+  f.rep = Math.max(0, Math.min(10000, (f.rep||0)+amount));
+}
+/* Faza 2 — poziomy relacji NPC (sekcja 7.3): 1-10 z prostą krzywą 100 XP/poziom. */
+function ceoGuildLevel(member){ return Math.min(10, Math.floor((member.xp||0)/100)+1); }
+function ceoAddGuildXp(id, amount){
+  var g = state.ceo.guild.filter(function(x){ return x.id===id; })[0];
+  if(!g) return;
+  g.xp = Math.max(0, (g.xp||0)+amount);
   save(); renderAll();
 }
 function ceoLiveFollowersTotal(){
@@ -7610,10 +7885,13 @@ function findContactCategory(name){
 }
 function clientMapEntries(){
   if(clientMapFilter==="tool4arts"){
-    return (state.crmContacts||[]).filter(function(c){ return !c.deletedAt && c.statusT4A==="klient"; })
+    var fromCrm = (state.crmContacts||[]).filter(function(c){ return !c.deletedAt && c.statusT4A==="klient"; })
       .map(function(c){ return {id:c.id, name:c.name, city:c.city, category:c.category, mode:"tool4arts"}; });
+    var manual = (state.clientMapPins||[]).filter(function(p){ return !p.deletedAt && p.mode==="tool4arts"; })
+      .map(function(p){ return {id:p.id, name:p.name, city:p.city, category: p.category || findContactCategory(p.name) || "", mode:"tool4arts"}; });
+    return fromCrm.concat(manual);
   }
-  return (state.clientMapPins||[]).filter(function(p){ return !p.deletedAt; }).map(function(p){
+  return (state.clientMapPins||[]).filter(function(p){ return !p.deletedAt && p.mode!=="tool4arts"; }).map(function(p){
     return {id:p.id, name:p.name, city:p.city, category: p.category || findContactCategory(p.name) || "", mode:"marketing"};
   });
 }
@@ -7670,7 +7948,7 @@ function renderClientMapSection(){
     '<span class="chip'+(clientMapFilter==="tool4arts"?" active":"")+'" onclick="setClientMapFilter(\'tool4arts\')">tool4arts</span>'+
     '</div>'+
     '<div class="row" style="gap:10px">'+
-    (clientMapFilter==="marketing" ? '<button class="btn secondary small" onclick="openMapPinModal()">+ Dodaj miejsce</button>' : '')+
+    '<button class="btn secondary small" onclick="openMapPinModal()">+ Dodaj miejsce</button>'+
     '<button class="linklike" onclick="setClientMapView(\'kosz\')">🗑 Kosz'+(koszCount?" ("+koszCount+")":"")+'</button>'+
     '</div></div>';
 
@@ -7778,6 +8056,7 @@ function openMapPinModal(id){
   var html = '<div class="modal-overlay" id="mapPinModal" data-close="closeMapPinModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj miejsce":"Nowe miejsce")+'</h3>'+
+    (!isEdit && clientMapFilter==="tool4arts" ? '<div class="stub-note" style="margin-bottom:10px">Klienci Tool4Arts oznaczeni w CRM (status "Klient") pojawiają się tu automatycznie — dodawaj tu ręcznie tylko te spoza CRM.</div>' : '')+
     '<div class="field"><label>Nazwa</label><input type="text" id="mpName" value="'+escapeHtml(existing?existing.name:"")+'"></div>'+
     '<div class="field"><label>Miasto</label><input type="text" id="mpCity" value="'+escapeHtml(existing?existing.city:"")+'"></div>'+
     '<div class="field"><label>Kategoria</label><input type="text" id="mpCategory" value="'+escapeHtml(existing?existing.category:"")+'"></div>'+
@@ -7799,7 +8078,7 @@ function saveMapPinModal(id){
     var p = state.clientMapPins.filter(function(x){ return x.id===id; })[0];
     if(p){ p.name=name; p.city=city; p.category=category; }
   } else {
-    state.clientMapPins.push({id:uid("cmp"), name:name, city:city, category:category, source:"app"});
+    state.clientMapPins.push({id:uid("cmp"), name:name, city:city, category:category, source:"app", mode:clientMapFilter});
   }
   closeMapPinModal();
   save(); renderAll();
@@ -9120,13 +9399,14 @@ function crmSetStatus(id, statusId){
   state.crmMeta.reviewIndex = next;
   if(statusId==="w_rozmowie" && prevStatus!=="w_rozmowie"){
     ceoAwardXpEvent("discoveryCall");
+    ceoAddFactionRepForCategory(c.category, 300); // Faza 2 — sekcja 7.2
   }
   if(statusId==="klient" && prevStatus!=="klient"){
-    ceoAwardClientWonMdg(c.name);
+    ceoAwardClientWonMdg(c.name, c.category);
   }
   save(); renderAll();
 }
-function ceoAwardClientWonMdg(contactName){
+function ceoAwardClientWonMdg(contactName, category){
   var tiers = [
     {label:"Nowy klient MediaDGtal — 1 miesiąc", xp:1500},
     {label:"Nowy klient MediaDGtal — 3 miesiące", xp:3000},
@@ -9138,6 +9418,7 @@ function ceoAwardClientWonMdg(contactName){
   if(choice && (choice.trim()==="6" || +choice.trim()>=6)) tier = tiers[2];
   state.ceo.epicQuests.unshift({id:uid("eq"), label:tier.label+' ("'+contactName+'")', xp:tier.xp, skill:"marketing", date:todayStr()});
   addCeoXp("marketing", tier.xp, true);
+  ceoAddFactionRepForCategory(category, 2000); // Faza 2 — sekcja 7.2
   ceoCheckAchievements();
 }
 function crmSetLastContact(id, val){
