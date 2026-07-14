@@ -625,15 +625,18 @@ var CEO_SKILL_DEFS = {
 };
 var CEO_CAT_LABEL = {biznes:"Biznes", zdrowie:"Zdrowie", osobiste:"Osobiste"};
 var CEO_CAT_ORDER = ["biznes","zdrowie","osobiste"];
+/* Faza 2 — rangi wg tabeli 2.2 dokumentu (nazwy/progi/przywileje). Przywileje
+   zależne od systemów spoza Fazy 2 (Tier 2 talentów, Raid Bossy, Imperium, Paragon)
+   są opisowe — nie "odblokowują" niczego, co jeszcze nie istnieje. */
 var CEO_RANKS = [
-  {min:1, name:"Stażysta"},
-  {min:5, name:"Praktyk"},
-  {min:10, name:"Specjalista"},
-  {min:15, name:"Ekspert"},
-  {min:20, name:"Weteran"},
-  {min:30, name:"Mistrz"},
-  {min:40, name:"Legenda"},
-  {min:50, name:"Tytan Branży"}
+  {min:1,  name:"Stażysta",    privilege:"—"},
+  {min:5,  name:"Freelancer",  privilege:"+1 slot na quest poboczny"},
+  {min:10, name:"Specjalista", privilege:"Odblokowanie drzewka talentów Tier 2 (Faza 3)"},
+  {min:20, name:"Manager",     privilege:"+5% Gold globalnie, 2. dzienne zadanie główne"},
+  {min:30, name:"Dyrektor",    privilege:"Odblokowanie Raid Bossów kwartalnych (Faza 3)"},
+  {min:40, name:"CEO",         privilege:"+10% budżetu Sklepu nagród"},
+  {min:50, name:"Wizjoner",    privilege:"Odblokowanie kampanii „Imperium” (Faza 3)"},
+  {min:60, name:"Legenda Branży", privilege:"co 10 poziomów: +1 punkt Paragon Bonus (Faza 3)"}
 ];
 var CEO_TASK_CATEGORY_SKILL = {MediaDGtal:"marketing", tool4arts:"tool4arts", Rozwoj:"wiedza", Admin:"automatyzacje"};
 var CEO_HABIT_SKILL_MAP = [
@@ -2388,6 +2391,7 @@ function toggleTask(id){
   t.done = !t.done; t.completedAt = t.done ? todayStr() : null;
   if(t.scope==="dzien" && state.ceo){
     var xpAmt = t.ceoXp||25;
+    if(t.generated && id===ceoTierIVBonusTaskId()) xpAmt *= 2; // Faza 2 — Tier IV: podwójny XP z 1 questa dziennie
     var skillKey = t.ceoSkill || CEO_TASK_CATEGORY_SKILL[t.category] || "strategie";
     addCeoXp(skillKey, t.done ? xpAmt : -xpAmt);
     if(t.done && t.ceoOnComplete==="financeReview"){
@@ -2553,7 +2557,7 @@ function openCCModal(opts){
     if(existing){ opts = {id:existing.id, brand:existing.brand, date:existing.date, format:existing.format||"", category:existing.category||"", topic:existing.topic||"", haslo:existing.haslo||""}; }
   }
   var isEdit = !!opts.id;
-  var html = '<div class="modal-overlay" id="ccModal">'+
+  var html = '<div class="modal-overlay" id="ccModal" data-close="closeCCModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj wpis":"Nowy wpis")+' — '+escapeHtml(opts.brand)+'</h3>'+
     '<div class="field"><label>Data</label><input type="date" id="ccDate" value="'+(opts.date||todayStr())+'"></div>'+
@@ -2793,7 +2797,7 @@ function renderPostPreviewModal(){
     : p.platform==="tiktok" ? renderTiktokPreviewBody(p)
     : p.platform==="youtube" ? renderYoutubePreviewBody(p)
     : renderGenericPreviewBody(p);
-  var html = '<div class="modal-overlay" id="postPreviewModal" onclick="if(event.target===this) closePostPreview()">'+
+  var html = '<div class="modal-overlay" id="postPreviewModal" data-close="closePostPreview">'+
     '<div>'+
     body+
     '<div class="row" style="justify-content:center; gap:8px; margin-top:14px">'+
@@ -3004,7 +3008,7 @@ function openIdeaModal(opts){
     Object.keys(POST_PLATFORM_LABEL).map(function(p){
       return '<option value="'+p+'"'+(opts.platform===p?" selected":"")+'>'+POST_PLATFORM_LABEL[p]+'</option>';
     }).join("");
-  var html = '<div class="modal-overlay" id="ideaModal">'+
+  var html = '<div class="modal-overlay" id="ideaModal" data-close="closeIdeaModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj pomysł":"Nowy pomysł")+'</h3>'+
     '<div class="field"><label>Hook</label><input type="text" id="imHook" value="'+escapeHtml(opts.title||"")+'" placeholder="Chwytliwe zdanie otwierające..."></div>'+
@@ -3073,7 +3077,7 @@ function openPostModal(opts){
   var stageOptions = Object.keys(POST_STAGE_LABEL).map(function(s){
     return '<option value="'+s+'"'+((opts.stage||"pomysl")===s?" selected":"")+'>'+POST_STAGE_LABEL[s]+'</option>';
   }).join("");
-  var html = '<div class="modal-overlay" id="postModal">'+
+  var html = '<div class="modal-overlay" id="postModal" data-close="closePostModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj post":"Nowy post")+'</h3>'+
     '<div class="field"><label>Tytuł</label><input type="text" id="pmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
@@ -4207,7 +4211,7 @@ function openFinanceModal(opts){
   var catOptions = FINANCE_CATEGORIES.map(function(c){
     return '<option value="'+c[0]+'"'+(category===c[0]?" selected":"")+'>'+c[1]+'</option>';
   }).join("");
-  var html = '<div class="modal-overlay" id="financeModal">'+
+  var html = '<div class="modal-overlay" id="financeModal" data-close="closeFinanceModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj pozycję":"Nowa pozycja")+'</h3>'+
     '<div class="field"><label>Kategoria</label><select id="fmCategory">'+catOptions+'</select></div>'+
@@ -4593,7 +4597,7 @@ function openTaskModal(opts){
   var recurDayOptions = HABIT_DOW_SHORT.map(function(d,i){
     return '<option value="'+i+'"'+((isRecur?opts.recurWeekday:0)===i?" selected":"")+'>'+d+'</option>';
   }).join("");
-  var html = '<div class="modal-overlay" id="taskModal">'+
+  var html = '<div class="modal-overlay" id="taskModal" data-close="closeTaskModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj zadanie":"Nowe zadanie")+'</h3>'+
     '<div class="field"><label>Treść</label><input type="text" id="tmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
@@ -5028,7 +5032,7 @@ function openEventModal(opts){
     }
   }
   var dateLabel = "Data początkowa" + (prefillEndDate ? " (wydarzenie trwa kilka dni)" : "");
-  var html = '<div class="modal-overlay" id="eventModal">'+
+  var html = '<div class="modal-overlay" id="eventModal" data-close="closeEventModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj wydarzenie":"Nowe wydarzenie")+'</h3>'+
     '<div class="field"><label>Tytuł</label><input type="text" id="evmTitle" value="'+escapeHtml(opts.title||"")+'"></div>'+
@@ -6253,16 +6257,30 @@ function ceoTotalXp(){
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ sum += (state.ceo.skills[k]||0); });
   return sum;
 }
+/* Faza 2 — krzywa XP postaci (sekcja 2.2): próg kumulatywny 1000*n^1.35 zamiast
+   płaskich 1000 XP/poziom. */
+function ceoXpThresholdForLevel(L){ return L<=1 ? 0 : Math.round(1000*Math.pow(L,1.35)); }
 function ceoCharLevelInfo(){
   var xp = ceoTotalXp();
-  var perLevel = 1000;
-  return {level: Math.floor(xp/perLevel)+1, xp:xp, xpInLevel: xp%perLevel, xpForNext: perLevel};
+  var level = 1;
+  while(xp >= ceoXpThresholdForLevel(level+1)){ level++; }
+  var curThreshold = ceoXpThresholdForLevel(level);
+  var nextThreshold = ceoXpThresholdForLevel(level+1);
+  return {level:level, xp:xp, xpInLevel: xp-curThreshold, xpForNext: nextThreshold-curThreshold};
+}
+function ceoLastNMonthKeys(n){
+  var out = [];
+  var now = new Date();
+  for(var i=n-1;i>=0;i--){
+    var dd = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    out.push(dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0"));
+  }
+  return out;
 }
 function ceoMilestoneAchieved(m){
   if(m.type==="manual") return !!m.done;
   if(m.type==="financeAvgRevenue"){
-    var months = (state.finance||[]).slice(-m.months);
-    if(months.length<m.months) return false;
+    var months = ceoLastNMonthKeys(m.months).map(ceoMonthFinanceData);
     var avg = months.reduce(function(s,f){return s+(f.revenue||0);},0)/months.length;
     return avg>=m.target;
   }
@@ -6270,8 +6288,7 @@ function ceoMilestoneAchieved(m){
     return (state.ceo.finance[m.field]||0) >= m.target;
   }
   if(m.type==="financePositiveMonths"){
-    var months2 = (state.finance||[]).slice(-m.months);
-    if(months2.length<m.months) return false;
+    var months2 = ceoLastNMonthKeys(m.months).map(ceoMonthFinanceData);
     return months2.every(function(f){ return (f.revenue||0)-(f.bizCost||0)-(f.personalCost||0) > 0; });
   }
   if(m.type==="postsPublished"){
@@ -6288,21 +6305,80 @@ function ceoMilestoneAchieved(m){
   }
   return false;
 }
-function ceoSkillMilestoneLevel(key){
-  var list = state.ceo.skillMilestones[key] || [];
-  var lvl = 0;
-  list.forEach(function(m){ if(ceoMilestoneAchieved(m) && m.level>lvl) lvl = m.level; });
-  return Math.min(100, lvl);
-}
+/* Faza 2 — poziom skilla teraz z krzywej XP (sekcja 3.2, 100*n^1.25), NIE z Wyzwań.
+   Wyzwania (state.ceo.skillMilestones) zostają jako osobna lista achievementów pod
+   spodem, renderowana niezależnie — patrz renderCeoSkills. */
+function ceoSkillXpThresholdForLevel(L){ return L<=0 ? 0 : Math.round(100*Math.pow(L,1.25)); }
+var CEO_MASTERY_XP_CHUNK = 50000;
 function ceoSkillLevelInfo(key){
   var xp = state.ceo.skills[key]||0;
-  return {level: ceoSkillMilestoneLevel(key), xp:xp, maxLevel:100};
+  var level = 0;
+  while(level<100 && xp >= ceoSkillXpThresholdForLevel(level+1)){ level++; }
+  var lvl100Threshold = ceoSkillXpThresholdForLevel(100);
+  var masteryLevel = xp>=lvl100Threshold ? Math.floor((xp-lvl100Threshold)/CEO_MASTERY_XP_CHUNK) : 0;
+  return {level:level, xp:xp, maxLevel:100, masteryLevel:masteryLevel};
 }
-function ceoRank(level){
-  var r = CEO_RANKS[0].name;
-  CEO_RANKS.forEach(function(x){ if(level>=x.min) r = x.name; });
+/* Faza 2 — Tiery I-V co 20 poziomów skilla (sekcja 3.2). */
+var CEO_SKILL_TIERS = [
+  {tier:1, min:1,  max:20,  name:"Adept",      color:"#8f8a94"},
+  {tier:2, min:21, max:40,  name:"Czeladnik",  color:"#6fa8d1"},
+  {tier:3, min:41, max:60,  name:"Mistrz",     color:"#63b58a"},
+  {tier:4, min:61, max:80,  name:"Arcymistrz", color:"#cf9b4a"},
+  {tier:5, min:81, max:100, name:"Legenda",    color:"#d1636f"}
+];
+function ceoSkillTier(key){
+  var level = ceoSkillLevelInfo(key).level;
+  if(level<1) return 0;
+  var t = CEO_SKILL_TIERS.filter(function(x){ return level>=x.min && level<=x.max; })[0];
+  return t ? t.tier : 5;
+}
+function ceoSkillTierInfo(key){
+  var tier = ceoSkillTier(key);
+  return tier>0 ? CEO_SKILL_TIERS[tier-1] : null;
+}
+/* Tier V — aura: przynajmniej jeden skill tej kategorii na Tier V daje +3% XP
+   wszystkim skillom kategorii. Tier III (dowolny skill biznesowy) — +1 slot w
+   generatorze zadań dnia, patrz ceoGenerateDailyQuests. */
+function ceoCategoryHasTierV(cat){
+  return Object.keys(CEO_SKILL_DEFS).some(function(k){ return CEO_SKILL_DEFS[k].cat===cat && ceoSkillTier(k)===5; });
+}
+function ceoAnyBizSkillTierAtLeast(minTier){
+  return Object.keys(CEO_SKILL_DEFS).some(function(k){ return CEO_SKILL_DEFS[k].cat==="biznes" && ceoSkillTier(k)>=minTier; });
+}
+/* Faza 2 — Atrybuty (sekcja 2.1): średnia poziomów skilli, które je zasilają (skille
+   uśpione pomijane), pasywne bonusy co 10 pkt wpięte w addCeoXp/ceoRewardBudgetPln. */
+var CEO_ATTRIBUTES = {
+  sila:     {label:"Siła",      icon:"💪", skills:["cwiczenia","sen","odzywianie"], bonusDesc:"+2% XP ze wszystkich źródeł / 10 pkt"},
+  intelekt: {label:"Intelekt",  icon:"🧠", skills:["wiedza","strategie","angielski"], bonusDesc:"+2% XP z questów edukacyjnych / 10 pkt"},
+  precyzja: {label:"Precyzja",  icon:"🎯", skills:["marketing","automatyzacje"], bonusDesc:"+2% Gold z questów marketingowych / 10 pkt"},
+  charyzma: {label:"Charyzma",  icon:"🗣️", skills:["komunikacja","sprzedaz"], bonusDesc:"+2% Gold z epic questów klienckich / 10 pkt"},
+  fortuna:  {label:"Fortuna",   icon:"💰", skills:["majatek","akcje","cashflow"], bonusDesc:"+1% do budżetu Sklepu nagród / 10 pkt"},
+  duch:     {label:"Duch",      icon:"❤️", skills:["zycie","mental","zwiazek","rodzicielstwo"], bonusDesc:"+1 Zamrożenie streaka/mies. / 10 pkt (wraca w Fazie 3 razem z mechaniką zamrożeń)"}
+};
+function ceoAttributeValue(key){
+  var def = CEO_ATTRIBUTES[key];
+  if(!def) return 0;
+  var activeSkills = def.skills.filter(ceoSkillActive);
+  if(!activeSkills.length) return 0;
+  var sum = activeSkills.reduce(function(s,k){ return s+ceoSkillLevelInfo(k).level; },0);
+  return Math.round(sum/activeSkills.length);
+}
+function ceoAttributeTierCount(key){ return Math.floor(ceoAttributeValue(key)/10); }
+var CEO_ROMAN_NUMERALS = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
+function ceoRankRow(level){
+  var r = CEO_RANKS[0];
+  CEO_RANKS.forEach(function(x){ if(level>=x.min) r = x; });
   return r;
 }
+function ceoRank(level){
+  var r = ceoRankRow(level);
+  if(r.name==="Legenda Branży"){
+    var idx = Math.floor((level-60)/10);
+    return r.name+" "+(CEO_ROMAN_NUMERALS[idx]||(idx+1));
+  }
+  return r.name;
+}
+function ceoRankPrivilege(level){ return ceoRankRow(level).privilege; }
 function ceoClass(){
   var totals = {biznes:0, zdrowie:0, osobiste:0};
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ if(ceoSkillActive(k)) totals[CEO_SKILL_DEFS[k].cat] += (state.ceo.skills[k]||0); });
@@ -6332,12 +6408,40 @@ function ceoBumpStreak(){
   state.ceo.streak = (state.ceo.lastActiveDate===yesterday) ? (state.ceo.streak||0)+1 : 1;
   state.ceo.lastActiveDate = today;
 }
-function addCeoXp(skillKey, amount){
+function addCeoXp(skillKey, amount, isEpic){
   if(!CEO_SKILL_DEFS[skillKey]) skillKey = "strategie";
   if(!state.ceo.skills[skillKey]) state.ceo.skills[skillKey] = 0;
-  state.ceo.skills[skillKey] += amount;
+  var cat = CEO_SKILL_DEFS[skillKey].cat;
+
+  // Faza 2 — Tier V aura (sekcja 3.2) + atrybut Siła (+2%/10pkt XP ze wszystkich źródeł,
+  // sekcja 2.1) + atrybut Intelekt (+2%/10pkt XP z questów "edukacyjnych" — tu: XP
+  // trafiające bezpośrednio w skille wiedza/strategie/angielski). Liczone od stanu
+  // SPRZED tego zdarzenia (nie może samo siebie odblokować).
+  var xpMult = 1;
+  if(amount>0){
+    if(ceoCategoryHasTierV(cat)) xpMult += 0.03;
+    xpMult += 0.02*ceoAttributeTierCount("sila");
+    if(CEO_ATTRIBUTES.intelekt.skills.indexOf(skillKey)!==-1) xpMult += 0.02*ceoAttributeTierCount("intelekt");
+  }
+  var xpGain = Math.round(amount*xpMult);
+
+  state.ceo.skills[skillKey] += xpGain;
   if(state.ceo.skills[skillKey]<0) state.ceo.skills[skillKey] = 0;
+
   var mult = 1 + 0.05*(state.ceo.prestige||0);
+  // Faza 2 — Tier I: +5% Gold z XP w TYM skillu. Mistrzostwo+: +0,5% Gold globalnie
+  // za każdy poziom mistrzostwa zdobyty w DOWOLNYM skillu, sumarycznie. Atrybut
+  // Precyzja: +2%/10pkt Gold z questów marketingowych/automatyzacyjnych. Atrybut
+  // Charyzma: +2%/10pkt Gold z epic questów klienckich (isEpic=true przy wywołaniu).
+  if(ceoSkillTier(skillKey)===1) mult += 0.05;
+  var totalMastery = 0;
+  Object.keys(CEO_SKILL_DEFS).forEach(function(k){ totalMastery += ceoSkillLevelInfo(k).masteryLevel||0; });
+  mult += 0.005*totalMastery;
+  if(CEO_ATTRIBUTES.precyzja.skills.indexOf(skillKey)!==-1) mult += 0.02*ceoAttributeTierCount("precyzja");
+  if(isEpic) mult += 0.02*ceoAttributeTierCount("charyzma");
+  // Faza 2 — ranga Manager(20)+: +5% Gold globalnie (sekcja 2.2).
+  if(ceoCharLevelInfo().level>=20) mult += 0.05;
+
   state.ceo.gold = Math.max(0, state.ceo.gold + Math.round(amount*0.5*mult));
   if(amount>0) ceoBumpStreak();
   state.ceo.monthlyXpHistory[todayStr().slice(0,7)] = ceoTotalXp();
@@ -6451,7 +6555,7 @@ function ceoAdjustTool4artsClients(delta){
     var t = CEO_EPIC_TEMPLATES.filter(function(x){ return x.skill==="tool4arts"; })[0];
     if(t){
       state.ceo.epicQuests.unshift({id:uid("eq"), label:t.label, xp:t.xp, skill:t.skill, date:todayStr()});
-      addCeoXp(t.skill, t.xp);
+      addCeoXp(t.skill, t.xp, true);
     }
   }
   ceoCheckAchievements();
@@ -6613,7 +6717,7 @@ function completeCeoEpicTemplate(idx){
   if(!t) return;
   if(!confirm('Zaliczyć "'+t.label+'" (+'+t.xp+' XP)?')) return;
   state.ceo.epicQuests.unshift({id:uid("eq"), label:t.label, xp:t.xp, skill:t.skill, date:todayStr()});
-  addCeoXp(t.skill, t.xp);
+  addCeoXp(t.skill, t.xp, true);
   if(t.skill==="tool4arts"){
     state.ceo.tool4artsClientCount = (state.ceo.tool4artsClientCount||0)+1;
     ceoCheckAchievements();
@@ -6629,9 +6733,11 @@ function editCeoFinanceField(key){
   save(); renderAll();
 }
 function ceoRewardBudgetPln(){
-  var recent = (state.finance||[]).slice(-1);
-  var revenue = recent.length ? (recent[0].revenue||0) : 0;
-  return Math.round(revenue * (state.ceo.rewardBudgetPct||10) / 100);
+  var prevYm = ceoLastNMonthKeys(2)[0];
+  var revenue = ceoMonthFinanceData(prevYm).revenue||0;
+  var pct = (state.ceo.rewardBudgetPct||10) + ceoAttributeTierCount("fortuna"); // atrybut Fortuna: +1pkt%/10pkt
+  if(ceoCharLevelInfo().level>=40) pct += 10; // ranga CEO(40)+: +10% budżetu Sklepu nagród
+  return Math.round(revenue * pct / 100);
 }
 function ceoRewardsSpentThisMonthPln(){
   var ym = todayStr().slice(0,7);
@@ -6694,6 +6800,26 @@ function redeemCeoReward(id){
 /* Faza 1 — generator zadań głównych dnia (sekcja 5.2). Dokłada 1-3 zadania "Główne"
    do state.tasks (scope:"dzien", generated:true) wg priorytetów Pipeline/Content/Boss/
    Finanse-Tool4Arts, raz dziennie, idempotentnie (genKey chroni przed duplikatami). */
+/* Faza 2 — liczba slotów w generatorze zadań dnia: baza 3 (Faza 1) + Tier III w
+   dowolnym skillu biznesowym (sekcja 3.2) + ranga Manager+ (Task 8, sekcja 2.2). */
+function ceoDailyQuestSlots(){
+  var slots = 3;
+  if(ceoAnyBizSkillTierAtLeast(3)) slots++;
+  if(ceoCharLevelInfo().level>=20) slots++; // próg rangi Manager
+  return slots;
+}
+/* Faza 2 — Tier IV (sekcja 3.2): "podwójny XP z 1 wybranego questa dziennie",
+   uproszczone do automatycznego wyboru (bez nowej interakcji w UI) — quest wygenerowany
+   dziś o najwyższym ceoXp liczy się podwójnie, jeśli którykolwiek skill biznesowy ma
+   Tier IV+. */
+function ceoTierIVBonusTaskId(){
+  if(!ceoAnyBizSkillTierAtLeast(4)) return null;
+  var today = todayStr();
+  var todays = state.tasks.filter(function(t){ return t.scope==="dzien" && t.generated && !t.deletedAt && t.createdAt===today; });
+  if(!todays.length) return null;
+  var best = todays.reduce(function(a,b){ return (b.ceoXp||0)>(a.ceoXp||0) ? b : a; });
+  return best.id;
+}
 function ceoGenerateDailyQuests(){
   var today = todayStr();
   if(state.ceo.dailyQuestsGeneratedDate===today) return;
@@ -6773,7 +6899,7 @@ function ceoGenerateDailyQuests(){
 
   candidates = candidates.filter(function(c){ return !existingGenKeys[c.genKey]; });
   candidates.sort(function(a,b){ return a.pri-b.pri; });
-  candidates.slice(0,3).forEach(function(c){
+  candidates.slice(0,ceoDailyQuestSlots()).forEach(function(c){
     state.tasks.unshift({id:uid("task"), title:c.title, category:c.category, scope:"dzien", done:false,
       createdAt:today, completedAt:null, deletedAt:null, generated:true, genKey:c.genKey,
       ceoXp:c.xp, ceoSkill:c.skill, ceoOnComplete:c.onComplete||null});
@@ -6797,6 +6923,7 @@ function renderCEO(el){
     '<div class="ceo-header-info">'+
       '<div class="ceo-name">Damian Gogulski <span class="ceo-class">— '+escapeHtml(cls)+'</span>'+(state.ceo.prestige>0?' <span class="ceo-prestige-badge">Prestige '+state.ceo.prestige+'</span>':'')+'</div>'+
       '<div class="ceo-rank">'+escapeHtml(rank)+' · Poziom '+lvl.level+' · 🔥 Streak: '+(state.ceo.streak||0)+' dni</div>'+
+      '<div style="font-size:11px; color:var(--muted); margin:-4px 0 6px">Przywilej rangi: '+escapeHtml(ceoRankPrivilege(lvl.level))+'</div>'+
       '<div class="ceo-xpbar"><div class="ceo-xpbar-fill" style="width:'+Math.round(lvl.xpInLevel/lvl.xpForNext*100)+'%"></div></div>'+
       '<div class="ceo-xptext">'+lvl.xpInLevel+' / '+lvl.xpForNext+' XP do poziomu '+(lvl.level+1)+'</div>'+
     '</div>'+
@@ -6804,6 +6931,7 @@ function renderCEO(el){
   '</div>';
 
   html += renderCeoMentor();
+  html += renderCeoAttributes();
   html += renderCeoSkills();
   html += renderCeoTalentTree();
   html += renderCeoBoss();
@@ -6876,6 +7004,20 @@ function deleteCeoMilestone(key, id){
   ceoSkillChallengesOpen[key] = true;
   save(); renderAll();
 }
+function renderCeoAttributes(){
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">Atrybuty</h3><div class="ceo-econ-grid">';
+  Object.keys(CEO_ATTRIBUTES).forEach(function(k){
+    var def = CEO_ATTRIBUTES[k];
+    var val = ceoAttributeValue(k);
+    var tiers = ceoAttributeTierCount(k);
+    html += '<div class="ceo-econ-tile" title="'+escapeHtml(def.bonusDesc)+'">'+
+      '<div class="ceo-econ-label">'+def.icon+' '+def.label+'</div>'+
+      '<div class="ceo-econ-value">'+val+'<span style="font-size:10.5px; color:var(--muted); font-weight:600"> ('+tiers+'x)</span></div>'+
+    '</div>';
+  });
+  html += '</div></div>';
+  return html;
+}
 function renderCeoSkills(){
   var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">Umiejętności</h3>';
   CEO_CAT_ORDER.forEach(function(cat){
@@ -6883,14 +7025,16 @@ function renderCeoSkills(){
     Object.keys(CEO_SKILL_DEFS).filter(function(k){return CEO_SKILL_DEFS[k].cat===cat;}).forEach(function(k){
       var def = CEO_SKILL_DEFS[k];
       var info = ceoSkillLevelInfo(k);
+      var tierInfo = ceoSkillTierInfo(k);
       var challengeCount = (state.ceo.skillMilestones[k]||[]).length;
       var active = ceoSkillActive(k);
       html += '<div class="ceo-skill-card"'+(active?'':' style="opacity:.5"')+'>'+
         '<div class="ceo-skill-head"><span>'+def.icon+' '+def.label+'</span>'+
         '<span style="display:flex; align-items:center; gap:6px">'+
         '<button class="linklike" title="'+(active?"Uśpij skill (pomijany w agregacjach i generatorze zadań)":"Obudź skill")+'" onclick="ceoToggleSkillActive(\''+k+'\')">'+(active?"⚡":"😴")+'</button>'+
-        '<span class="ceo-skill-lvl">Lv.'+info.level+'/100</span></span></div>'+
-        '<div class="ceo-xpbar small"><div class="ceo-xpbar-fill" style="width:'+info.level+'%"></div></div>'+
+        '<span class="ceo-skill-lvl">Lv.'+info.level+'/100'+(info.masteryLevel>0?' <span style="color:var(--accent)">+'+info.masteryLevel+' Mistrzostwo</span>':'')+'</span></span></div>'+
+        (tierInfo ? '<div style="font-size:10.5px; font-weight:700; color:'+tierInfo.color+'; margin-bottom:2px">Tier '+tierInfo.tier+' — '+tierInfo.name+(tierInfo.tier===2?' 🔓':'')+'</div>' : '')+
+        '<div class="ceo-xpbar small"><div class="ceo-xpbar-fill" style="width:'+info.level+'%; background:'+(tierInfo?tierInfo.color:'var(--accent)')+'"></div></div>'+
         '<div class="ceo-skill-xp">XP aktywności: '+info.xp+' <button class="linklike" onclick="promptCeoManualXp(\''+k+'\')">+XP</button></div>'+
         '<button class="linklike" style="margin-top:4px" onclick="toggleCeoSkillChallenges(\''+k+'\')">Wyzwania ('+challengeCount+')'+(ceoSkillChallengesOpen[k]?" ▲":" ▼")+'</button>'+
         (ceoSkillChallengesOpen[k] ? renderCeoSkillChallenges(k) : '')+
@@ -7587,7 +7731,7 @@ function openClientPinModal(cityKey, index){
     '<button class="btn secondary small" onclick="crmJumpToContact(\''+matchedContact.id+'\')">Pokaż w bazie</button>' :
     '<button class="btn secondary small" disabled title="Nie znaleziono odpowiadającego kontaktu w Bazie kontaktów" style="opacity:.4; cursor:not-allowed">Pokaż w bazie</button>';
 
-  var html = '<div class="modal-overlay" id="clientPinModal" onclick="if(event.target===this) closeClientPinModal()">'+
+  var html = '<div class="modal-overlay" id="clientPinModal" data-close="closeClientPinModal">'+
     '<div class="modal-box card">'+
     navHtml+
     '<h3>'+escapeHtml(e.name)+'</h3>'+
@@ -7631,7 +7775,7 @@ function openMapPinModal(id){
   closeMapPinModal();
   var existing = id ? (state.clientMapPins||[]).filter(function(p){ return p.id===id; })[0] : null;
   var isEdit = !!existing;
-  var html = '<div class="modal-overlay" id="mapPinModal">'+
+  var html = '<div class="modal-overlay" id="mapPinModal" data-close="closeMapPinModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj miejsce":"Nowe miejsce")+'</h3>'+
     '<div class="field"><label>Nazwa</label><input type="text" id="mpName" value="'+escapeHtml(existing?existing.name:"")+'"></div>'+
@@ -7913,7 +8057,7 @@ function openClientRowModal(ym, rowId){
   var existing = rowId ? (state.clientsMonthly[ym]||[]).filter(function(x){ return x.id===rowId; })[0] : null;
   var isEdit = !!existing;
   __klientModalCtx = {ym:ym, rowId:rowId};
-  var html = '<div class="modal-overlay" id="klientRowModal">'+
+  var html = '<div class="modal-overlay" id="klientRowModal" data-close="closeClientRowModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj klienta":"Nowy klient")+'</h3>';
   CLIENT_FIELDS.forEach(function(f){
@@ -8296,6 +8440,13 @@ function crmFlushPendingT4ASync(){
 function crmSyncT4ARow(c){
   if(!window.__gcalToken) return;
   if(!c.t4aSheetRow){
+    // Nowy wiersz w arkuszu Tomka tworzymy WYŁĄCZNIE gdy jest w nim jakaś realna
+    // treść (zaznaczony checkbox albo notatka tool4arts) — samo otwarcie/odświeżenie
+    // karty kontaktu albo ponowne połączenie z Google (które re-wysyła zalegle
+    // "dirty" kontakty) nie może utworzyć pustego wiersza.
+    var t = crmGetT4A(c);
+    var hasRealData = t.sent||t.offer||t.decision||t.listed||t.client||(t.notes&&t.notes.trim());
+    if(!hasRealData){ c.t4aDirty = false; return; }
     if(crmT4ACreating[c.id]) return;
     crmT4ACreating[c.id] = true;
     crmFindOrCreateT4ARow(c);
@@ -8665,7 +8816,7 @@ function openCrmModal(id){
     if(existing) opts = {id:existing.id, name:existing.name, city:existing.city, ig:existing.ig, fb:existing.fb, website:existing.website, email:existing.email, phone:existing.phone, notes:existing.notes, category:existing.category, system:existing.system, contactPerson:existing.contactPerson, status:existing.status, hot:existing.hot};
   }
   var isEdit = !!opts.id;
-  var html = '<div class="modal-overlay" id="crmContactModal">'+
+  var html = '<div class="modal-overlay" id="crmContactModal" data-close="closeCrmModal">'+
     '<div class="modal-box card">'+
     '<h3>'+(isEdit?"Edytuj kontakt":"Nowy kontakt")+'</h3>'+
     '<div class="field"><label>Nazwa</label><input type="text" id="cmName" value="'+escapeHtml(opts.name||"")+'"></div>'+
@@ -8738,11 +8889,27 @@ function closeCrmNoteModal(){
   var m = document.getElementById("crmNoteModal");
   if(m) m.remove();
 }
+/* Uniwersalne zamykanie okienek: klik w tło (poza .modal-box) albo klawisz ESC.
+   Każdy .modal-overlay musi mieć data-close="nazwaFunkcjiZamykającej". */
+document.addEventListener("click", function(e){
+  if(e.target && e.target.classList && e.target.classList.contains("modal-overlay") && e.target.dataset.close){
+    var fn = window[e.target.dataset.close];
+    if(typeof fn === "function") fn();
+  }
+});
+document.addEventListener("keydown", function(e){
+  if(e.key !== "Escape") return;
+  var overlay = document.querySelector(".modal-overlay");
+  if(overlay && overlay.dataset.close){
+    var fn = window[overlay.dataset.close];
+    if(typeof fn === "function") fn();
+  }
+});
 function openCrmNoteModal(id){
   closeCrmNoteModal();
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
-  var html = '<div class="modal-overlay" id="crmNoteModal">'+
+  var html = '<div class="modal-overlay" id="crmNoteModal" data-close="closeCrmNoteModal">'+
     '<div class="modal-box card">'+
     '<h3>Notatka — '+escapeHtml(c.name)+'</h3>'+
     '<div class="field"><textarea id="cnText" rows="6" autofocus>'+escapeHtml(c.notes||"")+'</textarea></div>'+
@@ -8970,7 +9137,7 @@ function ceoAwardClientWonMdg(contactName){
   if(choice && choice.trim()==="3") tier = tiers[1];
   if(choice && (choice.trim()==="6" || +choice.trim()>=6)) tier = tiers[2];
   state.ceo.epicQuests.unshift({id:uid("eq"), label:tier.label+' ("'+contactName+'")', xp:tier.xp, skill:"marketing", date:todayStr()});
-  addCeoXp("marketing", tier.xp);
+  addCeoXp("marketing", tier.xp, true);
   ceoCheckAchievements();
 }
 function crmSetLastContact(id, val){
