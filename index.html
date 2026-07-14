@@ -1032,6 +1032,9 @@ function migrateState(s){
     if(c.season===undefined) c.season = null;
     if(!c.seasonHistory) c.seasonHistory = [];
     if(!c.seasonFrames) c.seasonFrames = [];
+    if(!c.raidBosses) c.raidBosses = {};
+    if(c.worldBoss===undefined) c.worldBoss = null;
+    if(!c.imperiumDone) c.imperiumDone = {};
     var todayS = todayStr();
     c.bonusQuests.forEach(function(bq){ if(bq.lastDoneDate!==todayS) bq.doneToday = false; });
   })();
@@ -1556,7 +1559,10 @@ function defaultState(){
     artifactsBuilt: {},
     season: null,
     seasonHistory: [],
-    seasonFrames: []
+    seasonFrames: [],
+    raidBosses: {},
+    worldBoss: null,
+    imperiumDone: {}
   };
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skills[k] = 0; });
   s.ceo.skillActive = {};
@@ -6466,6 +6472,41 @@ function ceoClaimAllSeasonTiers(){
   for(var t=1;t<=maxTier;t++) ceoClaimSeasonTier(t);
   save(); renderAll();
 }
+/* Faza 3 — Raid Boss kwartalny (sekcja 7.1, od rangi Dyrektor Lv.30): konkurenci
+   branżowi jako nazwani bossowie, cel = nowi klienci Tool4Arts w tym kwartale
+   (licznik startowy zapamiętany przy tworzeniu instancji tego kwartału). */
+var CEO_RAID_BOSS_NAMES = ["Fitssey — Cień Lidera", "WOD Guru — Strażnik Rutyny", "eFitness — Klon Systemowy", "Fitro — Cichy Rywal"];
+function ceoCurrentRaidBoss(){
+  var key = ceoCurrentSeasonKey();
+  if(!state.ceo.raidBosses[key]){
+    var idx = Object.keys(state.ceo.raidBosses).length % CEO_RAID_BOSS_NAMES.length;
+    state.ceo.raidBosses[key] = {name:CEO_RAID_BOSS_NAMES[idx], target:5, startCount:state.ceo.tool4artsClientCount||0, defeated:false};
+    save();
+  }
+  return state.ceo.raidBosses[key];
+}
+function ceoRaidBossProgress(rb){
+  var gained = Math.max(0, (state.ceo.tool4artsClientCount||0)-rb.startCount);
+  return Math.min(1, gained/rb.target);
+}
+/* Faza 3 — World Boss roczny (sekcja 7.1): cel = stabilne 12k+ zł/mc przez 3 kolejne
+   miesiące (dolna granica przedziału "12-15 tys." z dokumentu). Pasek widoczny cały rok. */
+function ceoWorldBossState(){
+  var yr = String(new Date().getFullYear());
+  if(!state.ceo.worldBoss || state.ceo.worldBoss.year!==yr){
+    state.ceo.worldBoss = {year:yr, target:12000, defeated:false};
+    save();
+  }
+  return state.ceo.worldBoss;
+}
+function ceoWorldBossStreakMonths(){
+  var wb = ceoWorldBossState();
+  var months = ceoLastNMonthKeys(3);
+  var streak = 0;
+  months.forEach(function(ym){ streak = ceoMonthFinanceData(ym).revenue>=wb.target ? streak+1 : 0; });
+  return streak;
+}
+function ceoWorldBossProgress(){ return Math.min(1, ceoWorldBossStreakMonths()/3); }
 /* Faza 3 — Specjalizacje (sekcja 2.3): od Lv.10, +25% XP w domenie, zmiana raz/sezon
    za darmo, kolejne w tym samym sezonie za 1000 Gold (sekcja 8.2). */
 var CEO_SPECIALIZATIONS = {
@@ -6620,6 +6661,8 @@ function addCeoXp(skillKey, amount, isEpic){
     if((seasonTheme.boostCat && cat===seasonTheme.boostCat) ||
        (seasonTheme.boostSkill && skillKey===seasonTheme.boostSkill) ||
        (seasonTheme.boostEpic && isEpic)) xpMult += (seasonTheme.boostPct||0)/100;
+    // Faza 3 — faza bossa "Wściekłość" (<70% HP): +25% XP.
+    if(ceoBossPhase()==="wsciekłość") xpMult += 0.25;
   }
   var xpGain = Math.round(amount*xpMult);
 
@@ -6648,6 +6691,8 @@ function addCeoXp(skillKey, amount, isEpic){
   mult += ceoTalentBuffPct(skillKey, "buffGoldPct")/100;
   // Faza 3 — Artefakt Buty Tancerza: +20% Gold z questów Taniec.
   if(ceoArtifactBuilt("buty_tancerza") && skillKey==="taniec") mult += 0.20;
+  // Faza 3 — faza bossa "Egzekucja" (<30% HP): +50% Gold, żeby opłacało się dobić przed końcem miesiąca.
+  if(ceoBossPhase()==="egzekucja") mult += 0.50;
 
   state.ceo.gold = Math.max(0, state.ceo.gold + Math.round(amount*0.5*mult));
   if(amount>0) ceoBumpStreak();
@@ -7027,6 +7072,38 @@ function ceoToggleQuestChainStep(templateId, idx){
   ceoCompleteQuestChainStep(template, idx);
   renderAll();
 }
+/* Faza 3 — kampania "Imperium" (sekcja 7.4), odblokowana na Lv.50 (Wizjoner). Spec
+   opisuje to jako "mapę długoterminowej wizji" z węzłami rozciągniętymi na lata (2030+)
+   — świadomie lekki widok roadmapy z ręcznymi kamieniami milowymi, nie osobny system
+   questów: to narracyjny "dlaczego gra się nigdy nie kończy", nie mechanika do
+   zautomatyzowania. */
+var CEO_IMPERIUM_NODES = [
+  {id:"autorytet_branzy", label:"Autorytet Branży", desc:"Rozpoznawalna marka eksperta w marketingu dla studiów tańca/fitness", yearTarget:"2026-2027"},
+  {id:"ekosystem_produktow", label:"Ekosystem Produktów", desc:"Tool4Arts jako pełny ekosystem narzędzi dla studiów", yearTarget:"2027-2028"},
+  {id:"inwestor_w_studia", label:"Inwestor w Studia", desc:"Kapitałowe zaangażowanie we własne/partnerskie studia", yearTarget:"2028-2029"},
+  {id:"siec_szkol", label:"Sieć Szkół", desc:"Własna sieć/franczyza szkół", yearTarget:"2030+"}
+];
+function ceoImperiumUnlocked(){ return ceoCharLevelInfo().level>=50; }
+function ceoToggleImperiumNode(id){
+  if(!ceoImperiumUnlocked()) return;
+  state.ceo.imperiumDone[id] = !state.ceo.imperiumDone[id];
+  save(); renderAll();
+}
+function renderCeoImperium(){
+  if(!ceoImperiumUnlocked()){
+    return '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🏰 Kampania „Imperium”</h3><div style="font-size:12px; color:var(--muted)">Odblokowuje się na poziomie 50 (Wizjoner). Obecnie: Lv.'+ceoCharLevelInfo().level+'.</div></div>';
+  }
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🏰 Kampania „Imperium”</h3>'+
+    '<div style="font-size:11.5px; color:var(--muted); margin-bottom:8px">Mapa długoterminowej wizji — kolejne węzły to mega-łańcuchy questów na miesiące/lata, odhaczane ręcznie.</div>';
+  CEO_IMPERIUM_NODES.forEach(function(n,i){
+    var done = !!state.ceo.imperiumDone[n.id];
+    html += '<div class="ceo-talent-node'+(done?" unlocked":"")+'" onclick="ceoToggleImperiumNode(\''+n.id+'\')" style="cursor:pointer">'+
+      '<span class="ceo-talent-branch">'+(i===0?"●":"└─")+'</span>'+(done?"✅":"⬜")+' <b>'+escapeHtml(n.label)+'</b> <span style="font-size:10.5px; color:var(--muted)">('+n.yearTarget+')</span>'+
+      '<div style="font-size:11px; color:var(--muted-light); margin-left:20px">'+escapeHtml(n.desc)+'</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
 function renderCeoQuestChains(){
   var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🔗 Questy fabularne</h3>';
   CEO_QUEST_CHAIN_TEMPLATES.forEach(function(template){
@@ -7360,7 +7437,9 @@ function renderCEO(el){
   html += renderCeoSkills();
   html += renderCeoTalentTree();
   html += renderCeoBoss();
+  html += renderCeoRaidWorldBoss();
   html += renderCeoQuestChains();
+  html += renderCeoImperium();
   html += renderCeoContracts();
   html += renderCeoQuests();
   html += renderCeoEpicQuests();
@@ -7510,10 +7589,10 @@ function renderCeoSkills(){
   html += '</div>';
   return html;
 }
-function renderCeoBoss(){
+/* Faza 1 — HP ważone (sekcja 7.1). Wydzielone z renderCeoBoss, żeby Faza 3 (fazy
+   bossa) mogły odpytać postęp bez duplikowania logiki ważenia. */
+function ceoBossProgressPct(){
   var boss = ceoCurrentBoss();
-  // Faza 1 — HP ważone (sekcja 7.1): przychód/klienci/content/zdrowie/produkt nie są
-  // równie ważne. Fallback do równego podziału dla starszych bossów bez pola weight.
   var fallbackWeight = 1/boss.conditions.length;
   var totalWeight = 0;
   boss.conditions.forEach(function(c){ totalWeight += (c.weight!=null ? c.weight : fallbackWeight); });
@@ -7522,19 +7601,32 @@ function renderCeoBoss(){
     var w = (c.weight!=null ? c.weight : fallbackWeight) / totalWeight;
     totalProgress += ceoConditionProgress(c) * w;
   });
-  var pct = Math.round(totalProgress*100);
+  return Math.round(totalProgress*100);
+}
+/* Faza 3 — fazy bossa (sekcja 7.1): <70% HP "Wściekłość" (+25% XP), <30% HP
+   "Egzekucja" (+50% Gold za dobicie przed końcem miesiąca). */
+function ceoBossPhase(){
+  var hpRemaining = 100-Math.min(100, ceoBossProgressPct());
+  if(hpRemaining<30) return "egzekucja";
+  if(hpRemaining<70) return "wsciekłość";
+  return null;
+}
+function renderCeoBoss(){
+  var boss = ceoCurrentBoss();
+  var pct = ceoBossProgressPct();
   if(pct>=100 && !boss.defeated){ boss.defeated = true; addCeoXp("strategie", 500); ceoOpenLootChest(); }
   var hpRemaining = 100 - Math.min(100,pct);
+  var phase = ceoBossPhase();
   var html = '<div class="card ceo-boss-card" style="margin-top:16px">'+
     '<div class="row" style="justify-content:space-between; align-items:center">'+
       '<h3 style="margin:0">👹 '+escapeHtml(boss.name)+'</h3>'+
-      (boss.defeated ? '<span class="tag tag-stage-opublikowany">Pokonany 🎉</span>' : '')+
+      (boss.defeated ? '<span class="tag tag-stage-opublikowany">Pokonany 🎉</span>' : (phase==="egzekucja" ? '<span class="tag" style="background:rgba(209,99,111,.2); color:var(--danger)">⚔️ Egzekucja — +50% Gold</span>' : (phase==="wsciekłość" ? '<span class="tag" style="background:rgba(207,155,74,.2); color:var(--accent)">🔥 Wściekłość — +25% XP</span>' : '')))+
     '</div>'+
     '<div class="ceo-hpbar"><div class="ceo-hpbar-fill" style="width:'+hpRemaining+'%"></div></div>'+
     '<div style="font-size:12px; color:var(--muted); margin:4px 0 10px">HP bossa: '+hpRemaining+'% (Twój postęp: '+Math.min(100,pct)+'%)</div>';
   boss.conditions.forEach(function(c){
     var cpct = Math.round(ceoConditionProgress(c)*100);
-    html += '<div class="ceo-quest-item"><span>'+(cpct>=100?"✅":"⬜")+' '+escapeHtml(c.label)+'</span>';
+    html += '<div class="ceo-quest-item"><span>'+(cpct>=100?"✅":(phase&&cpct<50?"🔴":"⬜"))+' '+escapeHtml(c.label)+'</span>';
     if(c.type==="manual-counter"){
       html += '<span class="ceo-quest-xp">'+(c.current||0)+' / '+c.target+' <button class="linklike" onclick="ceoBossCounterAdd(\''+c.id+'\')">+1</button></span>';
     } else if(c.type==="manual-check"){
@@ -7545,6 +7637,28 @@ function renderCeoBoss(){
     html += '</div>';
   });
   html += '</div>';
+  return html;
+}
+function renderCeoRaidWorldBoss(){
+  var html = '';
+  if(ceoCharLevelInfo().level>=30){
+    var rb = ceoCurrentRaidBoss();
+    var pct = ceoRaidBossProgress(rb);
+    if(pct>=1 && !rb.defeated){ rb.defeated = true; addCeoXp("tool4arts", 3000, true); ceoOpenLootChest(); save(); }
+    var hpRemaining = Math.round((1-Math.min(1,pct))*100);
+    html += '<div class="card ceo-boss-card" style="margin-top:16px"><div class="row" style="justify-content:space-between; align-items:center">'+
+      '<h3 style="margin:0">🗡️ Raid Boss: '+escapeHtml(rb.name)+'</h3>'+(rb.defeated?'<span class="tag tag-stage-opublikowany">Pokonany 🎉</span>':'')+'</div>'+
+      '<div class="ceo-hpbar"><div class="ceo-hpbar-fill" style="width:'+hpRemaining+'%"></div></div>'+
+      '<div style="font-size:12px; color:var(--muted); margin-top:4px">Cel kwartału: '+Math.max(0,(state.ceo.tool4artsClientCount||0)-rb.startCount)+'/'+rb.target+' nowych klientów Tool4Arts</div></div>';
+  }
+  var wb = ceoWorldBossState();
+  var wpct = ceoWorldBossProgress();
+  if(wpct>=1 && !wb.defeated){ wb.defeated = true; addCeoXp("cashflow", 5000, true); ceoOpenLootChest(); save(); }
+  var whpRemaining = Math.round((1-Math.min(1,wpct))*100);
+  html += '<div class="card ceo-boss-card" style="margin-top:16px"><div class="row" style="justify-content:space-between; align-items:center">'+
+    '<h3 style="margin:0">🌍 World Boss '+wb.year+'</h3>'+(wb.defeated?'<span class="tag tag-stage-opublikowany">Pokonany 🎉</span>':'')+'</div>'+
+    '<div class="ceo-hpbar"><div class="ceo-hpbar-fill" style="width:'+whpRemaining+'%"></div></div>'+
+    '<div style="font-size:12px; color:var(--muted); margin-top:4px">Cel roczny: '+ceoWorldBossStreakMonths()+'/3 kolejnych miesięcy z przychodem ≥ '+wb.target.toLocaleString("pl-PL")+' zł</div></div>';
   return html;
 }
 function renderCeoQuests(){
