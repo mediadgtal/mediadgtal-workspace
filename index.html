@@ -9629,39 +9629,6 @@ function crmPushT4ARowActual(c, rn){
     crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
   }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
-/* Jednorazowe sprzątanie po buglu z crmFlushPendingT4ASync (patrz commit 5c63e89) —
-   część wierszy w arkuszu Tomka to testowe/przypadkowe wpisy sprzed poprawki. Czyści
-   zawartość wiersza (nie usuwa go, żeby nie przesunąć numeracji innym kontaktom) i
-   resetuje lokalny link + checklistę tego kontaktu. */
-function crmClearT4ASheetRow(rowNum){
-  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
-  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
-  var blankRow = new Array(18).fill("");
-  return fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A"+rowNum+":R"+rowNum)+"?valueInputOption=USER_ENTERED", {
-    method:"PUT", headers:headers, body: JSON.stringify({values:[blankRow]})
-  }).then(function(r){
-    if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
-    if(!r.ok) throw new Error("http"+r.status);
-  });
-}
-function crmCleanupAllT4ATestSyncs(){
-  if(!window.__gcalToken){ alert("Połącz się najpierw z Google."); return; }
-  var linked = state.crmContacts.filter(function(c){ return c.t4aSheetRow; });
-  if(!linked.length){ alert("Brak powiązanych kontaktów do wyczyszczenia."); return; }
-  if(!confirm('To wyczyści '+linked.length+' wierszy w arkuszu Tomka (wiersze zostaną puste, nie usunięte, żeby nie przesunąć numeracji innym kontaktom) i zresetuje checklisty tool4arts lokalnie u: '+linked.map(function(c){return c.name;}).join(", ")+'. Kontynuować?')) return;
-  linked.reduce(function(promise, c){
-    return promise.then(function(){
-      return crmClearT4ASheetRow(c.t4aSheetRow).then(function(){
-        c.t4aSheetRow = null;
-        c.t4aDirty = false;
-        c.t4a = {sent:false, sentDate:"", offer:false, decision:false, listed:false, client:false, notes:""};
-      }).catch(function(){});
-    });
-  }, Promise.resolve()).then(function(){
-    save(); renderAll();
-    alert("Gotowe — wyczyszczono "+linked.length+" testowych synchronizacji.");
-  });
-}
 var crmT4ALastPull = 0;
 function crmPullT4AStatuses(){
   if(!window.__gcalToken) return;
@@ -10308,12 +10275,6 @@ function renderCRM(el){
       html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
         (crmBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
         ' — <a href="'+state.crmBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
-    }
-    var t4aLinkedCount = state.crmContacts.filter(function(c){ return c.t4aSheetRow; }).length;
-    if(t4aLinkedCount){
-      html += '<div class="stub-note" style="border-color:rgba(209,99,111,.35); background:rgba(209,99,111,.08); color:var(--danger)">'+
-        '⚠️ '+t4aLinkedCount+' kontaktów ma link do wiersza w arkuszu Tomka — jeśli to pozostałości po testach sprzed poprawki, wyczyść je jednym klikiem: '+
-        '<button class="btn secondary small" style="margin-left:6px" onclick="crmCleanupAllT4ATestSyncs()">🧹 Wyczyść testowe synchronizacje</button></div>';
     }
   }
 
