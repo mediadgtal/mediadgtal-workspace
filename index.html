@@ -7413,7 +7413,8 @@ function renderCeoEconomy(){
 function ceoWeakestSkill(){
   var weakest = null, min = Infinity;
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){
-    var lvl = ceoSkillMilestoneLevel(k);
+    if(!ceoSkillActive(k)) return;
+    var lvl = ceoSkillLevelInfo(k).level;
     if(lvl<min){ min=lvl; weakest=k; }
   });
   return weakest;
@@ -9168,14 +9169,9 @@ function closeCrmNoteModal(){
   var m = document.getElementById("crmNoteModal");
   if(m) m.remove();
 }
-/* Uniwersalne zamykanie okienek: klik w tło (poza .modal-box) albo klawisz ESC.
-   Każdy .modal-overlay musi mieć data-close="nazwaFunkcjiZamykającej". */
-document.addEventListener("click", function(e){
-  if(e.target && e.target.classList && e.target.classList.contains("modal-overlay") && e.target.dataset.close){
-    var fn = window[e.target.dataset.close];
-    if(typeof fn === "function") fn();
-  }
-});
+/* Uniwersalne zamykanie okienek klawiszem ESC (klik-obok celowo wyłączony —
+   zbyt łatwo o przypadkowe zamknięcie). Każdy .modal-overlay musi mieć
+   data-close="nazwaFunkcjiZamykającej". */
 document.addEventListener("keydown", function(e){
   if(e.key !== "Escape") return;
   var overlay = document.querySelector(".modal-overlay");
