@@ -430,6 +430,13 @@
   .ceo-quest-xp{color:var(--accent); font-size:11px; font-weight:600; white-space:nowrap; flex:0 0 auto}
 
   .ceo-boss-card{border:1px solid rgba(209,99,111,.4)}
+  /* 2026-07-15 — jedyny wizualny sygnał "to wymaga Ciebie, nie zrobi się samo" w całym CEO.
+     Reszta zakładki (auto-* warunki, żywe liczniki) celowo NIE dostaje tego stylu. */
+  @keyframes ceoPulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .ceo-needs-action{color:var(--danger); font-weight:700}
+  .ceo-needs-action .linklike{color:var(--danger); font-weight:700}
+  .ceo-action-badge{display:inline-flex; align-items:center; gap:4px; color:var(--danger); font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; animation:ceoPulse 1.6s ease-in-out infinite}
+  .ceo-action-card{border:1px solid rgba(209,99,111,.5); box-shadow:0 0 0 1px rgba(209,99,111,.15)}
   .ceo-hpbar{height:14px; border-radius:7px; background:var(--sidebar-bg); border:1px solid var(--border); overflow:hidden}
   .ceo-hpbar-fill{height:100%; background:linear-gradient(90deg, #7a1f28, var(--danger)); border-radius:7px; transition:width .3s}
 
@@ -491,6 +498,7 @@
     #sidebar{
       position:fixed; top:0; left:0; height:100vh; z-index:300; width:250px; flex:0 0 250px;
       transform:translateX(-100%); transition:transform .25s ease; box-shadow:2px 0 30px rgba(0,0,0,.5);
+      overflow-y:auto; -webkit-overflow-scrolling:touch;
     }
     #sidebar.open{transform:translateX(0)}
     #sidebarOverlay{
@@ -506,6 +514,8 @@
     .kpi-row{gap:18px; row-gap:14px}
     .acc-switch select{min-width:0; width:100%}
     .chiprow{gap:6px}
+    .tabsw{overflow-x:auto; -webkit-overflow-scrolling:touch; flex-wrap:nowrap; gap:16px}
+    .tabsw button{white-space:nowrap; flex:0 0 auto}
     table{font-size:12px}
     .nawyki-grid th, .nawyki-grid td{padding:5px 4px}
     .nawyki-grid input[type=checkbox], .nawyki-grid input[type=checkbox]:not(:checked){width:20px; height:20px}
@@ -745,12 +755,12 @@ var CEO_BRAND_ACHIEVEMENTS = {
     {id:"mdg_client100", label:"100 klientów MediaDGtal", rarity:"diament", check:function(){ return ceoTotalUniqueClients()>=100; }}
   ],
   tool4arts: [
-    {id:"t4a_client1", label:"Pierwszy klient Tool4Arts", rarity:"brąz", check:function(){ return (state.ceo.tool4artsClientCount||0)>=1; }},
-    {id:"t4a_client5", label:"5 klientów Tool4Arts", rarity:"brąz", check:function(){ return (state.ceo.tool4artsClientCount||0)>=5; }},
-    {id:"t4a_client10", label:"10 klientów Tool4Arts", rarity:"srebro", check:function(){ return (state.ceo.tool4artsClientCount||0)>=10; }},
-    {id:"t4a_client25", label:"25 klientów Tool4Arts", rarity:"złoto", check:function(){ return (state.ceo.tool4artsClientCount||0)>=25; }},
-    {id:"t4a_client50", label:"50 klientów Tool4Arts", rarity:"platyna", check:function(){ return (state.ceo.tool4artsClientCount||0)>=50; }},
-    {id:"t4a_client100", label:"100 klientów Tool4Arts", rarity:"diament", check:function(){ return (state.ceo.tool4artsClientCount||0)>=100; }}
+    {id:"t4a_client1", label:"Pierwszy klient Tool4Arts", rarity:"brąz", check:function(){ return ceoTool4artsClientCount()>=1; }},
+    {id:"t4a_client5", label:"5 klientów Tool4Arts", rarity:"brąz", check:function(){ return ceoTool4artsClientCount()>=5; }},
+    {id:"t4a_client10", label:"10 klientów Tool4Arts", rarity:"srebro", check:function(){ return ceoTool4artsClientCount()>=10; }},
+    {id:"t4a_client25", label:"25 klientów Tool4Arts", rarity:"złoto", check:function(){ return ceoTool4artsClientCount()>=25; }},
+    {id:"t4a_client50", label:"50 klientów Tool4Arts", rarity:"platyna", check:function(){ return ceoTool4artsClientCount()>=50; }},
+    {id:"t4a_client100", label:"100 klientów Tool4Arts", rarity:"diament", check:function(){ return ceoTool4artsClientCount()>=100; }}
   ]
 };
 var CEO_SKILL_MILESTONES_SEED = {
@@ -984,6 +994,60 @@ function migrateState(s){
     });
     s._clientMapPinsSeededV2 = true;
   }
+  if(!s._klienciHistory20232025Seeded){
+    if(!s.clientsMonthly) s.clientsMonthly = {};
+    Object.keys(KLIENCI_HISTORY_2023_2025).forEach(function(ym){
+      if(!s.clientsMonthly[ym]) s.clientsMonthly[ym] = [];
+      var existingIds = {};
+      s.clientsMonthly[ym].forEach(function(r){ existingIds[r.id]=true; });
+      KLIENCI_HISTORY_2023_2025[ym].forEach(function(row){
+        if(!existingIds[row.id]) s.clientsMonthly[ym].push(row);
+      });
+    });
+    s._klienciHistory20232025Seeded = true;
+  }
+  if(s.ceo && s.ceo.bosses){
+    Object.keys(s.ceo.bosses).forEach(function(ym){
+      (s.ceo.bosses[ym].conditions||[]).forEach(function(c){
+        if(c.type==="manual-counter" && c.label==="20 nowych rolek") c.type = "auto-reels";
+      });
+    });
+  }
+  if(!s._financeHistory20232025Seeded){
+    if(!s.finance) s.finance = [];
+    var existingFinMonths = {};
+    s.finance.forEach(function(f){ existingFinMonths[f.month]=true; });
+    var FINANCE_HISTORY_2023_2025 = [
+      {month:"2023-12", revenue:1000, bizCost:0, personalCost:0, target:4000},
+      {month:"2024-01", revenue:2000, bizCost:1827.36, personalCost:939.05, target:2000},
+      {month:"2024-02", revenue:7969.94, bizCost:1283.96, personalCost:6362.08, target:3000},
+      {month:"2024-03", revenue:5192.46, bizCost:1023.86, personalCost:3826.24, target:4000},
+      {month:"2024-04", revenue:4579.61, bizCost:1829, personalCost:5059, target:5000},
+      {month:"2024-05", revenue:8750, bizCost:940, personalCost:6634, target:7000},
+      {month:"2024-06", revenue:6946, bizCost:595, personalCost:6456, target:10000},
+      {month:"2024-07", revenue:13908, bizCost:1060, personalCost:10104, target:10000},
+      {month:"2024-08", revenue:7463, bizCost:2264, personalCost:4154, target:10000},
+      {month:"2024-09", revenue:10215, bizCost:2504, personalCost:8235, target:11000},
+      {month:"2024-10", revenue:9035, bizCost:3668, personalCost:6596, target:12000},
+      {month:"2024-11", revenue:6674, bizCost:2048, personalCost:5446, target:13000},
+      {month:"2024-12", revenue:8849, bizCost:1950, personalCost:4409, target:13000},
+      {month:"2025-01", revenue:8839.16, bizCost:1561.37, personalCost:4485.79, target:7000},
+      {month:"2025-02", revenue:6170.07, bizCost:2901.86, personalCost:4751.80, target:10000},
+      {month:"2025-03", revenue:6871.17, bizCost:2862.99, personalCost:2870.93, target:12000},
+      {month:"2025-04", revenue:9407.90, bizCost:3566.61, personalCost:5619.89, target:15000},
+      {month:"2025-05", revenue:9455.00, bizCost:3344.37, personalCost:4347.08, target:15000},
+      {month:"2025-06", revenue:16457.83, bizCost:5009.06, personalCost:15406.89, target:17000},
+      {month:"2025-07", revenue:13861.00, bizCost:5900.26, personalCost:8584.86, target:20000},
+      {month:"2025-08", revenue:9086.90, bizCost:4825.68, personalCost:4368.86, target:19000},
+      {month:"2025-09", revenue:7470.00, bizCost:2698.08, personalCost:5653.68, target:20000},
+      {month:"2025-10", revenue:11655.89, bizCost:3054.18, personalCost:6727.28, target:19000},
+      {month:"2025-11", revenue:11250.00, bizCost:3482.33, personalCost:5039.28, target:22000},
+      {month:"2025-12", revenue:3046.25, bizCost:2797.09, personalCost:3981.75, target:24000}
+    ];
+    FINANCE_HISTORY_2023_2025.forEach(function(f){ if(!existingFinMonths[f.month]) s.finance.push(f); });
+    s.finance.sort(function(a,b){ return a.month<b.month?-1:(a.month>b.month?1:0); });
+    s._financeHistory20232025Seeded = true;
+  }
   if(!s.clientOps) s.clientOps = {clients:[], tasks:[], screenshots:[]};
   if(!s.clientOps.clients) s.clientOps.clients = [];
   if(!s.clientOps.tasks) s.clientOps.tasks = [];
@@ -1211,6 +1275,7 @@ function resolvedDateColor(r, field){
   return campaignAutoColor(r)[field];
 }
 var INVOICE_STATUS_COLOR = {"Opłacona":"#3ecf6e", "Wystawiona":"var(--muted)", "Nieopłacona":"var(--danger)"};
+var KLIENCI_HISTORY_2023_2025 = {"2025-01": [{"id": "hcl_202501_0", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 34, "etapWsp": "Raport", "startKampanii": "2025-01-11", "koniecKampanii": "2025-02-14", "notatki": "Pole Dance"}, {"id": "hcl_202501_1", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1120.0, "budzetRekl": 9500.0, "iloscWsp": 8, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-01-12", "koniecKampanii": "2025-02-11", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202501_2", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 9, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-01-29", "koniecKampanii": "2025-02-28", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202501_3", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "", "statusKlienta": "Kontynuacja", "wynagrodzenie": 0.0, "budzetRekl": 1000.0, "iloscWsp": 11, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-01-19", "koniecKampanii": "2025-02-18", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202501_4", "nazwa": "Passion Of Dance", "lokalizacja": "Gniezno", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 2400.0, "iloscWsp": 5, "okresDni": 27, "etapWsp": "Raport", "startKampanii": "2025-01-29", "koniecKampanii": "2025-02-25", "notatki": "Drzwi Otwarte. Ocena: 5"}, {"id": "hcl_202501_5", "nazwa": "Fancy Pole Dance Studio", "lokalizacja": "Bydgoszcz", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 750.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 34, "etapWsp": "Raport", "startKampanii": "2025-02-14", "koniecKampanii": "2025-03-20", "notatki": "Pole Dance. Cel: 20 osób"}], "2025-02": [{"id": "hcl_202502_0", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1120.0, "budzetRekl": 9500.0, "iloscWsp": 9, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-02-12", "koniecKampanii": "2025-03-14", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202502_1", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 10, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-02-28", "koniecKampanii": "2025-03-30", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202502_2", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-02-17", "koniecKampanii": "2025-03-19", "notatki": "Pole Dance oferta 3msc, pozyskane 46 leady. Ocena: 5"}, {"id": "hcl_202502_3", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 12, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-02-19", "koniecKampanii": "2025-03-21", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202502_4", "nazwa": "SUNDEK energia", "lokalizacja": "Mikołów", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 2000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-02-20", "koniecKampanii": "2025-03-22", "notatki": "Branża OZE. Cel: 40 leadów"}], "2025-03": [{"id": "hcl_202503_0", "nazwa": "Fancy Pole Dance Studio", "lokalizacja": "Bydgoszcz", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 750.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 34, "etapWsp": "Raport", "startKampanii": "2025-02-14", "koniecKampanii": "2025-03-20", "notatki": "Pole Dance. Cel: 20 osób"}, {"id": "hcl_202503_1", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 11, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-03-30", "koniecKampanii": "2025-04-29", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202503_2", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-03-20", "koniecKampanii": "2025-04-19", "notatki": "Pole Dance, oferta 3msc. Ocena: 5"}, {"id": "hcl_202503_3", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1120.0, "budzetRekl": 9500.0, "iloscWsp": 10, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-03-14", "koniecKampanii": "2025-04-13", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202503_4", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "", "statusKlienta": "Kontynuacja", "wynagrodzenie": 0.0, "budzetRekl": 1000.0, "iloscWsp": 13, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-03-22", "koniecKampanii": "2025-04-21", "notatki": "Pierwszy taniec. Ocena: 5"}], "2025-04": [{"id": "hcl_202504_0", "nazwa": "On Point Pole Dance Studio", "lokalizacja": "Toruń", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1300.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-04-01", "koniecKampanii": "2025-05-01", "notatki": "okres próbny do 6.04/ pole dance. Ocena: 5"}, {"id": "hcl_202504_1", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "", "statusKlienta": "Kontynuacja", "wynagrodzenie": 0.0, "budzetRekl": 1000.0, "iloscWsp": 14, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-04-21", "koniecKampanii": "2025-05-21", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202504_2", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1120.0, "budzetRekl": 9500.0, "iloscWsp": 11, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-04-13", "koniecKampanii": "2025-05-13", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202504_3", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 12, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-04-29", "koniecKampanii": "2025-05-29", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202504_4", "nazwa": "Kliencidlafirm.pl (PCF)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 350.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-03-10", "koniecKampanii": "2025-04-09", "notatki": "OZE. Ocena: 3"}, {"id": "hcl_202504_5", "nazwa": "Dance & Fitness House", "lokalizacja": "Bochnia", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-04-09", "koniecKampanii": "2025-05-09", "notatki": "półkolonie. Ocena: 5"}, {"id": "hcl_202504_6", "nazwa": "Pole Dance With Fun", "lokalizacja": "Wałbrzych", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 33, "etapWsp": "Raport", "startKampanii": "2025-04-29", "koniecKampanii": "2025-06-01", "notatki": "Pole Dance, oferta 3msc (1msc). Ocena: 5"}, {"id": "hcl_202504_7", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 2000.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-04-19", "koniecKampanii": "2025-05-19", "notatki": "Pole Dance, oferta 3msc/ Tren. Pers.. Ocena: 5"}], "2025-05": [{"id": "hcl_202505_0", "nazwa": "On Point Pole Dance Studio", "lokalizacja": "Toruń", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1300.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-05-02", "koniecKampanii": "2025-06-01", "notatki": "Pole Dance (3 msc). Ocena: 5"}, {"id": "hcl_202505_1", "nazwa": "Elgreg Group/AWK", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1500.0, "budzetRekl": 25000.0, "iloscWsp": 1, "okresDni": 18, "etapWsp": "Raport", "startKampanii": "2025-05-13", "koniecKampanii": "2025-05-31", "notatki": "Kursy F-Gazy. Ocena: 4"}, {"id": "hcl_202505_2", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 13, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-05-30", "koniecKampanii": "2025-06-29", "notatki": "Regularne zajęcia/ 1 taniec/ warsztaty. Ocena: 5"}, {"id": "hcl_202505_3", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1200.0, "budzetRekl": 1000.0, "iloscWsp": 15, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-05-22", "koniecKampanii": "2025-06-21", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202505_4", "nazwa": "Pole Dance With Fun", "lokalizacja": "Wałbrzych", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-06-02", "koniecKampanii": "2025-07-02", "notatki": "Pole Dance, oferta 3msc (2msc). Ocena: 5"}, {"id": "hcl_202505_5", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 2000.0, "iloscWsp": 5, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-05-20", "koniecKampanii": "2025-06-19", "notatki": "Pole Dance, oferta 3msc/ Tren. Pers.. Ocena: 5"}], "2025-06": [{"id": "hcl_202506_0", "nazwa": "Pole Dance With Fun", "lokalizacja": "Wałbrzych", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-07-03", "koniecKampanii": "2025-08-02", "notatki": "Pole Dance, oferta 3msc (3msc). Ocena: 5"}, {"id": "hcl_202506_1", "nazwa": "Elgreg Group/AWK", "lokalizacja": "OPŁATA STAŁA", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 3000.0, "budzetRekl": 25000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-06-01", "koniecKampanii": "2025-07-01", "notatki": "Kursy F-Gazy. Ocena: 4"}, {"id": "hcl_202506_2", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 300.0, "budzetRekl": 1000.0, "iloscWsp": 16, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-06-22", "koniecKampanii": "2025-07-22", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202506_3", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 14, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-06-30", "koniecKampanii": "2025-07-30", "notatki": "Regularne zajęcia/ 1 taniec/ warsztaty. Ocena: 5"}, {"id": "hcl_202506_4", "nazwa": "Flow Art - Pole Dance Rumia", "lokalizacja": "Rumia", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 3000.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 90, "etapWsp": "", "startKampanii": "2025-07-01", "koniecKampanii": "2025-09-29", "notatki": "Pole Dance (3 msc) opłacił 2 miesiące. Ocena: 5"}, {"id": "hcl_202506_5", "nazwa": "Dance & Fitness House", "lokalizacja": "Bochnia", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-05-10", "koniecKampanii": "2025-06-09", "notatki": "półkolonie. Ocena: 3"}, {"id": "hcl_202506_6", "nazwa": "PODSUMOWANIE", "lokalizacja": "", "faktura": "", "statusKlienta": "", "wynagrodzenie": 0, "budzetRekl": 0, "iloscWsp": 0, "okresDni": 0, "etapWsp": "", "startKampanii": "", "koniecKampanii": "", "notatki": ""}], "2025-07": [{"id": "hcl_202507_0", "nazwa": "Flow Art - Pole Dance Rumia", "lokalizacja": "Rumia", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-07-01", "koniecKampanii": "2025-09-29", "notatki": "Pole Dance (3 msc) opłata za 3 miesiąc. Ocena: 5"}, {"id": "hcl_202507_1", "nazwa": "Elgreg Group/AWK", "lokalizacja": "OPŁATA STAŁA", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 3000.0, "budzetRekl": 25000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-07-02", "koniecKampanii": "2025-08-01", "notatki": "Kursy F-Gazy. Ocena: 4"}, {"id": "hcl_202507_2", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 17, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-07-23", "koniecKampanii": "2025-08-22", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202507_3", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 15, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-07-31", "koniecKampanii": "2025-08-30", "notatki": "Regularne zajęcia/ 1 taniec/ warsztaty. Ocena: 5"}, {"id": "hcl_202507_4", "nazwa": "Guslavia.pl", "lokalizacja": "Radziechów", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-07-09", "koniecKampanii": "2025-08-08", "notatki": "www.guslavia.pl koszulki - sklep internetowy. Ocena: 5"}, {"id": "hcl_202507_5", "nazwa": "Pole Dance Jungle", "lokalizacja": "Szczecin", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 4500.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-08-20", "koniecKampanii": "2025-11-18", "notatki": "Pole Dance (3 msc) opłata za 3 miesiąc"}], "2025-08": [{"id": "hcl_202508_0", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 15, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-08-31", "koniecKampanii": "2025-09-30", "notatki": "Regularne zajęcia/ 1 taniec/ warsztaty. Ocena: 5"}, {"id": "hcl_202508_1", "nazwa": "Elgreg Group/AWK", "lokalizacja": "OPŁATA STAŁA", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1800.0, "budzetRekl": 25000.0, "iloscWsp": 4, "okresDni": 17, "etapWsp": "Raport", "startKampanii": "2025-08-01", "koniecKampanii": "2025-08-18", "notatki": "Kursy F-Gazy. Ocena: 4"}, {"id": "hcl_202508_2", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "", "statusKlienta": "Kontynuacja", "wynagrodzenie": 0.0, "budzetRekl": 1000.0, "iloscWsp": 17, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-08-23", "koniecKampanii": "2025-09-22", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202508_3", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 2000.0, "iloscWsp": 6, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-08-19", "koniecKampanii": "2025-11-17", "notatki": "Pole Dance, oferta 3msc/ Tren. Pers.. Ocena: 5"}, {"id": "hcl_202508_4", "nazwa": "Pole Freak", "lokalizacja": "Trzebnica", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-09-01", "koniecKampanii": "2025-10-01", "notatki": "Pole Dance, oferta 3msc"}], "2025-09": [{"id": "hcl_202509_0", "nazwa": "Passion Of Dance", "lokalizacja": "Gniezno", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 6, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-09-10", "koniecKampanii": "2025-10-10", "notatki": "Drzwi Otwarte. Ocena: 5"}, {"id": "hcl_202509_1", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 16, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-10-01", "koniecKampanii": "2025-10-31", "notatki": "Reklama ogólna studia. Ocena: 5"}, {"id": "hcl_202509_2", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 18, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-09-23", "koniecKampanii": "2025-10-23", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202509_3", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 2000.0, "iloscWsp": 7, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-08-19", "koniecKampanii": "2025-11-17", "notatki": "Pole Dance, oferta 3msc/ Tren. Pers.. Ocena: 5"}, {"id": "hcl_202509_4", "nazwa": "Jump Dance Studio", "lokalizacja": "Zielona Góra", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1500.0, "budzetRekl": 1500.0, "iloscWsp": 1, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-10-21", "koniecKampanii": "2026-01-19", "notatki": "Hip-Hop"}], "2025-10": [{"id": "hcl_202510_0", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 500.0, "budzetRekl": 600.0, "iloscWsp": 17, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-11-01", "koniecKampanii": "2025-12-01", "notatki": "Reklama ogólna studia. Ocena: 5"}, {"id": "hcl_202510_1", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 19, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-10-24", "koniecKampanii": "2025-11-23", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202510_2", "nazwa": "Venus Pole Dance Studio", "lokalizacja": "Mierzyn", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 4000.0, "budzetRekl": 1500.0, "iloscWsp": 1, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-10-17", "koniecKampanii": "2026-01-15", "notatki": "Zajęcia taneczne. Ocena: 5"}, {"id": "hcl_202510_3", "nazwa": "Spin- Up Pole Dance & Fitness", "lokalizacja": "Kielce", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 2000.0, "iloscWsp": 8, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-08-19", "koniecKampanii": "2025-11-17", "notatki": "Pole Dance, oferta 3msc/ Tren. Pers.. Ocena: 5"}, {"id": "hcl_202510_4", "nazwa": "Jump Dance Studio", "lokalizacja": "Zielona Góra", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1500.0, "iloscWsp": 2, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-10-21", "koniecKampanii": "2026-01-19", "notatki": "Hip-Hop. Ocena: 4"}], "2025-11": [{"id": "hcl_202511_0", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 500.0, "budzetRekl": 600.0, "iloscWsp": 18, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-12-01", "koniecKampanii": "2025-12-31", "notatki": "Reklama ogólna studia. Ocena: 5"}, {"id": "hcl_202511_1", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 20, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-11-24", "koniecKampanii": "2025-12-24", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202511_2", "nazwa": "Pole Freak", "lokalizacja": "Trzebnica", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2025-11-19", "koniecKampanii": "2025-12-19", "notatki": "Pole Dance, 1 msc. Ocena: 5"}, {"id": "hcl_202511_3", "nazwa": "Jump Dance Studio", "lokalizacja": "Zielona Góra", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1500.0, "iloscWsp": 3, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2025-10-21", "koniecKampanii": "2026-01-19", "notatki": "Hip-Hop. Ocena: 5"}, {"id": "hcl_202511_4", "nazwa": "Lotos Aerial", "lokalizacja": "Sosnowiec", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 4000.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 90, "etapWsp": "Raport", "startKampanii": "2026-01-01", "koniecKampanii": "2026-04-01", "notatki": "Pole Dance, 3msc"}], "2025-12": [{"id": "hcl_202512_0", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 500.0, "budzetRekl": 600.0, "iloscWsp": 19, "okresDni": 30, "etapWsp": "", "startKampanii": "2026-01-01", "koniecKampanii": "2026-01-31", "notatki": "Reklama ogólna studia. Ocena: 5"}, {"id": "hcl_202512_1", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 21, "okresDni": 30, "etapWsp": "", "startKampanii": "2025-12-25", "koniecKampanii": "2026-01-24", "notatki": "Pierwszy taniec. Ocena: 5"}], "2024-01": [{"id": "hcl_202401_0", "nazwa": "STUDIO POSITIVA Sp. z o.o.", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-01-11", "koniecKampanii": "2024-02-10", "notatki": "wydarzenia + remarketing. Cel: Opłacalność. Ocena: 5"}, {"id": "hcl_202401_1", "nazwa": "Passion Of Dance", "lokalizacja": "Gniezno", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-01-12", "koniecKampanii": "2024-02-11", "notatki": "drzwi otwarte + wydarzenia + remarketing. Cel: 20 klientów. Ocena: 5"}], "2024-02": [{"id": "hcl_202402_0", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 400.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-01-30", "koniecKampanii": "2024-02-29", "notatki": "Pierwszy Taniec. Cel: 20 PK. Ocena: 5"}, {"id": "hcl_202402_1", "nazwa": "STUDIO POSITIVA Sp. z o.o.", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-02-12", "koniecKampanii": "2024-03-13", "notatki": "wydarzenia + remarketing. Cel: Opłacalność. Ocena: 5"}, {"id": "hcl_202402_2", "nazwa": "Passion Of Dance", "lokalizacja": "Gniezno", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-02-12", "koniecKampanii": "2024-03-13", "notatki": "wydarzenia + remarketing. Cel: 20 PK. Ocena: 5"}], "2024-03": [{"id": "hcl_202403_0", "nazwa": "Salsa Elbląg", "lokalizacja": "Elbląg", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-04-08", "koniecKampanii": "2024-05-08", "notatki": "salsa, bachata, kizomba. Cel: 20 PK. Ocena: 5"}, {"id": "hcl_202403_1", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 600.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-03-01", "koniecKampanii": "2024-03-31", "notatki": "Pierwszy Taniec. Ocena: 5"}, {"id": "hcl_202403_2", "nazwa": "Passion Of Dance", "lokalizacja": "Gniezno", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-03-27", "koniecKampanii": "2024-04-26", "notatki": "wydarzenia + remarketing. Cel: 20 PK. Ocena: 5"}], "2024-04": [{"id": "hcl_202404_0", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-04-01", "koniecKampanii": "2024-05-01", "notatki": "Pierwszy Taniec. Ocena: 5"}], "2024-05": [{"id": "hcl_202405_0", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 500.0, "budzetRekl": 1000.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-05-02", "koniecKampanii": "2024-06-01", "notatki": "Pierwszy taniec/ dla kobiet/ użytkowy. Ocena: 5"}, {"id": "hcl_202405_1", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 750.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-05-27", "koniecKampanii": "2024-06-26", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202405_2", "nazwa": "Szkoła Tańca Impact", "lokalizacja": "Częstochowa", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 800.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-06-06", "koniecKampanii": "2024-07-06", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202405_3", "nazwa": "Kliencidlafirm.pl (Damian Krasiński)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 430.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 29, "etapWsp": "Raport", "startKampanii": "2024-05-14", "koniecKampanii": "2024-06-12", "notatki": "Obsługa klientów firmy. Ocena: 5"}, {"id": "hcl_202405_4", "nazwa": "Kliencidlafirm.pl (QuickerSIM)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 650.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 29, "etapWsp": "Raport", "startKampanii": "2024-05-20", "koniecKampanii": "2024-06-18", "notatki": "Obsługa klientów firmy. Ocena: 5"}], "2024-06": [{"id": "hcl_202406_0", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 500.0, "budzetRekl": 1000.0, "iloscWsp": 5, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-06-02", "koniecKampanii": "2024-07-02", "notatki": "Pierwszy taniec/ dla kobiet/ użytkowy. Ocena: 5"}, {"id": "hcl_202406_1", "nazwa": "Dance & Fitness House", "lokalizacja": "Bochnia", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-06-15", "koniecKampanii": "2024-07-15", "notatki": "Półkolonie letnie na wypasie. Ocena: 5"}, {"id": "hcl_202406_2", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 750.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-06-27", "koniecKampanii": "2024-07-27", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202406_3", "nazwa": "Kliencidlafirm.pl (Damian Krasiński)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 630.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 29, "etapWsp": "Raport", "startKampanii": "2024-06-13", "koniecKampanii": "2024-07-12", "notatki": "Obsługa klientów firmy. Ocena: 5"}, {"id": "hcl_202406_4", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 810.18, "budzetRekl": 12500.0, "iloscWsp": 1, "okresDni": 29, "etapWsp": "Raport", "startKampanii": "2024-06-12", "koniecKampanii": "2024-07-11", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202406_5", "nazwa": "Ewa Plakwicz", "lokalizacja": "Józefów Widawski", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 500.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-06-19", "koniecKampanii": "2024-07-19", "notatki": "Festiwal Sylvania Camp. Ocena: 5"}, {"id": "hcl_202406_6", "nazwa": "PODSUMOWANIE", "lokalizacja": "", "faktura": "", "statusKlienta": "", "wynagrodzenie": 0, "budzetRekl": 0, "iloscWsp": 0, "okresDni": 0, "etapWsp": "", "startKampanii": "", "koniecKampanii": "", "notatki": ""}], "2024-07": [{"id": "hcl_202407_0", "nazwa": "Ewa Plakwicz", "lokalizacja": "Józefów Widawski", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 500.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-06-19", "koniecKampanii": "2024-07-19", "notatki": "Festiwal Sylvania Camp. Ocena: 5"}, {"id": "hcl_202407_1", "nazwa": "Szkoła Tańca Impact", "lokalizacja": "Częstochowa", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1000.0, "budzetRekl": 800.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-07-07", "koniecKampanii": "2024-08-06", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202407_2", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 400.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-07-28", "koniecKampanii": "2024-08-27", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202407_3", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 500.0, "budzetRekl": 1000.0, "iloscWsp": 6, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-07-03", "koniecKampanii": "2024-08-02", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202407_4", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 810.18, "budzetRekl": 9500.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-07-12", "koniecKampanii": "2024-08-11", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202407_5", "nazwa": "Kliencidlafirm.pl (Damian Krasiński)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 630.0, "budzetRekl": 1000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-07-13", "koniecKampanii": "2024-08-12", "notatki": "Obsługa klientów firmy. Ocena: 5"}, {"id": "hcl_202407_6", "nazwa": "Studio Vertigo", "lokalizacja": "Białystok", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-07-29", "koniecKampanii": "2024-08-28", "notatki": "Pokazy Pole Dance. Ocena: 5"}, {"id": "hcl_202407_7", "nazwa": "Szkoła Tańca Legato", "lokalizacja": "Katowice", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 37, "etapWsp": "Raport", "startKampanii": "2024-07-19", "koniecKampanii": "2024-08-25", "notatki": "Zajęcia regularne. Ocena: 5"}, {"id": "hcl_202407_8", "nazwa": "Szkoła Tańca Prima", "lokalizacja": "Bolesławiec", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-08-01", "koniecKampanii": "2024-08-31", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202407_9", "nazwa": "Pole Dance With Fun", "lokalizacja": "Wałbrzych", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1500.0, "budzetRekl": 800.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-08-06", "koniecKampanii": "2024-09-05", "notatki": "Pole Dance/ 1 sala/ od września rusza grupa. Cel: 9 osób. Ocena: 5"}], "2024-08": [{"id": "hcl_202408_0", "nazwa": "Passion Of Dance", "lokalizacja": "Gniezno", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-08-30", "koniecKampanii": "2024-09-29", "notatki": "Ocena: 5"}, {"id": "hcl_202408_1", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-08-28", "koniecKampanii": "2024-09-27", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202408_2", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "", "statusKlienta": "Kontynuacja", "wynagrodzenie": 0.0, "budzetRekl": 1000.0, "iloscWsp": 7, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-08-03", "koniecKampanii": "2024-09-02", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202408_3", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 810.18, "budzetRekl": 9500.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-08-12", "koniecKampanii": "2024-09-11", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202408_4", "nazwa": "Szkoła Tańca Prima", "lokalizacja": "Bolesławiec", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 800.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-09-01", "koniecKampanii": "2024-10-01", "notatki": "Pierwszy taniec/grupowe. Ocena: 5"}], "2024-09": [{"id": "hcl_202409_0", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 250.0, "budzetRekl": 1000.0, "iloscWsp": 8, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-09-03", "koniecKampanii": "2024-10-03", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202409_1", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1260.28, "budzetRekl": 9500.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-09-12", "koniecKampanii": "2024-10-12", "notatki": "Obsługa klientów firmy. Ocena: 3"}, {"id": "hcl_202409_2", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 5, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-09-28", "koniecKampanii": "2024-10-28", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202409_3", "nazwa": "Studio Vertigo", "lokalizacja": "Białystok", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-08-29", "koniecKampanii": "2024-09-28", "notatki": "Zajęcia Pole Dance. Ocena: 5"}], "2024-10": [{"id": "hcl_202410_0", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "", "statusKlienta": "Kontynuacja", "wynagrodzenie": 0.0, "budzetRekl": 1000.0, "iloscWsp": 9, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-10-04", "koniecKampanii": "2024-11-03", "notatki": "Pierwszy taniec. Ocena: 5"}, {"id": "hcl_202410_1", "nazwa": "Szkoła Tańca Prima", "lokalizacja": "Bolesławiec", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1000.0, "budzetRekl": 800.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-10-02", "koniecKampanii": "2024-11-01", "notatki": "Pierwszy taniec/grupowe. Ocena: 5"}, {"id": "hcl_202410_2", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1260.28, "budzetRekl": 9500.0, "iloscWsp": 5, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-10-13", "koniecKampanii": "2024-11-12", "notatki": "Obsługa klientów firmy. Ocena: 3"}, {"id": "hcl_202410_3", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 6, "okresDni": 30, "etapWsp": "Start", "startKampanii": "2024-10-29", "koniecKampanii": "2024-11-28", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202410_4", "nazwa": "Wonder Women", "lokalizacja": "Kalisz", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-10-10", "koniecKampanii": "2024-11-09", "notatki": "Pole Dance. Cel: 60 leadów. Ocena: 4"}, {"id": "hcl_202410_5", "nazwa": "Studio Vertigo", "lokalizacja": "Białystok", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 3, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-09-29", "koniecKampanii": "2024-10-29", "notatki": "Zajęcia Pole Dance. Ocena: 5"}], "2024-11": [{"id": "hcl_202411_0", "nazwa": "Studio Vertigo", "lokalizacja": "Białystok", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 4, "okresDni": 30, "etapWsp": "Start", "startKampanii": "2024-10-30", "koniecKampanii": "2024-11-29", "notatki": "Zajęcia Pole Dance. Ocena: 5"}, {"id": "hcl_202411_1", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 7, "okresDni": 30, "etapWsp": "Start", "startKampanii": "2024-11-29", "koniecKampanii": "2024-12-29", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202411_2", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 714.16, "budzetRekl": 9500.0, "iloscWsp": 6, "okresDni": 16, "etapWsp": "Raport", "startKampanii": "2024-11-25", "koniecKampanii": "2024-12-11", "notatki": "Obsługa klientów firmy. Ocena: 3"}], "2024-12": [{"id": "hcl_202412_0", "nazwa": "Studio Vertigo", "lokalizacja": "Białystok", "faktura": "Opłacona", "statusKlienta": "Zakończony", "wynagrodzenie": 1500.0, "budzetRekl": 1000.0, "iloscWsp": 5, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-11-30", "koniecKampanii": "2024-12-30", "notatki": "Zajęcia Pole Dance. Ocena: 5"}, {"id": "hcl_202412_1", "nazwa": "Art Of Move", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 600.0, "iloscWsp": 8, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-12-29", "koniecKampanii": "2025-01-28", "notatki": "Regularne zajęcia. Ocena: 5"}, {"id": "hcl_202412_2", "nazwa": "Kliencidlafirm.pl (AWK Group)", "lokalizacja": "", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1120.0, "budzetRekl": 9500.0, "iloscWsp": 7, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-12-12", "koniecKampanii": "2025-01-11", "notatki": "Obsługa klientów firmy. Ocena: 4"}, {"id": "hcl_202412_3", "nazwa": "Orso Cars", "lokalizacja": "Swarzędz", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1200.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "", "startKampanii": "2025-01-08", "koniecKampanii": "2025-02-07", "notatki": "Członkostwo. Ocena: 5"}, {"id": "hcl_202412_4", "nazwa": "Karol Węgrzyn", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 500.0, "budzetRekl": 1500.0, "iloscWsp": 1, "okresDni": 16, "etapWsp": "Raport", "startKampanii": "2024-12-15", "koniecKampanii": "2024-12-31", "notatki": "eventy, sprzedaż biletów. Ocena: 4"}, {"id": "hcl_202412_5", "nazwa": "Szkoła tańca Estilo", "lokalizacja": "Wrocław", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 10, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2024-12-19", "koniecKampanii": "2025-01-18", "notatki": "Pierwszy taniec. Ocena: 5"}], "2023-10": [{"id": "hcl_202310_0", "nazwa": "STUDIO POSITIVA Sp. z o.o.", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Nowy", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 1, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2023-10-24", "koniecKampanii": "2023-11-23", "notatki": "zadowoleni, przedłużona na kolejny miesiąc. Cel: Odrobić 2000zł/opłacalność zajęć. Ocena: 5"}], "2023-12": [{"id": "hcl_202312_0", "nazwa": "STUDIO POSITIVA Sp. z o.o.", "lokalizacja": "Poznań", "faktura": "Opłacona", "statusKlienta": "Kontynuacja", "wynagrodzenie": 1000.0, "budzetRekl": 1000.0, "iloscWsp": 2, "okresDni": 30, "etapWsp": "Raport", "startKampanii": "2023-12-11", "koniecKampanii": "2024-01-10", "notatki": "Cel: 15 osób na gotówke. Ocena: 5"}]};
 function mkClient(nazwa, lokalizacja, faktura, statusKlienta, wynagrodzenie, budzetRekl, iloscWsp, okresDni, etapWsp, startKampanii, koniecKampanii, cel, ocenaWsp, notatki){
   return {id:uid("cli"), nazwa:nazwa, lokalizacja:lokalizacja, faktura:faktura, statusKlienta:statusKlienta,
     wynagrodzenie:wynagrodzenie, budzetRekl:budzetRekl, iloscWsp:iloscWsp, okresDni:okresDni, etapWsp:etapWsp,
@@ -1707,6 +1772,32 @@ function defaultState(){
   ];
 
   s.finance = [
+    /* Historia z realnych Arkuszy Finansów 2023-2025 (Total sheet, dokładne kwoty) — dodano 2026-07-15 */
+    {month:"2023-12", revenue:1000, bizCost:0, personalCost:0, target:4000},
+    {month:"2024-01", revenue:2000, bizCost:1827.36, personalCost:939.05, target:2000},
+    {month:"2024-02", revenue:7969.94, bizCost:1283.96, personalCost:6362.08, target:3000},
+    {month:"2024-03", revenue:5192.46, bizCost:1023.86, personalCost:3826.24, target:4000},
+    {month:"2024-04", revenue:4579.61, bizCost:1829, personalCost:5059, target:5000},
+    {month:"2024-05", revenue:8750, bizCost:940, personalCost:6634, target:7000},
+    {month:"2024-06", revenue:6946, bizCost:595, personalCost:6456, target:10000},
+    {month:"2024-07", revenue:13908, bizCost:1060, personalCost:10104, target:10000},
+    {month:"2024-08", revenue:7463, bizCost:2264, personalCost:4154, target:10000},
+    {month:"2024-09", revenue:10215, bizCost:2504, personalCost:8235, target:11000},
+    {month:"2024-10", revenue:9035, bizCost:3668, personalCost:6596, target:12000},
+    {month:"2024-11", revenue:6674, bizCost:2048, personalCost:5446, target:13000},
+    {month:"2024-12", revenue:8849, bizCost:1950, personalCost:4409, target:13000},
+    {month:"2025-01", revenue:8839.16, bizCost:1561.37, personalCost:4485.79, target:7000},
+    {month:"2025-02", revenue:6170.07, bizCost:2901.86, personalCost:4751.80, target:10000},
+    {month:"2025-03", revenue:6871.17, bizCost:2862.99, personalCost:2870.93, target:12000},
+    {month:"2025-04", revenue:9407.90, bizCost:3566.61, personalCost:5619.89, target:15000},
+    {month:"2025-05", revenue:9455.00, bizCost:3344.37, personalCost:4347.08, target:15000},
+    {month:"2025-06", revenue:16457.83, bizCost:5009.06, personalCost:15406.89, target:17000},
+    {month:"2025-07", revenue:13861.00, bizCost:5900.26, personalCost:8584.86, target:20000},
+    {month:"2025-08", revenue:9086.90, bizCost:4825.68, personalCost:4368.86, target:19000},
+    {month:"2025-09", revenue:7470.00, bizCost:2698.08, personalCost:5653.68, target:20000},
+    {month:"2025-10", revenue:11655.89, bizCost:3054.18, personalCost:6727.28, target:19000},
+    {month:"2025-11", revenue:11250.00, bizCost:3482.33, personalCost:5039.28, target:22000},
+    {month:"2025-12", revenue:3046.25, bizCost:2797.09, personalCost:3981.75, target:24000},
     {month:"2026-01", revenue:5122, bizCost:2288.83, personalCost:3173.99, target:8000},
     {month:"2026-02", revenue:9580, bizCost:2166.47, personalCost:8658.99, target:9000},
     {month:"2026-03", revenue:7642, bizCost:2061.29, personalCost:7284.45, target:10000},
@@ -2021,7 +2112,7 @@ function defaultState(){
 function load(){
   var raw = localStorage.getItem(STORAGE_KEY);
   var def = defaultState();
-  if(!raw){ state = def; save(); return; }
+  if(!raw){ state = migrateState(def); save(); return; }
   try{
     var parsed = JSON.parse(raw);
     Object.keys(def).forEach(function(k){ if(!(k in parsed)) parsed[k] = def[k]; });
@@ -4163,6 +4254,19 @@ var FINANCE_CATEGORY_LABEL = {przychody:"Przychody", firmowe:"Wydatki firmowe", 
 var financeSubview = "przychody";
 var financeTab = null; // "YYYY-MM" albo "TOTAL"
 var financeYear = null;
+var financeSortCol = "createdAt";
+var financeSortDir = "desc";
+function financeSetSort(col){
+  if(financeSortCol===col){ financeSortDir = (financeSortDir==="asc") ? "desc" : "asc"; }
+  else { financeSortCol = col; financeSortDir = col==="createdAt" ? "desc" : "asc"; }
+  renderAll();
+}
+function financeSortValue(e, col){
+  if(col==="amount") return +e.amount||0;
+  if(col==="createdAt") return e.createdAt||"";
+  if(col==="method") return e.method==="gotowka" ? "Gotówka" : "Karta";
+  return (e.name||"").toString().toLowerCase();
+}
 function fmtPln(n){
   return (n||0).toLocaleString("pl-PL",{minimumFractionDigits:2, maximumFractionDigits:2})+" zł";
 }
@@ -4279,10 +4383,19 @@ function renderFinanse(el){
     html += '<div class="empty">Brak pozycji w tym miesiącu.</div>';
   } else {
     var TD = 'padding:6px 8px; font-size:12.5px';
-    var TH = 'padding:6px 8px; font-size:11px';
-    html += '<div class="card"><table><tr>'+
-      '<th style="'+TH+'">Nazwa</th><th style="'+TH+'; text-align:right">Kwota</th><th style="'+TH+'">Sposób płatności</th><th style="'+TH+'">Data dodania</th><th></th></tr>';
-    entries.slice().sort(function(a,b){ return b.amount-a.amount; }).forEach(function(e){
+    var TH = 'padding:6px 8px; font-size:11px; cursor:pointer; user-select:none';
+    var finCols = [["name","Nazwa",""],["amount","Kwota","; text-align:right"],["method","Sposób płatności",""],["createdAt","Data dodania",""]];
+    html += '<div class="card"><table><tr>';
+    finCols.forEach(function(fc){
+      var arrow = financeSortCol===fc[0] ? (financeSortDir==="asc" ? " ▲" : " ▼") : "";
+      html += '<th style="'+TH+fc[2]+'" onclick="financeSetSort(\''+fc[0]+'\')">'+fc[1]+arrow+'</th>';
+    });
+    html += '<th></th></tr>';
+    entries.slice().sort(function(a,b){
+      var va = financeSortValue(a, financeSortCol), vb = financeSortValue(b, financeSortCol);
+      var cmp = (typeof va === "number" && typeof vb === "number") ? (va-vb) : String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
+      return financeSortDir==="asc" ? cmp : -cmp;
+    }).forEach(function(e){
       html += '<tr onclick="openFinanceModal({id:\''+e.id+'\'})" style="cursor:pointer">'+
         '<td style="'+TD+'">'+escapeHtml(e.name)+'</td>'+
         '<td style="'+TD+'; text-align:right">'+fmtPln(e.amount)+'</td>'+
@@ -6528,12 +6641,6 @@ function ceoClaimSeasonTier(tier){
   if(reward.chest) ceoOpenLootChest();
   if(reward.frame && state.ceo.seasonFrames.indexOf(reward.frame)===-1) state.ceo.seasonFrames.push(reward.frame);
 }
-function ceoClaimAllSeasonTiers(){
-  ceoSeasonEnsure();
-  var maxTier = ceoSeasonTier(state.ceo.season.xp);
-  for(var t=1;t<=maxTier;t++) ceoClaimSeasonTier(t);
-  save(); renderAll();
-}
 /* Faza 3 — Raid Boss kwartalny (sekcja 7.1, od rangi Dyrektor Lv.30): konkurenci
    branżowi jako nazwani bossowie, cel = nowi klienci Tool4Arts w tym kwartale
    (licznik startowy zapamiętany przy tworzeniu instancji tego kwartału). */
@@ -6542,13 +6649,13 @@ function ceoCurrentRaidBoss(){
   var key = ceoCurrentSeasonKey();
   if(!state.ceo.raidBosses[key]){
     var idx = Object.keys(state.ceo.raidBosses).length % CEO_RAID_BOSS_NAMES.length;
-    state.ceo.raidBosses[key] = {name:CEO_RAID_BOSS_NAMES[idx], target:5, startCount:state.ceo.tool4artsClientCount||0, defeated:false};
+    state.ceo.raidBosses[key] = {name:CEO_RAID_BOSS_NAMES[idx], target:5, startCount:ceoTool4artsClientCount(), defeated:false};
     save();
   }
   return state.ceo.raidBosses[key];
 }
 function ceoRaidBossProgress(rb){
-  var gained = Math.max(0, (state.ceo.tool4artsClientCount||0)-rb.startCount);
+  var gained = Math.max(0, ceoTool4artsClientCount()-rb.startCount);
   return Math.min(1, gained/rb.target);
 }
 /* Faza 3 — World Boss roczny (sekcja 7.1): cel = stabilne 12k+ zł/mc przez 3 kolejne
@@ -6939,18 +7046,6 @@ function ceoCheckAchievements(){
   });
   if(changed) save();
 }
-function ceoAdjustTool4artsClients(delta){
-  state.ceo.tool4artsClientCount = Math.max(0, (state.ceo.tool4artsClientCount||0)+delta);
-  if(delta>0){
-    var t = CEO_EPIC_TEMPLATES.filter(function(x){ return x.skill==="tool4arts"; })[0];
-    if(t){
-      state.ceo.epicQuests.unshift({id:uid("eq"), label:t.label, xp:t.xp, skill:t.skill, date:todayStr()});
-      addCeoXp(t.skill, t.xp, true);
-    }
-  }
-  ceoCheckAchievements();
-  save(); renderAll();
-}
 function renderCeoBrandTracks(){
   var mdgXp = state.ceo.skills.marketing||0;
   var t4aXp = state.ceo.skills.tool4arts||0;
@@ -6967,7 +7062,7 @@ function renderCeoBrandTracks(){
     html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?(CEO_RARITY_ICON[a.rarity]||"🏆"):"🔒")+' '+escapeHtml(a.label)+'</span></div>';
   });
   html += '</div>';
-  html += '<div><h4>Tool4Arts — klienci: '+(state.ceo.tool4artsClientCount||0)+' <button class="linklike" onclick="ceoAdjustTool4artsClients(1)">+1</button> <button class="linklike" onclick="ceoAdjustTool4artsClients(-1)">-1</button></h4>';
+  html += '<div><h4>Tool4Arts — klienci: '+ceoTool4artsClientCount()+' <span title="Liczone automatycznie z checklisty Tool4Arts w Bazie kontaktów (CRM)" style="font-size:10px; color:var(--muted)">🔄 auto</span></h4>';
   CEO_BRAND_ACHIEVEMENTS.tool4arts.forEach(function(a){
     var unlocked = state.ceo.achievementsUnlocked.indexOf(a.id)!==-1;
     html += '<div class="ceo-quest-item" style="cursor:default"><span>'+(unlocked?(CEO_RARITY_ICON[a.rarity]||"🏆"):"🔒")+' '+escapeHtml(a.label)+'</span></div>';
@@ -7012,6 +7107,16 @@ function ceoWorkoutsThisMonth(){
     if(ceoHabitMapping(h.name).skill==="cwiczenia") total += habitMonthStats(h, ym).done;
   });
   return total;
+}
+/* 2026-07-15 — auto-wire: rolki (posty z video, stage=opublikowany) i klienci Tool4Arts
+   (CRM statusT4A="klient") mają już realne źródło danych gdzie indziej w appce, więc nie
+   powinny wymagać osobnego ręcznego licznika w CEO — patrz ceoConditionProgress/renderCeoBrandTracks. */
+function ceoReelsThisMonth(){
+  var ym = todayStr().slice(0,7);
+  return (state.posts||[]).filter(function(p){ return !p.deletedAt && p.stage==="opublikowany" && p.video && p.date && p.date.slice(0,7)===ym; }).length;
+}
+function ceoTool4artsClientCount(){
+  return crmT4AClientContacts().length;
 }
 /* Faza 2 — Skrzynki z łupem (sekcja 8.3): tylko jako nagroda za działanie, nigdy do
    kupienia za Gold. Bez fragmentów Artefaktów/Eliksirów (Faza 3, sekcja 8.4) — na razie
@@ -7102,7 +7207,9 @@ function renderCeoContracts(){
   ceoEnsureWeeklyContracts();
   var wc = state.ceo.weeklyContracts;
   var full = wc.chosen.length>=3;
-  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">📜 Kontrakty tygodniowe</h3>'+
+  var needsPick = wc.chosen.length<3;
+  var html = '<div class="card'+(needsPick?" ceo-action-card":"")+'" style="margin-top:16px"><h3 style="margin-top:0">📜 Kontrakty tygodniowe'+
+    (needsPick?' <span class="ceo-action-badge">⚠️ Wymaga Ciebie</span>':'')+'</h3>'+
     '<div style="font-size:11.5px; color:var(--muted); margin-bottom:8px">Wybierz 3 z 5 (tydzień od '+fmtDate(wc.weekStart)+'). Komplet 3/3 = skrzynka z łupem.</div>';
   CEO_CONTRACT_POOL.forEach(function(c){
     var chosen = wc.chosen.indexOf(c.id)!==-1;
@@ -7133,7 +7240,7 @@ var CEO_QUEST_CHAIN_TEMPLATES = [
     {label:"Umów 3 demo", xp:600, type:"manual"},
     {label:"Przeprowadź pierwsze demo", xp:500, type:"manual"},
     {label:"FINAŁ: Pierwszy płacący klient Tool4Arts", xp:5000, gold:1000, type:"auto", final:true, achievementId:"chain_t4a_pierwsza_krew",
-      check:function(){ return (state.ceo.tool4artsClientCount||0)>=1; }}
+      check:function(){ return ceoTool4artsClientCount()>=1; }}
   ]},
   {id:"autorytet", name:"Autorytet", skill:"marka_osobista", steps:[
     {label:"30 dni streaka aktywności", xp:600, type:"auto", check:function(){ return (state.ceo.streak||0)>=30; }},
@@ -7250,8 +7357,9 @@ function renderCeoQuestChains(){
     template.steps.forEach(function(step, idx){
       var done = ceoQuestChainStepDone(template, idx);
       var clickable = step.type==="manual";
+      var needsClick = clickable && !done;
       html += '<div class="ceo-quest-item'+(done?" done":"")+'"'+(clickable?' onclick="ceoToggleQuestChainStep(\''+template.id+'\','+idx+')" style="cursor:pointer"':' style="cursor:default"')+'>'+
-        '<span>'+(done?"✅":"⬜")+' '+escapeHtml(step.label)+(step.type==="auto"?' <span style="font-size:10px; color:var(--muted)">(auto)</span>':'')+'</span>'+
+        '<span'+(needsClick?' class="ceo-needs-action"':'')+'>'+(done?"✅":(needsClick?"❗":"⬜"))+' '+escapeHtml(step.label)+(step.type==="auto"?' <span style="font-size:10px; color:var(--muted)">(auto)</span>':'')+'</span>'+
         '<span class="ceo-quest-xp">+'+step.xp+(step.gold?' 🪙'+step.gold:'')+'</span></div>';
     });
     html += '</div>';
@@ -7267,7 +7375,7 @@ function ceoCurrentBoss(){
       conditions: [
         {id:uid("bc"), label:"15 000 zł przychodu w tym miesiącu", type:"auto-revenue", target:15000, weight:0.35},
         {id:uid("bc"), label:"3 nowych klientów", type:"auto-clients", target:3, weight:0.25},
-        {id:uid("bc"), label:"20 nowych rolek", type:"manual-counter", target:20, current:0, weight:0.20},
+        {id:uid("bc"), label:"20 nowych rolek", type:"auto-reels", target:20, weight:0.20},
         {id:uid("bc"), label:"15 treningów", type:"auto-workouts", target:15, weight:0.10},
         {id:uid("bc"), label:"MVP Tool4Arts", type:"manual-check", manualDone:false, weight:0.10}
       ],
@@ -7281,16 +7389,10 @@ function ceoConditionProgress(cond){
   if(cond.type==="auto-revenue") return Math.min(1, (ceoCurrentMonthFinance().revenue||0)/cond.target);
   if(cond.type==="auto-clients") return Math.min(1, ceoNewClientsThisMonth()/cond.target);
   if(cond.type==="auto-workouts") return Math.min(1, ceoWorkoutsThisMonth()/cond.target);
+  if(cond.type==="auto-reels") return Math.min(1, ceoReelsThisMonth()/cond.target);
   if(cond.type==="manual-counter") return Math.min(1, (cond.current||0)/cond.target);
   if(cond.type==="manual-check") return cond.manualDone ? 1 : 0;
   return 0;
-}
-function ceoBossCounterAdd(condId){
-  var boss = ceoCurrentBoss();
-  var c = boss.conditions.filter(function(x){return x.id===condId;})[0];
-  if(!c) return;
-  c.current = (c.current||0)+1;
-  save(); renderAll();
 }
 function ceoBossToggleManual(condId){
   var boss = ceoCurrentBoss();
@@ -7354,10 +7456,7 @@ function completeCeoEpicTemplate(idx){
   if(!confirm('Zaliczyć "'+t.label+'" (+'+t.xp+' XP)?')) return;
   state.ceo.epicQuests.unshift({id:uid("eq"), label:t.label, xp:t.xp, skill:t.skill, date:todayStr()});
   addCeoXp(t.skill, t.xp, true);
-  if(t.skill==="tool4arts"){
-    state.ceo.tool4artsClientCount = (state.ceo.tool4artsClientCount||0)+1;
-    ceoCheckAchievements();
-  }
+  if(t.skill==="tool4arts") ceoCheckAchievements();
   renderAll();
 }
 function editCeoFinanceField(key){
@@ -7492,13 +7591,14 @@ function ceoGenerateDailyQuests(){
       }
     });
     var bossForReel = ceoCurrentBoss();
-    var reelCond = bossForReel.conditions.filter(function(c){ return c.type==="manual-counter"; })[0];
+    var reelCond = bossForReel.conditions.filter(function(c){ return c.type==="auto-reels"; })[0];
     if(reelCond && ceoSkillActive("marka_osobista")){
       var dom = +today.slice(8,10);
       var dim = new Date(+today.slice(0,4), +today.slice(5,7), 0).getDate();
       var expectedPace = reelCond.target * (dom/dim);
-      if((reelCond.current||0) < expectedPace*0.7){
-        candidates.push({genKey:"content_reel_"+today, title:"Nagraj rolkę — tempo poniżej celu bossa ("+(reelCond.current||0)+"/"+reelCond.target+")", xp:200, skill:"marka_osobista", category:"MediaDGtal", pri:2});
+      var reelCurrent = ceoReelsThisMonth();
+      if(reelCurrent < expectedPace*0.7){
+        candidates.push({genKey:"content_reel_"+today, title:"Nagraj rolkę — tempo poniżej celu bossa ("+reelCurrent+"/"+reelCond.target+")", xp:200, skill:"marka_osobista", category:"MediaDGtal", pri:2});
       }
     }
   }
@@ -7696,15 +7796,17 @@ function renderCeoRhythm(){
 function renderCeoSeason(){
   ceoSeasonEnsure();
   var theme = ceoCurrentSeasonTheme();
+  /* 2026-07-15 — auto-wire: odbieranie zdobytych szczebli to zero decyzji ("odbierz to co
+     już zarobiłeś"), więc dzieje się samo przy każdym renderze zamiast czekać na klik. */
   var tier = ceoSeasonTier(state.ceo.season.xp);
+  var autoClaimed = 0;
+  for(var tc=1;tc<=tier;tc++){ if(state.ceo.season.claimedTiers.indexOf(tc)===-1){ ceoClaimSeasonTier(tc); autoClaimed++; } }
+  if(autoClaimed) save();
   var xpInTier = (state.ceo.season.xp||0) - tier*CEO_SEASON_TIER_XP;
-  var unclaimedCount = 0;
-  for(var t=1;t<=tier;t++){ if(state.ceo.season.claimedTiers.indexOf(t)===-1) unclaimedCount++; }
-  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🏆 Sezon '+state.ceo.season.key+' — '+escapeHtml(theme.name)+'</h3>'+
+  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🏆 Sezon '+state.ceo.season.key+' — '+escapeHtml(theme.name)+' <span title="Nagrody za szczeble odbierane są automatycznie" style="font-size:10px; color:var(--muted); text-transform:none; font-weight:400">🔄 auto</span></h3>'+
     '<div style="font-size:12px; color:var(--muted-light); margin-bottom:8px">'+escapeHtml(theme.desc)+'</div>'+
     '<div style="font-size:12.5px; color:var(--muted-light); margin-bottom:6px">Przepustka sezonowa: szczebel '+tier+'/'+CEO_SEASON_MAX_TIER+' ('+xpInTier+'/'+CEO_SEASON_TIER_XP+' Sezonowego XP do kolejnego)</div>'+
     '<div class="ceo-xpbar"><div class="ceo-xpbar-fill" style="width:'+Math.round(xpInTier/CEO_SEASON_TIER_XP*100)+'%"></div></div>';
-  if(unclaimedCount>0) html += '<button class="btn small" style="margin-top:10px" onclick="ceoClaimAllSeasonTiers()">Odbierz nagrody ('+unclaimedCount+')</button>';
   if(state.ceo.seasonFrames.length) html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Ramki: '+state.ceo.seasonFrames.join(", ")+'</div>';
   if(state.ceo.seasonHistory.length) html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Poprzednie sezony: '+state.ceo.seasonHistory.slice(0,4).map(function(s){ return s.key+' (szczebel '+s.tier+')'; }).join(' · ')+'</div>';
   html += '</div>';
@@ -7789,10 +7891,8 @@ function renderCeoBoss(){
   boss.conditions.forEach(function(c){
     var cpct = Math.round(ceoConditionProgress(c)*100);
     html += '<div class="ceo-quest-item"><span>'+(cpct>=100?"✅":(phase&&cpct<50?"🔴":"⬜"))+' '+escapeHtml(c.label)+'</span>';
-    if(c.type==="manual-counter"){
-      html += '<span class="ceo-quest-xp">'+(c.current||0)+' / '+c.target+' <button class="linklike" onclick="ceoBossCounterAdd(\''+c.id+'\')">+1</button></span>';
-    } else if(c.type==="manual-check"){
-      html += '<button class="linklike" onclick="ceoBossToggleManual(\''+c.id+'\')">'+(c.manualDone?"Cofnij":"Odhacz")+'</button>';
+    if(c.type==="manual-check"){
+      html += '<span class="'+(c.manualDone?"":"ceo-needs-action")+'">'+(c.manualDone?'':'⚠️ ')+'<button class="linklike" onclick="ceoBossToggleManual(\''+c.id+'\')">'+(c.manualDone?"Cofnij":"Odhacz")+'</button></span>';
     } else {
       html += '<span class="ceo-quest-xp">'+cpct+'%</span>';
     }
@@ -7811,7 +7911,7 @@ function renderCeoRaidWorldBoss(){
     html += '<div class="card ceo-boss-card" style="margin-top:16px"><div class="row" style="justify-content:space-between; align-items:center">'+
       '<h3 style="margin:0">🗡️ Raid Boss: '+escapeHtml(rb.name)+'</h3>'+(rb.defeated?'<span class="tag tag-stage-opublikowany">Pokonany 🎉</span>':'')+'</div>'+
       '<div class="ceo-hpbar"><div class="ceo-hpbar-fill" style="width:'+hpRemaining+'%"></div></div>'+
-      '<div style="font-size:12px; color:var(--muted); margin-top:4px">Cel kwartału: '+Math.max(0,(state.ceo.tool4artsClientCount||0)-rb.startCount)+'/'+rb.target+' nowych klientów Tool4Arts</div></div>';
+      '<div style="font-size:12px; color:var(--muted); margin-top:4px">Cel kwartału: '+Math.max(0,ceoTool4artsClientCount()-rb.startCount)+'/'+rb.target+' nowych klientów Tool4Arts</div></div>';
   }
   var wb = ceoWorldBossState();
   var wpct = ceoWorldBossProgress();
@@ -8094,7 +8194,8 @@ function ceoRespecTalents(){
 }
 function renderCeoTalentTree(){
   var pt = ceoTalentPointsAvailable();
-  var html = '<div class="card" style="margin-top:16px"><h3 style="margin-top:0">🌳 Drzewko talentów</h3>'+
+  var html = '<div class="card'+(pt>0?" ceo-action-card":"")+'" style="margin-top:16px"><h3 style="margin-top:0">🌳 Drzewko talentów'+
+    (pt>0?' <span class="ceo-action-badge">⚠️ Masz '+pt+' PT do wydania</span>':'')+'</h3>'+
     '<div style="font-size:12px; color:var(--muted-light); margin-bottom:10px">Dostępne PT: <b style="color:var(--accent)">'+pt+'</b> (poziom postaci + suma Tierów skilli + 5×Prestige). '+
     '<button class="linklike" onclick="ceoRespecTalents()">Reset drzewka</button></div>';
   Object.keys(CEO_TALENT_TREE_DEF).forEach(function(group){
@@ -8427,7 +8528,7 @@ function renderCeoPrestige(lvl){
       '<div style="font-weight:700; color:var(--accent)">Paragon — poziom '+pLevel+'</div>'+
       '<div style="font-size:12px; color:var(--muted-light); margin:4px 0 8px">Nieskończone poziomy (500 XP/poziom, liczone dalej od dziś). Każdy poziom = 1 punkt do dowolnego atrybutu.</div>';
     if(pAvail>0){
-      html += '<div style="font-size:12.5px; color:var(--muted-light); margin-bottom:6px">Dostępne punkty: '+pAvail+'</div><div class="chiprow">';
+      html += '<div style="font-size:12.5px; margin-bottom:6px"><span class="ceo-action-badge">⚠️ Masz '+pAvail+' pkt do przydzielenia</span></div><div class="chiprow">';
       Object.keys(CEO_ATTRIBUTES).forEach(function(k){
         html += '<button class="chip" onclick="ceoAssignParagonPoint(\''+k+'\')">'+CEO_ATTRIBUTES[k].icon+' '+CEO_ATTRIBUTES[k].label+'</button>';
       });
@@ -8671,7 +8772,7 @@ function findContactCategory(name){
 }
 function clientMapEntries(){
   if(clientMapFilter==="tool4arts"){
-    var fromCrm = (state.crmContacts||[]).filter(function(c){ return !c.deletedAt && c.statusT4A==="klient"; })
+    var fromCrm = crmT4AClientContacts()
       .map(function(c){ return {id:c.id, name:c.name, city:c.city, category:c.category, mode:"tool4arts"}; });
     var manual = (state.clientMapPins||[]).filter(function(p){ return !p.deletedAt && p.mode==="tool4arts"; })
       .map(function(p){ return {id:p.id, name:p.name, city:p.city, category: p.category || findContactCategory(p.name) || "", mode:"tool4arts"}; });
@@ -9005,8 +9106,8 @@ function renderClientFieldInput(ym, r, f){
   return '<input type="text" value="'+escapeHtml(val||"")+'" onchange="'+onCh+'" style="min-width:120px">';
 }
 
-var klientSortCol = "nazwa";
-var klientSortDir = "asc";
+var klientSortCol = "startKampanii";
+var klientSortDir = "desc";
 var klientNameFilter = "";
 var klientLocFilter = "";
 function klientSetSort(col){
@@ -9456,6 +9557,14 @@ function crmGetT4A(c){
   }
   return c.t4a;
 }
+/* 2026-07-15 — jedyne prawdziwe źródło "czy to klient Tool4Arts": checklist c.t4a.client
+   (żywy, aktualizowany przez crmSetT4AField, zsynchronizowany z arkuszem Tomka). Legacy pole
+   c.statusT4A jest tylko jednorazowym seedem przy pierwszym crmGetT4A() i potem NIE jest już
+   aktualizowane — czytanie go bezpośrednio (jak wcześniej robiły clientMapEntries/CEO) dawało
+   nieaktualne dane. Wszystko co liczy klientów Tool4Arts powinno przechodzić przez tę funkcję. */
+function crmT4AClientContacts(){
+  return (state.crmContacts||[]).filter(function(c){ return !c.deletedAt && crmGetT4A(c).client; });
+}
 function crmT4ALabel(c){
   var t = crmGetT4A(c);
   for(var i=0;i<T4A_STAGES.length;i++){ if(t[T4A_STAGES[i].field]) return T4A_STAGES[i].label; }
@@ -9667,12 +9776,25 @@ function crmSetT4AField(id, field, val){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
   var t = crmGetT4A(c);
+  var wasClient = !!t.client;
   t[field] = val;
   if(field==="sent" && val && !t.sentDate) t.sentDate = todayStr();
   c.t4aDirty = true;
+  if(field==="client" && val && !wasClient) ceoAwardClientWonT4a(c.name);
   save(); renderAll();
   crmRefreshT4ABlock(id);
   crmSyncT4ARow(c);
+}
+/* 2026-07-15 — auto-XP dla nowego klienta Tool4Arts, ten sam wzorzec co ceoAwardClientWonMdg
+   dla MediaDGtal (crmSetStatus). Ręczny chip "Nowy klient Tool4Arts" w Epic Questach zostaje
+   jako fallback do ręcznego doliczenia (np. backfill), ale w normalnym flow to się teraz
+   dzieje samo w momencie odhaczenia "Klient" w checkliście Tool4Arts. */
+function ceoAwardClientWonT4a(contactName){
+  var t = CEO_EPIC_TEMPLATES.filter(function(x){ return x.skill==="tool4arts"; })[0];
+  if(!t) return;
+  state.ceo.epicQuests.unshift({id:uid("eq"), label:t.label+' ("'+contactName+'")', xp:t.xp, skill:t.skill, date:todayStr()});
+  addCeoXp(t.skill, t.xp, true);
+  ceoCheckAchievements();
 }
 function crmSetT4ADate(id, val){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
