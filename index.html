@@ -3599,7 +3599,7 @@ function renderPostyKosz(){
 /* ================= POSTY — EDYTOR WIDEO (AI) ================= */
 // Uwaga: to jest osobny, niesynchronizowany z Firestore stan (pliki wideo są za duże na jeden dokument).
 // Trzyma się wyłącznie w pamięci przeglądarki na czas sesji — import/eksport ręczny.
-var videoEditor = {history:[], activeIndex:-1, fileName:null, inputExt:".mp4", previewDuration:0, statusMsg:"", statusIsError:false, processing:false};
+var videoEditor = {history:[], activeIndex:-1, fileName:null, inputExt:".mp4", previewDuration:0, statusMsg:"", statusIsError:false, processing:false, captions:[], captionsForIndex:-1};
 var __ffmpegInstance = null;
 var __ffmpegLogBuffer = [];
 var VIDEO_PROMPT_SCHEMA = {
@@ -3610,7 +3610,7 @@ var VIDEO_PROMPT_SCHEMA = {
       items:{
         type:"object",
         properties:{
-          type:{type:"string", enum:["cut_silence"]},
+          type:{type:"string", enum:["cut_silence","add_captions"]},
           threshold_db:{type:"number"},
           min_silence_ms:{type:"number"},
           padding_ms:{type:"number"}
@@ -3626,13 +3626,14 @@ var VIDEO_PROMPT_SCHEMA = {
   additionalProperties:false
 };
 var VIDEO_SYSTEM_PROMPT = "Jesteś silnikiem interpretującym polecenia do prostego, przeglądarkowego edytora wideo. "+
-  "Obecnie dostępna jest TYLKO jedna prawdziwa operacja: cut_silence — automatyczne wykrywanie i wycinanie ciszy z nagrania. "+
-  "Napisy, tłumaczenia, efekty, animacje tekstu, przejścia, b-roll, muzyka i dobór czcionek NIE są jeszcze zaimplementowane. "+
+  "Dostępne są DWIE prawdziwe operacje: cut_silence — automatyczne wykrywanie i wycinanie ciszy z nagrania; add_captions — automatyczna transkrypcja mowy (po polsku) i wygenerowanie edytowalnych, animowanych napisów słowo-po-słowie (użytkownik może je poprawić przed wypaleniem w wideo osobnym przyciskiem, więc ta akcja tylko przygotowuje napisy do przeglądu, nie wypala ich od razu). "+
+  "Tłumaczenia, efekty, animacje inne niż napisy, przejścia, b-roll, muzyka i dobór czcionek NIE są jeszcze zaimplementowane. "+
   "Przeanalizuj polecenie użytkownika (po polsku) i zwróć WYŁĄCZNIE poprawny JSON zgodny ze schematem: "+
-  "actions — lista akcji do wykonania teraz (pusta, jeśli polecenie nie pasuje do dostępnej operacji); "+
+  "actions — lista akcji do wykonania teraz (pusta, jeśli polecenie nie pasuje do żadnej dostępnej operacji); "+
   "dla cut_silence możesz dobrać threshold_db (głośność ciszy w dB, domyślnie -30, im niżej tym bardziej czułe), "+
   "min_silence_ms (minimalna długość ciszy do wycięcia w ms, domyślnie 500) i padding_ms (margines bezpieczeństwa przed cięciem w ms, domyślnie 150) na podstawie sensu polecenia (np. \"wytnij tylko długie pauzy\" -> większe min_silence_ms); "+
-  "unsupported — krótkie nazwy funkcji z polecenia użytkownika, których jeszcze nie obsługujemy (np. \"napisy\", \"b-roll\", \"efekty\", \"przejścia\", \"muzyka\", \"czcionki\"), puste jeśli brak; "+
+  "dla add_captions żadne dodatkowe pola nie są potrzebne; "+
+  "unsupported — krótkie nazwy funkcji z polecenia użytkownika, których jeszcze nie obsługujemy (np. \"b-roll\", \"efekty\", \"przejścia\", \"muzyka\", \"czcionki\"), puste jeśli brak; "+
   "note — jedno krótkie zdanie po polsku, co teraz robisz albo dlaczego nic nie da się zrobić.";
 function videoFormatBytes(bytes){
   if(!bytes) return "0 B";
@@ -3649,7 +3650,7 @@ function renderPostyWideo(){
       '<input type="file" accept="video/*" id="videoImportInput" style="display:none" onchange="videoImportFile(this)">'+
       '<button class="btn" onclick="document.getElementById(\'videoImportInput\').click()">+ Importuj wideo</button>'+
       '</div>';
-    html += '<div class="stub-note" style="margin-top:14px">Wkrótce: polskie napisy z transkrypcji, efekty i animacje tekstu, biblioteka b-roll, dobór czcionek i przejść. Na start dostępne jest automatyczne wykrywanie i wycinanie ciszy — komendą tekstową do AI albo jednym przyciskiem.</div>';
+    html += '<div class="stub-note" style="margin-top:14px">Wkrótce: efekty i inne animacje tekstu, biblioteka b-roll, dobór czcionek i przejść. Na start dostępne jest automatyczne wykrywanie i wycinanie ciszy oraz automatyczne, edytowalne napisy z transkrypcji — komendą tekstową do AI albo jednym przyciskiem.</div>';
     return html;
   }
   var current = videoEditor.history[videoEditor.activeIndex];
@@ -3658,7 +3659,10 @@ function renderPostyWideo(){
     '<h3 style="margin:0">'+escapeHtml(videoEditor.fileName||"Wideo")+'</h3>'+
     '<button class="linklike danger" onclick="videoResetEditor()">Zamknij i odrzuć</button>'+
     '</div>';
-  html += '<video src="'+escapeHtml(current.blobUrl)+'" controls style="width:100%; max-height:480px; background:#000; border-radius:8px; display:block" onloadedmetadata="videoEditorDurationLoaded(this)"></video>';
+  html += '<div style="position:relative">'+
+    '<video id="videoPreviewEl" src="'+escapeHtml(current.blobUrl)+'" controls style="width:100%; max-height:480px; background:#000; border-radius:8px; display:block" onloadedmetadata="videoEditorDurationLoaded(this)" ontimeupdate="videoCaptionPreviewTick(this)"></video>'+
+    '<div id="videoCaptionOverlay" style="position:absolute; left:0; right:0; bottom:12%; text-align:center; pointer-events:none; font-weight:700; font-size:clamp(14px,4vw,26px); line-height:1.3; text-shadow:0 0 6px #000,0 2px 3px #000; padding:0 6%"></div>'+
+    '</div>';
 
   html += '<div class="row" style="gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center">'+
     '<button class="btn secondary small" '+(videoEditor.activeIndex<=0?"disabled":"")+' onclick="videoUndo()">↶ Cofnij</button>'+
@@ -3680,9 +3684,12 @@ function renderPostyWideo(){
     '<div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap">'+
     '<button class="btn" '+(videoEditor.processing||!hasKey?"disabled":"")+' onclick="videoApplyPrompt()">Zastosuj</button>'+
     '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoApplyPreset(\'cut_silence\')">⚡ Szybko: wytnij ciszę (bez AI)</button>'+
+    '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoTranscribe()">🎤 Szybko: dodaj napisy (bez AI)</button>'+
     '</div>'+
     '</div>';
   if(!hasKey){ html += renderClientOpsApiKeySettings(); }
+
+  html += videoCaptionsPanel();
 
   html += '<div class="card" style="margin-top:16px">'+
     '<h3>Eksport</h3>'+
@@ -3690,7 +3697,38 @@ function renderPostyWideo(){
     '<button class="btn" '+(videoEditor.processing?"disabled":"")+' onclick="videoExportSave()">💾 Eksportuj i zapisz</button>'+
     '</div>';
 
-  html += '<div class="stub-note" style="margin-top:14px">Wkrótce: polskie napisy z transkrypcji, efekty i animacje tekstu, biblioteka b-roll, dobór czcionek i przejść.</div>';
+  html += '<div class="stub-note" style="margin-top:14px">Wkrótce: efekty i inne animacje tekstu, biblioteka b-roll, dobór czcionek i przejść.</div>';
+  return html;
+}
+function videoCaptionsPanel(){
+  var html = '<div class="card" style="margin-top:16px">';
+  html += '<h3>🎤 Automatyczne napisy</h3>';
+  if(!videoEditor.captions || !videoEditor.captions.length){
+    html += '<div class="empty" style="margin-bottom:12px">Transkrypcja działa lokalnie w Twojej przeglądarce (model Whisper) — nic nie wysyłamy na zewnątrz i nie potrzeba klucza API, ale pierwsze użycie pobiera model rozpoznawania mowy (kilkadziesiąt–kilkaset MB, potem zostaje w pamięci podręcznej przeglądarki) i przetwarzanie może chwilę potrwać, zwłaszcza na dłuższych nagraniach.</div>';
+    html += '<button class="btn" '+(videoEditor.processing?"disabled":"")+' onclick="videoTranscribe()">🎤 Transkrybuuj i wygeneruj napisy</button>';
+  } else {
+    if(videoEditor.captionsForIndex!==videoEditor.activeIndex){
+      html += '<div class="stub-note" style="margin-bottom:10px">Uwaga: napisy zostały wygenerowane dla innej wersji wideo (inny krok w historii) — jeśli nagranie się od tego czasu zmieniło (np. wycięto ciszę), rozważ transkrypcję ponownie, żeby czas napisów się zgadzał.</div>';
+    }
+    html += '<div class="empty" style="margin-bottom:10px">Popraw treść lub czas (w sekundach) dowolnego napisu poniżej, zanim wypalisz go na stałe w wideo.</div>';
+    html += '<div style="max-height:340px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:12px">';
+    videoEditor.captions.forEach(function(g){
+      html += '<div class="row" style="gap:6px; align-items:center; flex-wrap:wrap; border:1px solid #2a2830; border-radius:8px; padding:8px">'+
+        '<input type="text" value="'+escapeHtml(g.words.map(function(w){return w.text;}).join(" "))+'" style="flex:1; min-width:160px" onblur="videoCaptionSetText(\''+g.id+'\', this.value)">'+
+        '<input type="number" step="0.1" min="0" value="'+g.start.toFixed(1)+'" style="width:70px" title="Początek (s)" onchange="videoCaptionSetTime(\''+g.id+'\',\'start\',this.value)">'+
+        '<span style="color:var(--muted); font-size:12px">–</span>'+
+        '<input type="number" step="0.1" min="0" value="'+g.end.toFixed(1)+'" style="width:70px" title="Koniec (s)" onchange="videoCaptionSetTime(\''+g.id+'\',\'end\',this.value)">'+
+        '<button class="linklike danger" onclick="videoCaptionDelete(\''+g.id+'\')">Usuń</button>'+
+        '</div>';
+    });
+    html += '</div>';
+    html += '<div class="row" style="gap:8px; flex-wrap:wrap">'+
+      '<button class="btn" '+(videoEditor.processing?"disabled":"")+' onclick="videoBurnCaptions()">🔥 Wypal napisy do wideo</button>'+
+      '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoTranscribe()">🔁 Transkrybuuj ponownie</button>'+
+      '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoCaptionsClear()">Usuń wszystkie</button>'+
+      '</div>';
+  }
+  html += '</div>';
   return html;
 }
 function videoImportFile(inputEl){
@@ -3706,6 +3744,8 @@ function videoImportFile(inputEl){
   videoEditor.statusMsg = "";
   videoEditor.statusIsError = false;
   videoEditor.processing = false;
+  videoEditor.captions = [];
+  videoEditor.captionsForIndex = -1;
   inputEl.value = "";
   renderAll();
 }
@@ -3714,7 +3754,7 @@ function videoEditorDurationLoaded(el){
 }
 function videoResetEditor(){
   if(!confirm("Zamknąć edytor i odrzucić bieżące wideo oraz historię zmian? Nie zostało to zapisane na dysku.")) return;
-  videoEditor = {history:[], activeIndex:-1, fileName:null, inputExt:".mp4", previewDuration:0, statusMsg:"", statusIsError:false, processing:false};
+  videoEditor = {history:[], activeIndex:-1, fileName:null, inputExt:".mp4", previewDuration:0, statusMsg:"", statusIsError:false, processing:false, captions:[], captionsForIndex:-1};
   renderAll();
 }
 function videoUndo(){ if(videoEditor.activeIndex>0){ videoEditor.activeIndex--; renderAll(); } }
@@ -3837,9 +3877,289 @@ function videoCutSilence(thresholdDb, minSilenceMs, paddingMs){
     throw err;
   });
 }
+// ===== Automatyczne napisy: transkrypcja (Whisper, lokalnie w przeglądarce) + edytowalne, animowane napisy słowo-po-słowie =====
+var CAPTION_FONT_SIZE_RATIO = 0.055; // ułamek wysokości wideo
+var CAPTION_MAX_WIDTH_RATIO = 0.86;  // ułamek szerokości wideo, do jakiej mieści się jedna "karta" napisu
+var CAPTION_MAX_WORDS_PER_GROUP = 5;
+var CAPTION_Y_RATIO = 0.72; // pozycja pionowa napisów (od góry)
+var CAPTION_FONT_URL = "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSans/NotoSans-Bold.ttf";
+var __captionFontBuf = null;
+var __captionFontLoadPromise = null;
+function ensureCaptionFont(){
+  if(__captionFontLoadPromise) return __captionFontLoadPromise;
+  __captionFontLoadPromise = fetch(CAPTION_FONT_URL).then(function(r){ return r.arrayBuffer(); }).then(function(buf){
+    __captionFontBuf = buf;
+    var fontFace = new FontFace("MdgtalCaptionFont", buf.slice(0));
+    return fontFace.load();
+  }).then(function(loaded){
+    document.fonts.add(loaded);
+    return true;
+  });
+  return __captionFontLoadPromise;
+}
+function videoCaptionMeasureCtx(fontSize){
+  var canvas = document.createElement("canvas");
+  var ctx = canvas.getContext("2d");
+  ctx.font = "bold "+fontSize+"px MdgtalCaptionFont";
+  return ctx;
+}
+function videoGroupWordsIntoCaptions(words, videoW, videoH){
+  var fontSize = Math.round(videoH * CAPTION_FONT_SIZE_RATIO);
+  var ctx = videoCaptionMeasureCtx(fontSize);
+  var spaceW = ctx.measureText(" ").width;
+  var maxWidth = videoW * CAPTION_MAX_WIDTH_RATIO;
+  var groups = [], cur = [], curWidth = 0;
+  words.forEach(function(w){
+    var wWidth = ctx.measureText(w.text).width;
+    var prospective = curWidth + (cur.length ? spaceW : 0) + wWidth;
+    if(cur.length && (prospective > maxWidth || cur.length >= CAPTION_MAX_WORDS_PER_GROUP)){
+      groups.push(cur);
+      cur = [];
+      curWidth = 0;
+    }
+    curWidth += (cur.length ? spaceW : 0) + wWidth;
+    cur.push(w);
+  });
+  if(cur.length) groups.push(cur);
+  return groups.map(function(g, i){
+    return {
+      id: "cap"+i+"_"+Date.now()+"_"+Math.floor(Math.random()*1e6),
+      start: g[0].start,
+      end: g[g.length-1].end,
+      words: g.map(function(w){ return {text:w.text, start:w.start, end:w.end}; })
+    };
+  });
+}
+var __whisperPipelinePromise = null;
+function ensureWhisperPipeline(){
+  if(__whisperPipelinePromise) return __whisperPipelinePromise;
+  __whisperPipelinePromise = import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2").then(function(mod){
+    return mod.pipeline("automatic-speech-recognition", "Xenova/whisper-small", {
+      progress_callback: function(p){
+        if(p && p.status==="progress" && p.file){
+          var pct = Math.round(p.progress||0);
+          videoSetStatus("Pobieram model rozpoznawania mowy (jednorazowo, potem zostaje w przeglądarce)… "+p.file+" "+pct+"%", true);
+        } else if(p && p.status==="ready"){
+          videoSetStatus("Model gotowy, transkrybuję…", true);
+        }
+      }
+    });
+  });
+  return __whisperPipelinePromise;
+}
+function videoParseResolutionLog(text){
+  var m = text.match(/Video:[^\n]*?(\d{2,5})x(\d{2,5})/);
+  if(m) return {w:parseInt(m[1],10), h:parseInt(m[2],10)};
+  return null;
+}
+function videoExtractAudioForTranscription(){
+  var current = videoEditor.history[videoEditor.activeIndex];
+  var inName = "capin"+videoEditor.inputExt;
+  return ensureFfmpeg().then(function(ffmpeg){
+    return current.blob.arrayBuffer().then(function(buf){
+      return ffmpeg.writeFile(inName, new Uint8Array(buf));
+    }).then(function(){
+      __ffmpegLogBuffer.length = 0;
+      return ffmpeg.exec(["-i", inName, "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", "capaudio.wav"]);
+    }).then(function(){
+      // ffmpeg always logs the input's full stream info (incl. video resolution) on startup,
+      // even though this pass only extracts audio — parse it here instead of trusting the DOM
+      // <video> element's videoWidth/videoHeight, which can still be 0 (metadata not loaded yet,
+      // e.g. a backgrounded tab) when the user triggers transcription right after import.
+      var res = videoParseResolutionLog(__ffmpegLogBuffer.join("\n")) || {w:1080, h:1920};
+      return ffmpeg.readFile("capaudio.wav").then(function(data){
+        var blob = new Blob([data.buffer], {type:"audio/wav"});
+        var audioCtx = new AudioContext({sampleRate:16000});
+        return blob.arrayBuffer().then(function(ab){ return audioCtx.decodeAudioData(ab); }).then(function(decoded){
+          return {audio: decoded.getChannelData(0), duration: decoded.duration, videoW: res.w, videoH: res.h};
+        });
+      });
+    });
+  });
+}
+function videoFixDegenerateTimestamps(words, dur){
+  // Whisper's per-word timestamp alignment occasionally collapses (nearly all words get ~the same
+  // timestamp) on some real-world audio (observed with lossy-encoded/AAC-sourced audio) — detect that
+  // degenerate case and fall back to an even, character-length-weighted spread across the real duration
+  // rather than shipping obviously-wrong (e.g. all-identical) caption timing.
+  var distinctStarts = {};
+  words.forEach(function(w){ distinctStarts[w.start.toFixed(1)] = true; });
+  var distinctCount = Object.keys(distinctStarts).length;
+  var degenerate = words.length>=3 && distinctCount <= Math.max(1, Math.ceil(words.length*0.2));
+  if(!degenerate) return false;
+  var totalChars = words.reduce(function(n,w){ return n+w.text.length+1; }, 0) || words.length;
+  var cursor = 0;
+  words.forEach(function(w){
+    var span = ((w.text.length+1)/totalChars) * dur;
+    w.start = cursor;
+    w.end = Math.min(dur, cursor+span);
+    cursor = w.end;
+  });
+  return true;
+}
+function videoTranscribe(){
+  if(!videoEditor.history.length || videoEditor.processing) return;
+  videoSetStatus("Wczytuję silnik wideo i wyodrębniam ścieżkę dźwiękową…", true);
+  Promise.all([videoExtractAudioForTranscription(), ensureCaptionFont()]).then(function(results){
+    var audioData = results[0];
+    var videoW = audioData.videoW || 1080;
+    var videoH = audioData.videoH || 1920;
+    return ensureWhisperPipeline().then(function(transcriber){
+      videoSetStatus("Transkrybuję nagranie (pierwsze uruchomienie modelu bywa wolniejsze)…", true);
+      return transcriber(audioData.audio, {
+        language: "polish",
+        task: "transcribe",
+        return_timestamps: "word"
+      }).then(function(result){
+        var dur = audioData.duration;
+        var words = (result.chunks||[]).map(function(c){
+          var s = (c.timestamp && c.timestamp[0]!=null) ? c.timestamp[0] : 0;
+          var e = (c.timestamp && c.timestamp[1]!=null) ? c.timestamp[1] : Math.min(dur, s+1);
+          s = Math.max(0, Math.min(s, dur));
+          e = Math.max(0, Math.min(e, dur));
+          if(e<=s) e = Math.min(dur, s+0.2);
+          return {text:(c.text||"").trim(), start:s, end:e};
+        }).filter(function(w){ return w.text; });
+        if(!words.length){
+          throw new Error("Nie wykryto mowy w tym nagraniu.");
+        }
+        var approximated = videoFixDegenerateTimestamps(words, dur);
+        videoEditor.captions = videoGroupWordsIntoCaptions(words, videoW, videoH);
+        videoEditor.captionsForIndex = videoEditor.activeIndex;
+        videoEditor.captionVideoW = videoW;
+        videoEditor.captionVideoH = videoH;
+        var msg = "Gotowe — napisy wygenerowane ("+videoEditor.captions.length+"). Sprawdź i popraw poniżej przed wypaleniem.";
+        if(approximated) msg += " Uwaga: model nie zwrócił wiarygodnych znaczników czasu dla poszczególnych słów, więc czas napisów jest przybliżony (rozłożony równomiernie) — popraw ręcznie w razie potrzeby.";
+        videoSetStatus(msg, false);
+      });
+    });
+  }).catch(function(err){
+    videoSetStatus("Błąd transkrypcji: "+((err && err.message) || err), false, true);
+  });
+}
+function videoCaptionPreviewTick(videoEl){
+  var overlay = document.getElementById("videoCaptionOverlay");
+  if(!overlay) return;
+  if(!videoEditor.captions || !videoEditor.captions.length){ overlay.innerHTML=""; return; }
+  var t = videoEl.currentTime;
+  var active = null;
+  for(var i=0;i<videoEditor.captions.length;i++){
+    var g = videoEditor.captions[i];
+    if(t>=g.start && t<=g.end){ active = g; break; }
+  }
+  if(!active){ overlay.innerHTML=""; return; }
+  overlay.innerHTML = active.words.map(function(w){
+    var isActive = t>=w.start && t<=w.end;
+    return '<span style="color:'+(isActive?"#cf9b4a":"#fff")+'">'+escapeHtml(w.text)+'</span>';
+  }).join(' ');
+}
+function videoCaptionSetText(groupId, newText){
+  var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
+  if(!g) return;
+  var newWords = newText.split(/\s+/).filter(Boolean);
+  if(!newWords.length) newWords = ["…"];
+  var span = g.end - g.start;
+  var per = span / newWords.length;
+  g.words = newWords.map(function(t, i){
+    return {text:t, start: g.start + per*i, end: g.start + per*(i+1)};
+  });
+  renderAll();
+}
+function videoCaptionSetTime(groupId, field, value){
+  var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
+  if(!g) return;
+  var v = parseFloat(value);
+  if(isNaN(v)) { renderAll(); return; }
+  if(field==="start"){
+    if(v>=g.end) { renderAll(); return; }
+    var delta = v - g.start;
+    g.start = v;
+    g.words.forEach(function(w){ w.start += delta; w.end += delta; });
+  } else {
+    if(v<=g.start) { renderAll(); return; }
+    var oldSpan = g.end - g.start;
+    var newSpan = v - g.start;
+    var scale = newSpan/oldSpan;
+    g.words.forEach(function(w){
+      w.start = g.start + (w.start-g.start)*scale;
+      w.end = g.start + (w.end-g.start)*scale;
+    });
+    g.end = v;
+  }
+  renderAll();
+}
+function videoCaptionDelete(groupId){
+  videoEditor.captions = (videoEditor.captions||[]).filter(function(x){ return x.id!==groupId; });
+  renderAll();
+}
+function videoCaptionsClear(){
+  if(!confirm("Usunąć wszystkie wygenerowane napisy?")) return;
+  videoEditor.captions = [];
+  videoEditor.captionsForIndex = -1;
+  renderAll();
+}
+function ffDrawtextEscape(s){
+  return String(s).replace(/\\/g,"\\\\\\\\").replace(/:/g,"\\:").replace(/'/g,"’").replace(/%/g,"\\%");
+}
+function videoBuildCaptionFilter(captions, videoW, videoH){
+  var fontSize = Math.round(videoH * CAPTION_FONT_SIZE_RATIO);
+  var ctx = videoCaptionMeasureCtx(fontSize);
+  var spaceW = ctx.measureText(" ").width;
+  var y = Math.round(videoH * CAPTION_Y_RATIO);
+  var filters = [];
+  captions.forEach(function(group){
+    var widths = group.words.map(function(w){ return ctx.measureText(w.text).width; });
+    var totalWidth = widths.reduce(function(a,b){return a+b;},0) + spaceW*(group.words.length-1);
+    var x = Math.round((videoW-totalWidth)/2);
+    group.words.forEach(function(w, i){
+      var wx = Math.round(x);
+      var txt = ffDrawtextEscape(w.text);
+      filters.push("drawtext=fontfile=mdgtalcaption.ttf:text='"+txt+"':fontsize="+fontSize+":fontcolor=white:borderw=6:bordercolor=black@0.85:x="+wx+":y="+y+":enable='between(t,"+group.start+","+group.end+")'");
+      filters.push("drawtext=fontfile=mdgtalcaption.ttf:text='"+txt+"':fontsize="+fontSize+":fontcolor=0xcf9b4a:borderw=6:bordercolor=black@0.85:x="+wx+":y="+y+":enable='between(t,"+w.start+","+w.end+")'");
+      x += widths[i] + spaceW;
+    });
+  });
+  return filters.join(",");
+}
+function videoBurnCaptions(){
+  if(!videoEditor.captions || !videoEditor.captions.length || videoEditor.processing) return;
+  var current = videoEditor.history[videoEditor.activeIndex];
+  var inName = "burnin"+videoEditor.inputExt;
+  // reuse the exact resolution the captions were grouped/positioned against (probed via ffmpeg at
+  // transcription time) rather than the DOM <video> element, which may not have loaded metadata yet.
+  var videoW = videoEditor.captionVideoW || 1080;
+  var videoH = videoEditor.captionVideoH || 1920;
+  var wordCount = videoEditor.captions.reduce(function(n,g){ return n+g.words.length; }, 0);
+  videoSetStatus("Wczytuję silnik wideo…", true);
+  ensureCaptionFont().then(function(){
+    return ensureFfmpeg();
+  }).then(function(ffmpeg){
+    return ffmpeg.writeFile("mdgtalcaption.ttf", new Uint8Array(__captionFontBuf.slice(0))).then(function(){
+      return current.blob.arrayBuffer();
+    }).then(function(buf){
+      return ffmpeg.writeFile(inName, new Uint8Array(buf));
+    }).then(function(){
+      var vf = videoBuildCaptionFilter(videoEditor.captions, videoW, videoH);
+      videoSetStatus("Wypalam napisy w wideo ("+wordCount+" słów)… to może potrwać dłużej niż inne operacje.", true);
+      return ffmpeg.exec(["-i", inName, "-vf", vf, "-c:v","libx264","-preset","ultrafast","-crf","23","-pix_fmt","yuv420p","-c:a","copy","burnout.mp4"]);
+    }).then(function(){
+      return ffmpeg.readFile("burnout.mp4");
+    }).then(function(data){
+      var blob = new Blob([data.buffer], {type:"video/mp4"});
+      var url = URL.createObjectURL(blob);
+      videoPushHistoryStep({label:"Wypalono napisy", blobUrl:url, blob:blob, note:videoEditor.captions.length+" napisów, "+wordCount+" słów"});
+      videoSetStatus("Gotowe — napisy wypalone w wideo.", false);
+    });
+  }).catch(function(err){
+    videoSetStatus("Błąd wypalania napisów: "+((err && err.message) || err), false, true);
+  });
+}
 function videoExecuteAction(action){
   if(action.type==="cut_silence"){
     return videoCutSilence(action.threshold_db, action.min_silence_ms, action.padding_ms);
+  }
+  if(action.type==="add_captions"){
+    return videoTranscribe();
   }
   return Promise.resolve();
 }
