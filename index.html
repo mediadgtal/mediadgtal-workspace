@@ -3712,16 +3712,36 @@ function videoCaptionsPanel(){
   html += '<h3>🎤 Automatyczne napisy</h3>';
   if(!videoEditor.captions || !videoEditor.captions.length){
     html += '<div class="empty" style="margin-bottom:12px">Transkrypcja działa lokalnie w Twojej przeglądarce (model Whisper) — nic nie wysyłamy na zewnątrz i nie potrzeba klucza API, ale pierwsze użycie pobiera model rozpoznawania mowy (kilkadziesiąt–kilkaset MB, potem zostaje w pamięci podręcznej przeglądarki) i przetwarzanie może chwilę potrwać, zwłaszcza na dłuższych nagraniach.</div>';
-    html += '<button class="btn" '+(videoEditor.processing?"disabled":"")+' onclick="videoTranscribe()">🎤 Transkrybuuj i wygeneruj napisy</button>';
+    html += '<div class="row" style="gap:8px; flex-wrap:wrap">'+
+      '<button class="btn" '+(videoEditor.processing?"disabled":"")+' onclick="videoTranscribe()">🎤 Transkrybuuj i wygeneruj napisy</button>'+
+      '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoCaptionAddNew()">+ Dodaj napis ręcznie</button>'+
+      '</div>';
   } else {
     if(videoEditor.captionsForIndex!==videoEditor.activeIndex){
       html += '<div class="stub-note" style="margin-bottom:10px">Uwaga: napisy zostały wygenerowane dla innej wersji wideo (inny krok w historii) — jeśli nagranie się od tego czasu zmieniło (np. wycięto ciszę), rozważ transkrypcję ponownie, żeby czas napisów się zgadzał.</div>';
     }
-    html += '<div class="empty" style="margin-bottom:10px">Popraw treść lub czas (w sekundach) dowolnego napisu poniżej, zanim wypalisz go na stałe w wideo.</div>';
+    var style = videoCaptionStyle();
+    html += '<div class="row" style="gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:12px; padding:10px; border:1px solid #2a2830; border-radius:8px">'+
+      '<label style="display:flex; align-items:center; gap:6px; font-size:13px">Kolor tekstu '+
+        '<input type="color" value="'+escapeHtml(style.textColor)+'" style="width:34px; height:28px; padding:0; border:none; background:none" onchange="videoCaptionSetColor(\'text\', this.value)">'+
+        '<input type="text" value="'+escapeHtml(style.textColor)+'" style="width:80px" maxlength="7" onchange="videoCaptionSetColor(\'text\', this.value)">'+
+      '</label>'+
+      '<label style="display:flex; align-items:center; gap:6px; font-size:13px">Kolor podświetlenia '+
+        '<input type="color" value="'+escapeHtml(style.highlightColor)+'" style="width:34px; height:28px; padding:0; border:none; background:none" onchange="videoCaptionSetColor(\'highlight\', this.value)">'+
+        '<input type="text" value="'+escapeHtml(style.highlightColor)+'" style="width:80px" maxlength="7" onchange="videoCaptionSetColor(\'highlight\', this.value)">'+
+      '</label>'+
+      '<label style="display:flex; align-items:center; gap:6px; font-size:13px" title="Gdy zaznaczone, zmiana rozmiaru czcionki przy dowolnym napisie (lub przyciskami A−/A+ nad podglądem) ustawia ten sam rozmiar dla wszystkich napisów.">'+
+        '<input type="checkbox" '+(videoEditor.applyFontSizeToAll?"checked":"")+' onchange="videoCaptionToggleApplyAll(this.checked)"> Rozmiar czcionki: zastosuj do wszystkich'+
+      '</label>'+
+      '</div>';
+    html += '<div class="empty" style="margin-bottom:10px">Popraw treść, rozmiar czcionki (% wysokości wideo) lub czas (w sekundach) dowolnego napisu poniżej, zanim wypalisz go na stałe w wideo. Pozycję góra/dół zmienisz przeciągając napis na podglądzie powyżej.</div>';
     html += '<div style="max-height:340px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:12px">';
     videoEditor.captions.forEach(function(g){
+      var effSize = (videoCaptionEffectiveFontSize(g)*100).toFixed(1);
       html += '<div class="row" style="gap:6px; align-items:center; flex-wrap:wrap; border:1px solid #2a2830; border-radius:8px; padding:8px">'+
         '<input type="text" value="'+escapeHtml(g.words.map(function(w){return w.text;}).join(" "))+'" style="flex:1; min-width:160px" onblur="videoCaptionSetText(\''+g.id+'\', this.value)">'+
+        '<input type="number" step="0.5" min="2" max="14" value="'+effSize+'" style="width:60px" title="Rozmiar czcionki (% wysokości wideo)" onchange="videoCaptionSetFontSize(\''+g.id+'\',this.value)">'+
+        '<span style="color:var(--muted); font-size:11px">%</span>'+
         '<input type="number" step="0.1" min="0" value="'+g.start.toFixed(1)+'" style="width:70px" title="Początek (s)" onchange="videoCaptionSetTime(\''+g.id+'\',\'start\',this.value)">'+
         '<span style="color:var(--muted); font-size:12px">–</span>'+
         '<input type="number" step="0.1" min="0" value="'+g.end.toFixed(1)+'" style="width:70px" title="Koniec (s)" onchange="videoCaptionSetTime(\''+g.id+'\',\'end\',this.value)">'+
@@ -3730,6 +3750,7 @@ function videoCaptionsPanel(){
     });
     html += '</div>';
     html += '<div class="row" style="gap:8px; flex-wrap:wrap">'+
+      '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoCaptionAddNew()">+ Dodaj napis (w bieżącym momencie wideo)</button>'+
       '<button class="btn" '+(videoEditor.processing?"disabled":"")+' onclick="videoBurnCaptions()">🔥 Wypal napisy do wideo</button>'+
       '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoTranscribe()">🔁 Transkrybuuj ponownie</button>'+
       '<button class="btn secondary" '+(videoEditor.processing?"disabled":"")+' onclick="videoCaptionsClear()">Usuń wszystkie</button>'+
@@ -4063,18 +4084,31 @@ function videoTranscribe(){
     videoSetStatus("Błąd transkrypcji: "+((err && err.message) || err), false, true);
   });
 }
+function renderAllKeepPageScroll(){
+  var y = window.scrollY;
+  renderAll();
+  window.scrollTo(0, y);
+}
 function videoCaptionStyle(){
-  return videoEditor.captionStyle || {yRatio:0.72, fontSizeRatio:0.055};
+  if(!videoEditor.captionStyle) videoEditor.captionStyle = {};
+  var s = videoEditor.captionStyle;
+  if(s.yRatio==null) s.yRatio = 0.72;
+  if(s.fontSizeRatio==null) s.fontSizeRatio = 0.055;
+  if(!s.textColor) s.textColor = "#ffffff";
+  if(!s.highlightColor) s.highlightColor = "#cf9b4a";
+  return s;
+}
+function videoCaptionEffectiveFontSize(g){
+  var style = videoCaptionStyle();
+  return (g && g.fontSizeRatio!=null) ? g.fontSizeRatio : style.fontSizeRatio;
 }
 function videoCaptionPreviewTick(videoEl){
   var overlay = document.getElementById("videoCaptionOverlay");
   if(!overlay || !videoEl) return;
   var style = videoCaptionStyle();
   var h = videoEl.clientHeight || 480;
-  var fontPx = Math.max(11, Math.round(h * style.fontSizeRatio));
   overlay.style.top = Math.round(h * style.yRatio) + "px";
   overlay.style.transform = "translateY(-50%)";
-  overlay.style.fontSize = fontPx + "px";
   overlay.style.fontWeight = "700";
   overlay.style.lineHeight = "1.3";
   overlay.style.textShadow = "0 0 6px #000, 0 2px 3px #000";
@@ -4086,9 +4120,11 @@ function videoCaptionPreviewTick(videoEl){
     if(t>=g.start && t<=g.end){ active = g; break; }
   }
   if(!active){ overlay.innerHTML=""; return; }
+  var fontPx = Math.max(11, Math.round(h * videoCaptionEffectiveFontSize(active)));
+  overlay.style.fontSize = fontPx + "px";
   var wordsHtml = active.words.map(function(w){
     var isActive = t>=w.start && t<=w.end;
-    return '<span style="color:'+(isActive?"#cf9b4a":"#fff")+'">'+escapeHtml(w.text)+'</span>';
+    return '<span style="color:'+(isActive?style.highlightColor:style.textColor)+'">'+escapeHtml(w.text)+'</span>';
   }).join(' ');
   overlay.innerHTML = '<div style="display:inline-block; pointer-events:auto; cursor:grab; touch-action:none; padding:4px 10px; border-radius:6px" onpointerdown="videoCaptionDragStart(event)">'+wordsHtml+'</div>';
 }
@@ -4104,8 +4140,7 @@ function videoCaptionDragStart(ev){
   function onMove(e){
     var ratio = (e.clientY - rect.top) / rect.height;
     ratio = Math.max(0.06, Math.min(0.94, ratio));
-    videoEditor.captionStyle = videoCaptionStyle();
-    videoEditor.captionStyle.yRatio = ratio;
+    videoCaptionStyle().yRatio = ratio;
     videoCaptionPreviewTick(videoEl);
   }
   function onUp(){
@@ -4117,10 +4152,55 @@ function videoCaptionDragStart(ev){
 }
 function videoCaptionResizeFont(dir){
   var style = videoCaptionStyle();
-  style.fontSizeRatio = Math.max(0.025, Math.min(0.11, style.fontSizeRatio + dir*0.006));
-  videoEditor.captionStyle = style;
+  style.fontSizeRatio = Math.max(0.02, Math.min(0.14, style.fontSizeRatio + dir*0.006));
+  (videoEditor.captions||[]).forEach(function(g){ delete g.fontSizeRatio; });
+  renderAllKeepPageScroll();
+}
+function videoCaptionToggleApplyAll(checked){
+  videoEditor.applyFontSizeToAll = !!checked;
+}
+function videoCaptionSetFontSize(groupId, value){
+  var v = parseFloat(value);
+  if(isNaN(v)) { renderAllKeepPageScroll(); return; }
+  var ratio = Math.max(2, Math.min(14, v)) / 100;
+  if(videoEditor.applyFontSizeToAll){
+    videoCaptionStyle().fontSizeRatio = ratio;
+    (videoEditor.captions||[]).forEach(function(g){ delete g.fontSizeRatio; });
+  } else {
+    var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
+    if(g) g.fontSizeRatio = ratio;
+  }
+  renderAllKeepPageScroll();
+}
+function videoCaptionSetColor(which, value){
+  var v = (value||"").trim();
+  if(v.charAt(0)!=="#") v = "#"+v;
+  if(!/^#[0-9a-fA-F]{6}$/.test(v)){ renderAllKeepPageScroll(); return; }
+  var style = videoCaptionStyle();
+  if(which==="text") style.textColor = v; else style.highlightColor = v;
+  renderAllKeepPageScroll();
+}
+function videoCaptionAddNew(){
   var videoEl = document.getElementById("videoPreviewEl");
-  if(videoEl) videoCaptionPreviewTick(videoEl);
+  var t = (videoEl && videoEl.currentTime) || 0;
+  var dur = 1.5;
+  if(!videoEditor.captions || !videoEditor.captions.length){
+    videoEditor.captionsForIndex = videoEditor.activeIndex;
+  }
+  var newGroup = {
+    id: "capnew_"+Date.now()+"_"+Math.floor(Math.random()*1e6),
+    start: t, end: t+dur,
+    words: [{text:"Nowy napis", start:t, end:t+dur}]
+  };
+  // later caption windows shift forward in time so the new one doesn't overlap what follows it
+  (videoEditor.captions||[]).forEach(function(g){
+    if(g.start >= t){
+      g.start += dur; g.end += dur;
+      g.words.forEach(function(w){ w.start += dur; w.end += dur; });
+    }
+  });
+  videoEditor.captions = (videoEditor.captions||[]).concat([newGroup]).sort(function(a,b){ return a.start-b.start; });
+  renderAllKeepPageScroll();
 }
 function videoCaptionSetText(groupId, newText){
   var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
@@ -4132,20 +4212,20 @@ function videoCaptionSetText(groupId, newText){
   g.words = newWords.map(function(t, i){
     return {text:t, start: g.start + per*i, end: g.start + per*(i+1)};
   });
-  renderAll();
+  renderAllKeepPageScroll();
 }
 function videoCaptionSetTime(groupId, field, value){
   var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
   if(!g) return;
   var v = parseFloat(value);
-  if(isNaN(v)) { renderAll(); return; }
+  if(isNaN(v)) { renderAllKeepPageScroll(); return; }
   if(field==="start"){
-    if(v>=g.end) { renderAll(); return; }
+    if(v>=g.end) { renderAllKeepPageScroll(); return; }
     var delta = v - g.start;
     g.start = v;
     g.words.forEach(function(w){ w.start += delta; w.end += delta; });
   } else {
-    if(v<=g.start) { renderAll(); return; }
+    if(v<=g.start) { renderAllKeepPageScroll(); return; }
     var oldSpan = g.end - g.start;
     var newSpan = v - g.start;
     var scale = newSpan/oldSpan;
@@ -4155,39 +4235,46 @@ function videoCaptionSetTime(groupId, field, value){
     });
     g.end = v;
   }
-  renderAll();
+  renderAllKeepPageScroll();
 }
 function videoCaptionDelete(groupId){
   videoEditor.captions = (videoEditor.captions||[]).filter(function(x){ return x.id!==groupId; });
-  renderAll();
+  renderAllKeepPageScroll();
 }
 function videoCaptionsClear(){
   if(!confirm("Usunąć wszystkie wygenerowane napisy?")) return;
   videoEditor.captions = [];
   videoEditor.captionsForIndex = -1;
-  renderAll();
+  renderAllKeepPageScroll();
 }
 function ffDrawtextEscape(s){
   return String(s).replace(/\\/g,"\\\\\\\\").replace(/:/g,"\\:").replace(/'/g,"’").replace(/%/g,"\\%");
 }
+function videoHexToFfColor(hex){
+  var h = (hex||"#ffffff").replace("#","");
+  if(h.length===3) h = h.split("").map(function(c){return c+c;}).join("");
+  return "0x"+h;
+}
 function videoBuildCaptionFilter(captions, videoW, videoH){
   var style = videoCaptionStyle();
-  var fontSize = Math.round(videoH * style.fontSizeRatio);
-  var ctx = videoCaptionMeasureCtx(fontSize);
-  var spaceW = ctx.measureText(" ").width;
-  // yRatio marks the vertical CENTER of the caption (matches the live preview's translateY(-50%)),
-  // drawtext's y is the top of the text box, so offset up by roughly half the font's rendered height.
-  var y = Math.round(videoH * style.yRatio - fontSize*0.6);
+  var textColor = videoHexToFfColor(style.textColor);
+  var highlightColor = videoHexToFfColor(style.highlightColor);
   var filters = [];
   captions.forEach(function(group){
+    var fontSize = Math.round(videoH * videoCaptionEffectiveFontSize(group));
+    var ctx = videoCaptionMeasureCtx(fontSize);
+    var spaceW = ctx.measureText(" ").width;
+    // yRatio marks the vertical CENTER of the caption (matches the live preview's translateY(-50%)),
+    // drawtext's y is the top of the text box, so offset up by roughly half the font's rendered height.
+    var y = Math.round(videoH * style.yRatio - fontSize*0.6);
     var widths = group.words.map(function(w){ return ctx.measureText(w.text).width; });
     var totalWidth = widths.reduce(function(a,b){return a+b;},0) + spaceW*(group.words.length-1);
     var x = Math.round((videoW-totalWidth)/2);
     group.words.forEach(function(w, i){
       var wx = Math.round(x);
       var txt = ffDrawtextEscape(w.text);
-      filters.push("drawtext=fontfile=mdgtalcaption.ttf:text='"+txt+"':fontsize="+fontSize+":fontcolor=white:borderw=6:bordercolor=black@0.85:x="+wx+":y="+y+":enable='between(t,"+group.start+","+group.end+")'");
-      filters.push("drawtext=fontfile=mdgtalcaption.ttf:text='"+txt+"':fontsize="+fontSize+":fontcolor=0xcf9b4a:borderw=6:bordercolor=black@0.85:x="+wx+":y="+y+":enable='between(t,"+w.start+","+w.end+")'");
+      filters.push("drawtext=fontfile=mdgtalcaption.ttf:text='"+txt+"':fontsize="+fontSize+":fontcolor="+textColor+":borderw=6:bordercolor=black@0.85:x="+wx+":y="+y+":enable='between(t,"+group.start+","+group.end+")'");
+      filters.push("drawtext=fontfile=mdgtalcaption.ttf:text='"+txt+"':fontsize="+fontSize+":fontcolor="+highlightColor+":borderw=6:bordercolor=black@0.85:x="+wx+":y="+y+":enable='between(t,"+w.start+","+w.end+")'");
       x += widths[i] + spaceW;
     });
   });
