@@ -3696,7 +3696,7 @@ function renderPostyWideo(){
     '</div>';
   if(!hasKey){ html += renderClientOpsApiKeySettings(); }
 
-  html += videoCaptionsPanel();
+  html += '<div id="videoCaptionsPanelRoot">'+videoCaptionsPanel()+'</div>';
 
   html += '<div class="card" style="margin-top:16px">'+
     '<h3>Eksport</h3>'+
@@ -3741,6 +3741,7 @@ function videoCaptionsPanel(){
         '<input type="number" step="0.1" min="0" value="'+g.start.toFixed(1)+'" style="width:70px" title="Początek (s)" onchange="videoCaptionSetTime(\''+g.id+'\',\'start\',this.value)">'+
         '<span style="color:var(--muted); font-size:12px">–</span>'+
         '<input type="number" step="0.1" min="0" value="'+g.end.toFixed(1)+'" style="width:70px" title="Koniec (s)" onchange="videoCaptionSetTime(\''+g.id+'\',\'end\',this.value)">'+
+        '<button class="linklike" onclick="videoCaptionInsertAfter(\''+g.id+'\')" title="Wstaw nowy napis zaraz po tym, kolejne napisy przesuną się w czasie">+ Dodaj po tym</button>'+
         '<button class="linklike danger" onclick="videoCaptionDelete(\''+g.id+'\')">Usuń</button>'+
         '</div>';
     });
@@ -4084,12 +4085,26 @@ function renderAllKeepPageScroll(){
   var y = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop;
   renderAll();
   window.scrollTo(0, y);
-  // A single synchronous scrollTo can still get overridden a moment later by the browser's own
-  // focus/keyboard-dismissal scroll adjustment after an <input> blur/change — reassert on the next
-  // frame and shortly after as a defensive belt-and-suspenders fix (confirmed still jumping with
-  // just the synchronous call alone).
   requestAnimationFrame(function(){ window.scrollTo(0, y); });
   setTimeout(function(){ window.scrollTo(0, y); }, 60);
+}
+// Editing captions used to go through a full renderAll() (rebuilding the entire page's #content),
+// which kept jumping the scroll position back to the top on real interactive use even with the
+// scroll-restoring wrapper above — restoring scroll after tearing down/rebuilding the whole page is
+// fundamentally fragile. Fix: re-render ONLY the captions panel's own DOM subtree, leaving the rest
+// of the page (and its scroll position) completely untouched. The A−/A+ buttons and drag-hint note
+// above the video live outside this subtree and only need to appear/disappear when captions go from
+// none to some (or vice versa) — that structural change still uses the full (scroll-preserving) render.
+function videoRerenderCaptionsPanel(hadCaptionsBefore){
+  var hasCaptionsNow = !!(videoEditor.captions && videoEditor.captions.length);
+  if(hadCaptionsBefore !== hasCaptionsNow){
+    renderAllKeepPageScroll();
+    return;
+  }
+  var root = document.getElementById("videoCaptionsPanelRoot");
+  if(root) root.innerHTML = videoCaptionsPanel();
+  var videoEl = document.getElementById("videoPreviewEl");
+  if(videoEl) videoCaptionPreviewTick(videoEl);
 }
 function videoCaptionStyle(){
   if(!videoEditor.captionStyle) videoEditor.captionStyle = {};
@@ -4151,17 +4166,19 @@ function videoCaptionDragStart(ev){
   document.addEventListener("pointerup", onUp);
 }
 function videoCaptionResizeFont(dir){
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
   var style = videoCaptionStyle();
   style.fontSizeRatio = Math.max(0.02, Math.min(0.14, style.fontSizeRatio + dir*0.006));
   (videoEditor.captions||[]).forEach(function(g){ delete g.fontSizeRatio; });
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
 }
 function videoCaptionToggleApplyAll(checked){
   videoEditor.applyFontSizeToAll = !!checked;
 }
 function videoCaptionSetFontSize(groupId, value){
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
   var v = parseFloat(value);
-  if(isNaN(v)) { renderAllKeepPageScroll(); return; }
+  if(isNaN(v)) { videoRerenderCaptionsPanel(had); return; }
   var ratio = Math.max(2, Math.min(14, v)) / 100;
   if(videoEditor.applyFontSizeToAll){
     videoCaptionStyle().fontSizeRatio = ratio;
@@ -4170,19 +4187,18 @@ function videoCaptionSetFontSize(groupId, value){
     var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
     if(g) g.fontSizeRatio = ratio;
   }
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
 }
 function videoCaptionSetColor(which, value){
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
   var v = (value||"").trim();
   if(v.charAt(0)!=="#") v = "#"+v;
-  if(!/^#[0-9a-fA-F]{6}$/.test(v)){ renderAllKeepPageScroll(); return; }
+  if(!/^#[0-9a-fA-F]{6}$/.test(v)){ videoRerenderCaptionsPanel(had); return; }
   var style = videoCaptionStyle();
   style.textColor = v;
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
 }
-function videoCaptionAddNew(){
-  var videoEl = document.getElementById("videoPreviewEl");
-  var t = (videoEl && videoEl.currentTime) || 0;
+function videoCaptionInsertGroup(t, had){
   var dur = 1.5;
   if(!videoEditor.captions || !videoEditor.captions.length){
     videoEditor.captionsForIndex = videoEditor.activeIndex;
@@ -4200,9 +4216,24 @@ function videoCaptionAddNew(){
     }
   });
   videoEditor.captions = (videoEditor.captions||[]).concat([newGroup]).sort(function(a,b){ return a.start-b.start; });
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
+}
+function videoCaptionAddNew(){
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
+  var videoEl = document.getElementById("videoPreviewEl");
+  var t = (videoEl && videoEl.currentTime) || 0;
+  videoCaptionInsertGroup(t, had);
+}
+function videoCaptionInsertAfter(groupId){
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
+  var anchor = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
+  if(!anchor) return;
+  // anchored to the END of a specific caption (not a scrubbed video position) so the new caption
+  // never lands mid-way through another one and needs no overlap resolution.
+  videoCaptionInsertGroup(anchor.end, had);
 }
 function videoCaptionSetText(groupId, newText){
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
   var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
   if(!g) return;
   var newWords = newText.split(/\s+/).filter(Boolean);
@@ -4212,20 +4243,29 @@ function videoCaptionSetText(groupId, newText){
   g.words = newWords.map(function(t, i){
     return {text:t, start: g.start + per*i, end: g.start + per*(i+1)};
   });
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
 }
 function videoCaptionSetTime(groupId, field, value){
-  var g = (videoEditor.captions||[]).filter(function(x){ return x.id===groupId; })[0];
-  if(!g) return;
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
+  var caps = videoEditor.captions||[];
+  var idx = caps.findIndex(function(x){ return x.id===groupId; });
+  if(idx===-1) return;
+  var g = caps[idx];
   var v = parseFloat(value);
-  if(isNaN(v)) { renderAllKeepPageScroll(); return; }
+  if(isNaN(v)) { videoRerenderCaptionsPanel(had); return; }
+  // never let a manual edit overlap the neighboring caption — that was silently causing two
+  // captions to be "active" for the same moment (whichever the code found first would win),
+  // which is exactly the kind of drift-vs-audio the edits are supposed to fix, not cause.
+  var prev = caps[idx-1], next = caps[idx+1];
   if(field==="start"){
-    if(v>=g.end) { renderAllKeepPageScroll(); return; }
+    var minStart = prev ? prev.end : 0;
+    v = Math.max(minStart, Math.min(v, g.end-0.1));
     var delta = v - g.start;
     g.start = v;
     g.words.forEach(function(w){ w.start += delta; w.end += delta; });
   } else {
-    if(v<=g.start) { renderAllKeepPageScroll(); return; }
+    var maxEnd = next ? next.start : Infinity;
+    v = Math.min(maxEnd, Math.max(v, g.start+0.1));
     var oldSpan = g.end - g.start;
     var newSpan = v - g.start;
     var scale = newSpan/oldSpan;
@@ -4235,17 +4275,19 @@ function videoCaptionSetTime(groupId, field, value){
     });
     g.end = v;
   }
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
 }
 function videoCaptionDelete(groupId){
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
   videoEditor.captions = (videoEditor.captions||[]).filter(function(x){ return x.id!==groupId; });
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
 }
 function videoCaptionsClear(){
   if(!confirm("Usunąć wszystkie wygenerowane napisy?")) return;
+  var had = !!(videoEditor.captions && videoEditor.captions.length);
   videoEditor.captions = [];
   videoEditor.captionsForIndex = -1;
-  renderAllKeepPageScroll();
+  videoRerenderCaptionsPanel(had);
 }
 function ffDrawtextEscape(s){
   return String(s).replace(/\\/g,"\\\\\\\\").replace(/:/g,"\\:").replace(/'/g,"’").replace(/%/g,"\\%");
