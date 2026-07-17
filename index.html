@@ -1088,6 +1088,39 @@ function migrateState(s){
   if(!s.clientOps.clients) s.clientOps.clients = [];
   if(!s.clientOps.tasks) s.clientOps.tasks = [];
   if(!s.clientOps.screenshots) s.clientOps.screenshots = [];
+  if(!s.clientOps.historia) s.clientOps.historia = [];
+  if(!s.clientOps.wyniki) s.clientOps.wyniki = [];
+  if(!s.clientOps.platnosci) s.clientOps.platnosci = [];
+  // Rozbudowa "Obsługa Klientów" o pełny model z dokumentu specyfikacji — backfill starych rekordów (2026-07-17)
+  s.clientOps.clients.forEach(function(c){
+    if(c.segment==null) c.segment = "B2B";
+    if(c.oferta==null) c.oferta = (/reklam/i.test(c.typOferty||"") ? "OFERTA_2" : "OFERTA_1");
+    if(c.czyBylyKlient==null) c.czyBylyKlient = false;
+    if(c.platnosc==null) c.platnosc = "miesieczna";
+    if(c.stawkaMc==null) c.stawkaMc = 0;
+    if(c.budzetReklamowyMc==null) c.budzetReklamowyMc = 0;
+    if(c.miesiacProbny==null) c.miesiacProbny = false;
+    if(c.wylacznoscMiasto==null) c.wylacznoscMiasto = false;
+    if(c.dzienKonsultacji==null) c.dzienKonsultacji = 0;
+    if(c.gwarancjaKlientowMc==null) c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.oferta);
+    if(c.status==null) c.status = "aktywny";
+    if(c.notatki==null) c.notatki = "";
+    if(c.osobaKontaktowa==null) c.osobaKontaktowa = "";
+    if(c.telefon==null) c.telefon = "";
+    if(c.email==null) c.email = "";
+    if(c.instagram==null) c.instagram = "";
+    if(c.miasto==null) c.miasto = "";
+  });
+  s.clientOps.tasks.forEach(function(t){
+    if(!t.date){
+      t.date = t.nextDue || todayStr();
+      t.type = t.type || "inne";
+      t.result = t.result || "";
+      t.doneAt = t.doneAt || t.lastDoneAt || null;
+      if(t.time===undefined) t.time = null;
+    }
+    if(t.auto==null) t.auto = false;
+  });
   if(!s.crmCategories || !s.crmCategories.length) s.crmCategories = ["Studio Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
   if(s.crmCategories.indexOf("Akrobatyka")===-1){
     var pdIdx = s.crmCategories.indexOf("Pole Dance");
@@ -2139,7 +2172,7 @@ function defaultState(){
   s.crmCategories = ["Studio Tańca","Pole Dance","Akrobatyka","Joga","Pilates","Sztuki Walki"];
   s.geoCache = {};
 
-  s.clientOps = {clients:[], tasks:[], screenshots:[]};
+  s.clientOps = {clients:[], tasks:[], screenshots:[], historia:[], wyniki:[], platnosci:[]};
 
   s.audits = [];
 
@@ -2297,11 +2330,24 @@ function renderDashboard(el){
 
   html += '</div>'; // end grid-2
 
+  html += renderDashClientOpsTile();
   html += renderDashSocialPanel();
   html += renderDashContentPanel();
 
   el.innerHTML = html;
   loadWeather();
+}
+function renderDashClientOpsTile(){
+  if(!state.clientOps || !state.clientOps.clients.length) return "";
+  var today = todayStr();
+  var open = clientOpsAllOpenTasks();
+  var todayCount = open.filter(function(t){ return t.date===today; }).length;
+  var overdueCount = open.filter(function(t){ return t.date<today; }).length;
+  return '<div class="card" style="margin-top:16px; cursor:pointer" onclick="switchTab(\'clientops\')">'+
+    '<h3 style="margin-bottom:8px">Zadania klientów dziś</h3>'+
+    '<div class="stat-value">'+todayCount+(overdueCount?' <span style="font-size:15px; color:var(--danger); font-weight:700">(zaległe: '+overdueCount+')</span>':'')+'</div>'+
+    '<div class="stat-sub">przejdź do Obsługi Klientów</div>'+
+    '</div>';
 }
 var CONTENT_TILES = [["fbig","FB/IG posty"],["tiktok","TikTok posty"],["youtube","YT filmy"]];
 function computeContentStats(platform){
@@ -6584,112 +6630,1113 @@ function undoKlienci(){
 }
 
 /* ================= OBSŁUGA KLIENTÓW ================= */
-var clientOpsSubview = "dzis"; // dzis | klienci
-var clientOpsExpandedId = null;
-var clientOpsUndoStack = [];
 var CLIENT_OPS_FREQ_LABEL = {once:"Jednorazowe", weekly:"Co tydzień", monthly:"Co miesiąc"};
 var CLIENT_OPS_STORAGE_ENABLED = false; // ustaw na true, gdy Damian zdecyduje: Blaze albo przejscie na Firestore-jako-storage
 var CLIENT_SHOT_PROMPT = "Jesteś doświadczonym specjalistą od reklam Meta Ads, pomagasz właścicielowi agencji marketingowej szybko ocenić zrzut ekranu z Meta Ads Managera. Oceń widoczne metryki (koszt wyniku/leada, zasięg, wydany budżet, CTR jeśli widoczny, liczba wyników) na tle typowych benchmarków dla reklam w social media dla małych/średnich firm lokalnych. Zwróć uwagę na sygnały ostrzegawcze: rosnący koszt leada, malejący zasięg, szybko wyczerpujący się budżet, spadający CTR. Odpowiedz PO POLSKU, krótko (maks. 6 zdań): zacznij od jednego zdania podsumowania (dobrze/przeciętnie/źle), potem 2-4 punkty z konkretnymi liczbami widocznymi na tym zrzucie. To ma być pomocnicza sugestia do weryfikacji przez człowieka, nie ostateczna ocena — nie udawaj większej pewności niż faktycznie masz z jednego zrzutu.";
 
+/* ---- Cennik (sekcja 2 specyfikacji) ---- */
+var CLIENT_OPS_CENNIK = {
+  B2B: {
+    OFERTA_1: {nowy:{stawka:2000, zGory:5000, umowaDni:90}, byly:{stawka:1000, zGory:0, umowaDni:180}},
+    OFERTA_2: {nowy:{stawka:3500, zGory:8000, umowaDni:90, gwarancja:10}, byly:{stawka:2000, zGory:0, umowaDni:180, gwarancja:10}}
+  },
+  B2C: {
+    OFERTA_1: {nowy:{stawka:500, zGory:1200, umowaDni:90}, byly:{stawka:500, zGory:1200, umowaDni:180}},
+    OFERTA_2: {nowy:{stawka:1000, zGory:2500, umowaDni:90, gwarancja:5}, byly:{stawka:1000, zGory:2500, umowaDni:180, gwarancja:5}}
+  }
+};
+function clientOpsCennik(segment, oferta, czyByly){
+  var seg = CLIENT_OPS_CENNIK[segment] || CLIENT_OPS_CENNIK.B2B;
+  var of = seg[oferta] || seg.OFERTA_1;
+  return of[czyByly ? "byly" : "nowy"] || of.nowy;
+}
+function clientOpsGwarancja(segment, oferta){
+  if(oferta!=="OFERTA_2") return 0;
+  return segment==="B2C" ? 5 : 10;
+}
+var CLIENT_OPS_OFERTA_LABEL = {OFERTA_1:"Oferta 1 — IG bez reklam", OFERTA_2:"Oferta 2 — IG + reklamy"};
+var CLIENT_OPS_STATUS_LABEL = {aktywny:"Aktywny", miesiac_probny:"Miesiąc próbny", negocjacje_przedluzenia:"Negocjacje przedłużenia", zakonczony:"Zakończony", zawieszony:"Zawieszony"};
+var CLIENT_OPS_STATUS_COLOR = {aktywny:"var(--success)", miesiac_probny:"var(--accent)", negocjacje_przedluzenia:"#4a9eff", zakonczony:"var(--muted)", zawieszony:"var(--danger)"};
+var CLIENT_OPS_TASK_TYPE_LABEL = {
+  konsultacja_tygodniowa:"Konsultacja tygodniowa",
+  raport_miesieczny:"Raport miesięczny",
+  kontrola_jakosci_leadow:"Kontrola jakości leadów",
+  kontrola_gwarancji:"Kontrola gwarancji",
+  rozmowa_przedluzenie:"Rozmowa o przedłużeniu",
+  decyzja_przedluzenie:"Decyzja o przedłużeniu",
+  koniec_miesiaca_probnego:"Koniec miesiąca próbnego",
+  onboarding:"Onboarding",
+  spotkanie_online:"Spotkanie online",
+  rozmowa_telefoniczna:"Rozmowa telefoniczna",
+  inne:"Inne"
+};
+var CLIENT_OPS_HISTORY_TYPE_LABEL = {
+  rozmowa:"📞 Rozmowa", spotkanie_online:"💻 Spotkanie online", wiadomosc:"💬 Wiadomość",
+  email:"✉️ Email", raport_wyslany:"📊 Raport wysłany", kontrola_leadow:"🔍 Kontrola leadów",
+  zmiana_umowy:"📝 Zmiana umowy", platnosc:"💰 Płatność", notatka:"🗒️ Notatka"
+};
+
+/* ---- Pomocnicze daty ---- */
+function coShiftWeekend(dateStr){
+  var d = new Date(dateStr+"T00:00:00");
+  var wd = d.getDay(); // 0=nd, 6=sob
+  if(wd===6) d.setDate(d.getDate()-1);
+  else if(wd===0) d.setDate(d.getDate()-2);
+  return isoLocal(d);
+}
+function coAddDays(dateStr, n){ var d=new Date(dateStr+"T00:00:00"); d.setDate(d.getDate()+n); return isoLocal(d); }
+function coAddMonths(dateStr, n){ var d=new Date(dateStr+"T00:00:00"); d.setMonth(d.getMonth()+n); return isoLocal(d); }
+function coLastBizDay(y, m){
+  var d = new Date(y, m+1, 0);
+  while(d.getDay()===0 || d.getDay()===6) d.setDate(d.getDate()-1);
+  return isoLocal(d);
+}
+function coLastDayOfMonth(y, m){ return isoLocal(new Date(y, m+1, 0)); }
+
+/* ---- Generator zadań (sekcja 4) ---- */
+function clientOpsGenerateTaskCandidates(c){
+  var out = [];
+  var start = c.startKampanii, end = computeKoniecDate(c);
+  if(!start || !end || end < start) return out;
+  function push(type, date, title, opis){
+    if(!date) return;
+    if(type!=="konsultacja_tygodniowa") date = coShiftWeekend(date);
+    out.push({type:type, date:date, title:title, opis:opis||""});
+  }
+  push("onboarding", start, "Spotkanie startowe: cele, dostępy do IG/Meta, ustalenie planu contentu");
+
+  var wd = (c.dzienKonsultacji!=null && c.dzienKonsultacji!=="") ? +c.dzienKonsultacji : 0;
+  var d0 = new Date(start+"T00:00:00");
+  var curWd = (d0.getDay()+6)%7;
+  var delta = (wd - curWd + 7) % 7;
+  d0.setDate(d0.getDate()+delta);
+  var cd = isoLocal(d0);
+  while(cd <= end){
+    push("konsultacja_tygodniowa", cd, "Cotygodniowa konsultacja z klientem");
+    cd = coAddDays(cd, 7);
+  }
+
+  var sD = new Date(start+"T00:00:00"), eD = new Date(end+"T00:00:00");
+  var my = sD.getFullYear(), mm = sD.getMonth();
+  while(true){
+    var lbd = coLastBizDay(my, mm);
+    if(lbd >= start && lbd <= end){
+      push("raport_miesieczny", lbd, "Uzupełnij wyniki miesiąca i wyślij raport", my+"-"+String(mm+1).padStart(2,"0"));
+    }
+    mm++; if(mm>11){ mm=0; my++; }
+    if(my>eD.getFullYear() || (my===eD.getFullYear() && mm>eD.getMonth())) break;
+  }
+
+  push("rozmowa_przedluzenie", coAddDays(end,-30), "Zaplanuj rozmowę o przedłużeniu. Przygotuj podsumowanie wyników z całej umowy + ofertę dla byłego klienta (niższa stawka, dłuższa umowa)");
+  push("decyzja_przedluzenie", coAddDays(end,-14), "Follow-up: czy klient przedłuża? Jeśli brak decyzji — zadzwoń, nie pisz");
+
+  if(c.oferta==="OFERTA_2"){
+    var my2=sD.getFullYear(), mm2=sD.getMonth();
+    while(true){
+      [10,25].forEach(function(day){
+        var ds = isoLocal(new Date(my2, mm2, day));
+        if(ds>=start && ds<=end) push("kontrola_jakosci_leadow", ds, "Zapytaj klienta o jakość leadów: ile z nich odpisuje, ile przychodzi na zajęcia, czy są z targetu");
+      });
+      mm2++; if(mm2>11){ mm2=0; my2++; }
+      if(my2>eD.getFullYear() || (my2===eD.getFullYear() && mm2>eD.getMonth())) break;
+    }
+    var my3=sD.getFullYear(), mm3=sD.getMonth();
+    while(true){
+      var d15 = isoLocal(new Date(my3, mm3, 15));
+      if(d15>=start && d15<=end) push("kontrola_gwarancji", d15, "Sprawdź licznik zapisów vs gwarancja ("+(c.gwarancjaKlientowMc||0)+"/mc). Jeśli poniżej 50% — eskalacja: zmiana kreacji/budżetu w tym tygodniu");
+      var dLast = coLastDayOfMonth(my3, mm3);
+      if(dLast>=start && dLast<=end) push("kontrola_gwarancji", dLast, "Rozliczenie gwarancji za miesiąc. Jeśli niedowieziona — ustal z klientem plan naprawczy i zapisz ustalenia w historii", my3+"-"+String(mm3+1).padStart(2,"0"));
+      mm3++; if(mm3>11){ mm3=0; my3++; }
+      if(my3>eD.getFullYear() || (my3===eD.getFullYear() && mm3>eD.getMonth())) break;
+    }
+    if(c.miesiacProbny){
+      var monthEnd1 = coAddDays(coAddMonths(start,1), -1);
+      push("koniec_miesiaca_probnego", coAddDays(monthEnd1,-5), "Rozmowa podsumowująca miesiąc próbny — pokaż wyniki, zamknij pełną umowę");
+    }
+  }
+  return out;
+}
+function regenerateClientOpsAutoTasks(clientId, opts){
+  opts = opts || {};
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  if(!c) return 0;
+  var today = todayStr();
+  var isNew = !!opts.isNew;
+  if(!isNew){
+    state.clientOps.tasks = state.clientOps.tasks.filter(function(t){
+      return !(t.clientId===clientId && t.auto && !t.done && t.date && t.date>=today);
+    });
+  }
+  var candidates = clientOpsGenerateTaskCandidates(c);
+  var existingKeys = {};
+  state.clientOps.tasks.filter(function(t){ return t.clientId===clientId && t.auto; }).forEach(function(t){
+    existingKeys[t.type+"|"+t.date] = true;
+  });
+  var added = 0;
+  candidates.forEach(function(cand){
+    if(!isNew && cand.date < today) return;
+    var key = cand.type+"|"+cand.date;
+    if(existingKeys[key]) return;
+    state.clientOps.tasks.push({
+      id:uid("cot"), clientId:clientId, type:cand.type, title:cand.title, opis:cand.opis,
+      date:cand.date, time:null, done:false, doneAt:null, result:"", auto:true, createdAt:today
+    });
+    existingKeys[key] = true;
+    added++;
+  });
+  return added;
+}
+
+/* ---- Widok / stan modułu ---- */
+var clientOpsView = "dashboard"; // dashboard | lista | karta
+var clientOpsActiveClientId = null;
+var clientOpsKartaTab = "zadania"; // zadania | historia | wyniki | umowa
+var clientOpsListStatusFilter = "";
+var clientOpsListSegmentFilter = "";
+var clientOpsListOfertaFilter = "";
+var clientOpsCalMode = "tydzien"; // tydzien | miesiac
+var clientOpsCalAnchor = null;
+var clientOpsExpandedId = null;
+var clientOpsUndoStack = [];
+var clientOpsFlashMsg = "";
+var CLIENT_OPS_PALETTE = ["#cf9b4a","#4a9eff","#c77398","#7fb88a","#e0954a","#8a6a35","#d1636f","#63b5b0","#b98acf","#e0c34a"];
+function clientOpsColorFor(clientId){
+  var idx = 0, i=0;
+  (state.clientOps.clients||[]).forEach(function(c){ if(c.id===clientId) idx=i; i++; });
+  return CLIENT_OPS_PALETTE[idx % CLIENT_OPS_PALETTE.length];
+}
 function pushClientOpsUndo(a){ clientOpsUndoStack.push(a); if(clientOpsUndoStack.length>50) clientOpsUndoStack.shift(); }
 function undoClientOps(){
   var a = clientOpsUndoStack.pop();
   if(!a) return;
   if(a.type==="addClient"){
-    state.clientOps.clients = state.clientOps.clients.filter(function(x){return x.id!==a.id;});
+    state.clientOps.clients = state.clientOps.clients.filter(function(x){ return x.id!==a.id; });
   } else if(a.type==="deleteClient"){
     state.clientOps.clients.splice(a.index, 0, a.client);
     state.clientOps.tasks = state.clientOps.tasks.concat(a.tasks||[]);
-  } else if(a.type==="field"){
-    var c = state.clientOps.clients.filter(function(x){return x.id===a.id;})[0];
-    if(c) c[a.field] = a.prevValue;
-  } else if(a.type==="addTask"){
-    state.clientOps.tasks = state.clientOps.tasks.filter(function(x){return x.id!==a.id;});
   } else if(a.type==="deleteTask"){
     state.clientOps.tasks.splice(a.index, 0, a.task);
-  } else if(a.type==="toggleTask"){
-    var t = state.clientOps.tasks.filter(function(x){return x.id===a.id;})[0];
-    if(t){ t.nextDue = a.prevNextDue; t.done = a.prevDone; t.lastDoneAt = a.prevLastDoneAt; }
   }
   save(); renderAll();
 }
-function setClientOpsSubview(v){ clientOpsSubview = v; renderAll(); }
+function setClientOpsView(v){ clientOpsView = v; renderAll(); }
+function clientOpsOpenKarta(id){ clientOpsView="karta"; clientOpsActiveClientId=id; clientOpsKartaTab="zadania"; renderAll(); }
+function clientOpsSetKartaTab(t){ clientOpsKartaTab=t; renderAll(); }
+
 function renderClientOps(el){
   var topBtns = '<button class="btn secondary" onclick="undoClientOps()">↺ Cofnij</button>';
-  if(clientOpsSubview==="klienci") topBtns += ' <button class="btn" onclick="addClientOpsClient()">+ Dodaj klienta</button>';
+  topBtns += ' <button class="btn" onclick="openClientOpsClientModal(null)">+ Dodaj klienta</button>';
   setTopActions(topBtns);
   var html = '<div class="tabsw">'+
-    '<button class="'+(clientOpsSubview==="dzis"?"active":"")+'" onclick="setClientOpsSubview(\'dzis\')">Dziś / Tydzień</button>'+
-    '<button class="'+(clientOpsSubview==="klienci"?"active":"")+'" onclick="setClientOpsSubview(\'klienci\')">Klienci</button>'+
+    '<button class="'+(clientOpsView==="dashboard"?"active":"")+'" onclick="setClientOpsView(\'dashboard\')">Dashboard</button>'+
+    '<button class="'+(clientOpsView==="lista"?"active":"")+'" onclick="setClientOpsView(\'lista\')">Lista klientów</button>'+
+    (clientOpsView==="karta" ? '<button class="active">Karta klienta</button>' : '')+
     '</div>';
-  html += (clientOpsSubview==="klienci") ? renderClientOpsKlienci() : renderClientOpsDzisTydzien();
+  if(clientOpsView==="karta" && clientOpsActiveClientId){
+    html += renderClientOpsKarta(clientOpsActiveClientId);
+  } else if(clientOpsView==="lista"){
+    html += renderClientOpsLista();
+  } else {
+    html += renderClientOpsDashboard();
+  }
   el.innerHTML = html;
 }
-function clientOpsClientName(clientId){
-  var c = state.clientOps.clients.filter(function(x){return x.id===clientId;})[0];
-  return c ? (c.nazwa||"(bez nazwy)") : "(usunięty klient)";
+
+/* ---- Dodawanie / edycja klienta (sekcja 6) ---- */
+function openClientOpsClientModal(id, opts){
+  closeClientOpsClientModal();
+  opts = opts || {};
+  var existing = id ? state.clientOps.clients.filter(function(x){ return x.id===id; })[0] : null;
+  var isEdit = !!existing;
+  var c = existing || {
+    segment:"B2B", oferta:"OFERTA_1", czyBylyKlient:false, platnosc:"miesieczna",
+    stawkaMc:clientOpsCennik("B2B","OFERTA_1",false).stawka, budzetReklamowyMc:0,
+    miesiacProbny:false, wylacznoscMiasto:false, startKampanii:todayStr(), okresDni:90,
+    dzienKonsultacji:0, status:"aktywny", notatki:""
+  };
+  var html = '<div class="modal-overlay" id="coClientModal" data-close="closeClientOpsClientModal">'+
+    '<div class="modal-box card" style="max-width:560px">'+
+    '<h3>'+(isEdit?"Edytuj klienta":"Nowy klient")+'</h3>'+
+    '<div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin:14px 0 8px">Dane kontaktowe</div>'+
+    '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">'+
+    '<div class="field"><label>Nazwa</label><input type="text" id="coNazwa" value="'+escapeHtml(c.nazwa||"")+'"></div>'+
+    '<div class="field"><label>Osoba kontaktowa</label><input type="text" id="coOsoba" value="'+escapeHtml(c.osobaKontaktowa||"")+'"></div>'+
+    '<div class="field"><label>Telefon</label><input type="text" id="coTelefon" value="'+escapeHtml(c.telefon||"")+'"></div>'+
+    '<div class="field"><label>Email</label><input type="text" id="coEmail" value="'+escapeHtml(c.email||"")+'"></div>'+
+    '<div class="field"><label>Instagram</label><input type="text" id="coInstagram" value="'+escapeHtml(c.instagram||"")+'"></div>'+
+    '<div class="field"><label>Miasto</label><input type="text" id="coMiasto" value="'+escapeHtml(c.miasto||"")+'"></div>'+
+    '</div>'+
+    '<div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin:14px 0 8px">Oferta i cennik</div>'+
+    '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">'+
+    '<div class="field"><label>Segment</label><select id="coSegment" onchange="clientOpsRecalcDefaults()">'+
+      '<option value="B2B"'+(c.segment==="B2B"?" selected":"")+'>B2B — Studia Tańca / Pole Dance</option>'+
+      '<option value="B2C"'+(c.segment==="B2C"?" selected":"")+'>B2C — Instruktorki</option>'+
+      '</select></div>'+
+    '<div class="field"><label>Oferta</label><select id="coOferta" onchange="clientOpsRecalcDefaults()">'+
+      '<option value="OFERTA_1"'+(c.oferta==="OFERTA_1"?" selected":"")+'>Oferta 1 — IG bez reklam</option>'+
+      '<option value="OFERTA_2"'+(c.oferta==="OFERTA_2"?" selected":"")+'>Oferta 2 — IG + reklamy</option>'+
+      '</select></div>'+
+    '<div class="field"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coByly" style="width:auto" '+(c.czyBylyKlient?"checked":"")+' onchange="clientOpsRecalcDefaults()"> Były klient</label></div>'+
+    '<div class="field"><label>Płatność</label><select id="coPlatnosc" onchange="clientOpsRecalcDefaults()">'+
+      '<option value="miesieczna"'+(c.platnosc==="miesieczna"?" selected":"")+'>Miesięczna</option>'+
+      '<option value="z_gory"'+(c.platnosc==="z_gory"?" selected":"")+'>Z góry</option>'+
+      '</select></div>'+
+    '<div class="field"><label>Stawka (zł/mc)</label><input type="number" id="coStawka" value="'+(c.stawkaMc||0)+'"></div>'+
+    '<div class="field" id="coBudzetWrap" style="display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label>Budżet reklamowy (zł/mc)</label><input type="number" id="coBudzet" value="'+(c.budzetReklamowyMc||0)+'"></div>'+
+    '</div>'+
+    '<div class="field" id="coMiesiacProbnyWrap" style="margin-top:8px; display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coMiesiacProbny" style="width:auto" '+(c.miesiacProbny?"checked":"")+'> Miesiąc próbny</label></div>'+
+    '<div class="field" id="coWylacznoscWrap" style="display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coWylacznosc" style="width:auto" '+(c.wylacznoscMiasto?"checked":"")+'> Wyłączność w mieście</label></div>'+
+    '<div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin:14px 0 8px">Umowa</div>'+
+    '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">'+
+    '<div class="field"><label>Data startu umowy</label><input type="date" id="coStart" value="'+(c.startKampanii||todayStr())+'"></div>'+
+    '<div class="field"><label>Okres umowy (dni)</label><input type="number" id="coOkresDni" value="'+(c.okresDni||90)+'"></div>'+
+    '<div class="field"><label>Dzień konsultacji</label><select id="coDzienKonsultacji">'+
+      WEEKDAYS_FULL.map(function(w,i){ return '<option value="'+i+'"'+((c.dzienKonsultacji||0)===i?" selected":"")+'>'+w+'</option>'; }).join("")+
+      '</select></div>'+
+    '<div class="field"><label>Status</label><select id="coStatus">'+
+      Object.keys(CLIENT_OPS_STATUS_LABEL).map(function(k){ return '<option value="'+k+'"'+((c.status||"aktywny")===k?" selected":"")+'>'+CLIENT_OPS_STATUS_LABEL[k]+'</option>'; }).join("")+
+      '</select></div>'+
+    '</div>'+
+    '<div class="field" style="margin-top:8px"><label>Notatki</label><textarea id="coNotatki" rows="3">'+escapeHtml(c.notatki||"")+'</textarea></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteClientOpsClient(\''+c.id+'\')">Usuń klienta</button>' : '')+
+    '<button class="btn secondary small" onclick="closeClientOpsClientModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveClientOpsClientModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__coModalCtx = {id: c.id||null};
 }
-function clientOpsFreqLabel(t){
-  return t.freq==="custom" ? ("Co "+(t.customDays||1)+" dni") : (CLIENT_OPS_FREQ_LABEL[t.freq]||t.freq);
+function closeClientOpsClientModal(){
+  var el = document.getElementById("coClientModal");
+  if(el) el.remove();
 }
-function renderClientOpsDzisTydzien(){
-  var today = todayStr();
-  var horizon = new Date(today+"T00:00:00"); horizon.setDate(horizon.getDate()+7);
-  var horizonStr = isoLocal(horizon);
-  var items = state.clientOps.tasks.filter(function(t){
-    if(t.freq==="once" && t.done) return false;
-    if(!t.nextDue) return false;
-    return t.nextDue <= horizonStr;
-  }).sort(function(a,b){ return (a.nextDue||"").localeCompare(b.nextDue||""); });
-  if(!items.length) return '<div class="card"><div class="empty">Brak zadań klientów na najbliższy tydzień — dobra robota.</div></div>';
-  var html = '<div class="card">';
-  items.forEach(function(t){
-    var overdue = t.nextDue < today;
-    var isToday = t.nextDue === today;
-    html += '<div class="taskitem">'+
-      '<input type="checkbox" onchange="toggleClientOpsTask(\''+t.id+'\')">'+
-      '<span class="dot" style="background:'+(overdue?"var(--danger)":isToday?"var(--accent)":"var(--muted)")+'"></span>'+
-      '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span>'+
-      ' <span style="font-size:11px; color:var(--accent); font-weight:700">— '+escapeHtml(clientOpsClientName(t.clientId))+'</span><br>'+
-      '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted)">'+clientOpsFreqLabel(t)+'</span> '+
-      '<span style="font-size:11px; color:'+(overdue?"var(--danger)":"var(--muted)")+'">'+(overdue?"zaległe — ":"")+fmtDate(t.nextDue)+'</span>'+
-      '</div></div>';
+function clientOpsRecalcDefaults(){
+  var segment = document.getElementById("coSegment").value;
+  var oferta = document.getElementById("coOferta").value;
+  var byly = document.getElementById("coByly").checked;
+  var platnosc = document.getElementById("coPlatnosc").value;
+  var cennik = clientOpsCennik(segment, oferta, byly);
+  var months = Math.max(1, Math.round(cennik.umowaDni/30));
+  document.getElementById("coStawka").value = (platnosc==="z_gory" && cennik.zGory) ? Math.round(cennik.zGory/months) : cennik.stawka;
+  document.getElementById("coOkresDni").value = cennik.umowaDni;
+  var isO2 = oferta==="OFERTA_2";
+  document.getElementById("coBudzetWrap").style.display = isO2 ? "" : "none";
+  document.getElementById("coMiesiacProbnyWrap").style.display = isO2 ? "" : "none";
+  document.getElementById("coWylacznoscWrap").style.display = isO2 ? "" : "none";
+  if(!isO2){ document.getElementById("coMiesiacProbny").checked = false; document.getElementById("coWylacznosc").checked = false; }
+}
+function saveClientOpsClientModal(){
+  var nazwaEl = document.getElementById("coNazwa");
+  var nazwa = nazwaEl ? nazwaEl.value.trim() : "";
+  if(!nazwa) return;
+  var ctx = window.__coModalCtx || {};
+  var isEdit = !!ctx.id;
+  var c = isEdit ? state.clientOps.clients.filter(function(x){ return x.id===ctx.id; })[0] : {id:uid("co"), createdAt:todayStr()};
+  c.nazwa = nazwa;
+  c.osobaKontaktowa = document.getElementById("coOsoba").value.trim();
+  c.telefon = document.getElementById("coTelefon").value.trim();
+  c.email = document.getElementById("coEmail").value.trim();
+  c.instagram = document.getElementById("coInstagram").value.trim();
+  c.miasto = document.getElementById("coMiasto").value.trim();
+  c.segment = document.getElementById("coSegment").value;
+  c.oferta = document.getElementById("coOferta").value;
+  c.czyBylyKlient = document.getElementById("coByly").checked;
+  c.platnosc = document.getElementById("coPlatnosc").value;
+  c.stawkaMc = +document.getElementById("coStawka").value || 0;
+  c.budzetReklamowyMc = c.oferta==="OFERTA_2" ? (+document.getElementById("coBudzet").value || 0) : 0;
+  c.miesiacProbny = c.oferta==="OFERTA_2" && document.getElementById("coMiesiacProbny").checked;
+  c.wylacznoscMiasto = c.oferta==="OFERTA_2" && document.getElementById("coWylacznosc").checked;
+  c.startKampanii = document.getElementById("coStart").value || todayStr();
+  c.okresDni = +document.getElementById("coOkresDni").value || 90;
+  c.koniecKampanii = "";
+  c.dzienKonsultacji = +document.getElementById("coDzienKonsultacji").value;
+  c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.oferta);
+  c.status = document.getElementById("coStatus").value;
+  c.notatki = document.getElementById("coNotatki").value.trim();
+  c.typOferty = CLIENT_OPS_OFERTA_LABEL[c.oferta];
+  var isNew = !isEdit;
+  if(isNew){ state.clientOps.clients.push(c); pushClientOpsUndo({type:"addClient", id:c.id}); }
+  clientOpsSyncKlienciBilling(c);
+  var added = regenerateClientOpsAutoTasks(c.id, {isNew:isNew});
+  var koniec = computeKoniecDate(c);
+  closeClientOpsClientModal();
+  clientOpsView = "karta"; clientOpsActiveClientId = c.id; clientOpsKartaTab = "zadania";
+  if(isNew) clientOpsFlashMsg = "Wygenerowano "+added+" zadań do dnia "+fmtDate(koniec)+".";
+  save(); renderAll();
+}
+function clientOpsSyncKlienciBilling(c){
+  if(!c.nazwa) return;
+  var ym = todayStr().slice(0,7);
+  if(!state.clientsMonthly) state.clientsMonthly = {};
+  if(!state.clientsMonthly[ym]) state.clientsMonthly[ym] = [];
+  var rows = state.clientsMonthly[ym];
+  var norm = c.nazwa.trim().toLowerCase();
+  var match = rows.filter(function(r){ return (r.nazwa||"").trim().toLowerCase()===norm; })[0];
+  if(!match){
+    match = mkClient(c.nazwa, c.miasto||"", "", (c.czyBylyKlient?"Kontynuacja":"Nowy"), c.stawkaMc||0, c.budzetReklamowyMc||0, 0, c.okresDni||0, "", c.startKampanii||"", computeKoniecDate(c)||"", "", "", c.notatki||"");
+    rows.push(match);
+  } else {
+    match.lokalizacja = c.miasto || match.lokalizacja;
+    match.wynagrodzenie = c.stawkaMc || 0;
+    match.budzetRekl = c.budzetReklamowyMc || 0;
+    match.startKampanii = c.startKampanii || match.startKampanii;
+    match.okresDni = c.okresDni || match.okresDni;
+    match.koniecKampanii = computeKoniecDate(c) || match.koniecKampanii;
+    match.statusKlienta = c.status==="zakonczony" ? "Zakończony" : (c.czyBylyKlient ? "Kontynuacja" : "Nowy");
+  }
+  registerClientMapPin(c.nazwa, c.miasto, null, "clientops");
+}
+function deleteClientOpsClient(id){
+  if(!confirm("Na pewno usunąć tego klienta wraz z jego zadaniami i historią? Można cofnąć przyciskiem \"Cofnij\".")) return;
+  var idx = state.clientOps.clients.findIndex(function(x){ return x.id===id; });
+  if(idx===-1) return;
+  var client = state.clientOps.clients[idx];
+  var tasks = state.clientOps.tasks.filter(function(t){ return t.clientId===id; });
+  state.clientOps.clients.splice(idx,1);
+  state.clientOps.tasks = state.clientOps.tasks.filter(function(t){ return t.clientId!==id; });
+  pushClientOpsUndo({type:"deleteClient", index:idx, client:client, tasks:tasks});
+  closeClientOpsClientModal();
+  if(clientOpsActiveClientId===id){ clientOpsView="lista"; clientOpsActiveClientId=null; }
+  save(); renderAll();
+}
+
+/* ---- Zadania: odznaczanie, wynik → historia, ręczne dodawanie (sekcja 4/5.3a) ---- */
+function clientOpsHistoryTypeForTask(t){
+  if(t.type==="raport_miesieczny") return "raport_wyslany";
+  if(t.type==="kontrola_jakosci_leadow") return "kontrola_leadow";
+  if(t.type==="spotkanie_online") return "spotkanie_online";
+  if(t.type==="rozmowa_telefoniczna" || t.type==="konsultacja_tygodniowa") return "rozmowa";
+  return "notatka";
+}
+function toggleClientOpsTask(id){
+  var t = state.clientOps.tasks.filter(function(x){ return x.id===id; })[0];
+  if(!t) return;
+  if(t.done){
+    t.done = false; t.doneAt = null;
+    save(); renderAll();
+    return;
+  }
+  if(t.type==="decyzja_przedluzenie"){
+    openClientOpsExtModal(id);
+    return;
+  }
+  var wynik = prompt("Wynik (opcjonalnie, 1-2 zdania):", "");
+  clientOpsCompleteTask(id, wynik);
+}
+function clientOpsCompleteTask(id, wynik){
+  var t = state.clientOps.tasks.filter(function(x){ return x.id===id; })[0];
+  if(!t) return;
+  t.done = true; t.doneAt = todayStr(); t.result = wynik || "";
+  if(t.type==="raport_miesieczny"){
+    var ym = t.opis || t.date.slice(0,7);
+    var w = clientOpsGetOrCreateWyniki(t.clientId, ym);
+    w.raportWyslanyData = todayStr();
+    state.clientOps.historia.push({id:uid("coh"), clientId:t.clientId, date:todayStr(), type:"raport_wyslany", text: wynik || ("Raport za "+ym+" wysłany."), taskId:t.id});
+  } else if(t.type==="kontrola_jakosci_leadow"){
+    state.clientOps.historia.push({id:uid("coh"), clientId:t.clientId, date:todayStr(), type:"kontrola_leadow", text: wynik || "Kontrola jakości leadów wykonana.", taskId:t.id});
+  } else if(wynik){
+    state.clientOps.historia.push({id:uid("coh"), clientId:t.clientId, date:todayStr(), type:clientOpsHistoryTypeForTask(t), text:wynik, taskId:t.id});
+  }
+  save(); renderAll();
+}
+function deleteClientOpsTask(id){
+  var idx = state.clientOps.tasks.findIndex(function(x){ return x.id===id; });
+  if(idx===-1) return;
+  var task = state.clientOps.tasks[idx];
+  state.clientOps.tasks.splice(idx,1);
+  pushClientOpsUndo({type:"deleteTask", index:idx, task:task});
+  save(); renderAll();
+}
+function openClientOpsExtModal(taskId){
+  var html = '<div class="modal-overlay" id="coExtModal" data-close="closeClientOpsExtModal">'+
+    '<div class="modal-box card"><h3>Czy klient przedłuża umowę?</h3>'+
+    '<div class="row" style="gap:8px; flex-wrap:wrap; margin-top:10px">'+
+    '<button class="btn small" onclick="clientOpsResolveExtension(\''+taskId+'\',\'przedluzone\')">✅ Przedłużone</button>'+
+    '<button class="btn secondary small" onclick="clientOpsResolveExtension(\''+taskId+'\',\'negocjacje\')">🤝 W negocjacjach</button>'+
+    '<button class="btn danger small" onclick="clientOpsResolveExtension(\''+taskId+'\',\'nieprzedluzone\')">❌ Nie przedłużone</button>'+
+    '</div><div class="row" style="justify-content:flex-end; margin-top:14px"><button class="btn secondary small" onclick="closeClientOpsExtModal()">Anuluj</button></div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeClientOpsExtModal(){ var e=document.getElementById("coExtModal"); if(e) e.remove(); }
+function clientOpsResolveExtension(taskId, decision){
+  var t = state.clientOps.tasks.filter(function(x){ return x.id===taskId; })[0];
+  if(!t) return;
+  closeClientOpsExtModal();
+  var c = state.clientOps.clients.filter(function(x){ return x.id===t.clientId; })[0];
+  var label = {przedluzone:"przedłużone", negocjacje:"w negocjacjach", nieprzedluzone:"nie przedłużone"}[decision];
+  clientOpsCompleteTask(taskId, "Decyzja o przedłużeniu: "+label);
+  if(!c) return;
+  if(decision==="przedluzone"){
+    state.clientOps.historia.push({id:uid("coh"), clientId:c.id, date:todayStr(), type:"zmiana_umowy", text:"Umowa przedłużona.", taskId:taskId});
+    save(); renderAll();
+    openClientOpsClientModal(c.id, {renewal:true});
+    var startEl = document.getElementById("coStart");
+    if(startEl){
+      var oldKoniec = computeKoniecDate(c);
+      startEl.value = oldKoniec ? coAddDays(oldKoniec,1) : todayStr();
+      document.getElementById("coByly").checked = true;
+      clientOpsRecalcDefaults();
+    }
+  } else if(decision==="negocjacje"){
+    c.status = "negocjacje_przedluzenia";
+    save(); renderAll();
+  } else {
+    c.status = "zakonczony";
+    save(); renderAll();
+  }
+}
+function openClientOpsTaskModal(clientId){
+  var html = '<div class="modal-overlay" id="coTaskModal" data-close="closeClientOpsTaskModal">'+
+    '<div class="modal-box card"><h3>+ Dodaj zadanie</h3>'+
+    '<div class="field"><label>Typ</label><select id="ctType">'+
+      '<option value="spotkanie_online">Spotkanie online</option>'+
+      '<option value="rozmowa_telefoniczna">Rozmowa telefoniczna</option>'+
+      '<option value="inne">Inne</option>'+
+      '</select></div>'+
+    '<div class="field"><label>Tytuł</label><input type="text" id="ctTitle" placeholder="Krótki opis zadania"></div>'+
+    '<div class="field"><label>Data</label><input type="date" id="ctDate" value="'+todayStr()+'"></div>'+
+    '<div class="field"><label>Godzina (opcjonalnie)</label><input type="time" id="ctTime"></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    '<button class="btn secondary small" onclick="closeClientOpsTaskModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveClientOpsTaskModal(\''+clientId+'\')">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeClientOpsTaskModal(){ var e=document.getElementById("coTaskModal"); if(e) e.remove(); }
+function saveClientOpsTaskModal(clientId){
+  var title = document.getElementById("ctTitle").value.trim();
+  if(!title) return;
+  var t = {
+    id:uid("cot"), clientId:clientId, type:document.getElementById("ctType").value, title:title, opis:"",
+    date:document.getElementById("ctDate").value || todayStr(), time:document.getElementById("ctTime").value || null,
+    done:false, doneAt:null, result:"", auto:false, createdAt:todayStr()
+  };
+  state.clientOps.tasks.push(t);
+  closeClientOpsTaskModal();
+  save(); renderAll();
+}
+
+/* ---- Historia obsługi (sekcja 5.3b) ---- */
+function clientOpsAddHistoryQuick(clientId){
+  var input = document.getElementById("coHistInput_"+clientId);
+  var typeSel = document.getElementById("coHistType_"+clientId);
+  var text = input ? input.value.trim() : "";
+  if(!text) return;
+  state.clientOps.historia.push({id:uid("coh"), clientId:clientId, date:todayStr(), type:typeSel?typeSel.value:"notatka", text:text});
+  save(); renderAll();
+}
+function deleteClientOpsHistory(id){
+  if(!confirm("Usunąć ten wpis z historii?")) return;
+  state.clientOps.historia = state.clientOps.historia.filter(function(x){ return x.id!==id; });
+  save(); renderAll();
+}
+
+/* ---- Wyniki miesięczne (sekcja 3 / 5.3c / 7) ---- */
+var CLIENT_OPS_WYNIKI_NUM_FIELDS = ["wydatki","zasieg","wyswietlenia","klikniecia","leady","rozmowyDM","zapisyNaZajecia","obserwujacyStart","obserwujacyKoniec","opublikowaneRolki","opublikowaneKaruzele"];
+function clientOpsGetOrCreateWyniki(clientId, ym){
+  var w = state.clientOps.wyniki.filter(function(x){ return x.clientId===clientId && x.rokMiesiac===ym; })[0];
+  if(!w){
+    w = {id:uid("cow"), clientId:clientId, rokMiesiac:ym, komentarz:"", raportWygenerowany:false, raportWyslanyData:null};
+    CLIENT_OPS_WYNIKI_NUM_FIELDS.forEach(function(f){ w[f] = undefined; });
+    state.clientOps.wyniki.push(w);
+  }
+  return w;
+}
+function clientOpsWynikiKosztLeada(w){ return (w.wydatki && w.leady) ? (w.wydatki/w.leady) : null; }
+function clientOpsWynikiKosztZapisu(w){ return (w.wydatki && w.zapisyNaZajecia) ? (w.wydatki/w.zapisyNaZajecia) : null; }
+function clientOpsWynikiPrzyrost(w){ return (w.obserwujacyStart!=null && w.obserwujacyKoniec!=null) ? (w.obserwujacyKoniec-w.obserwujacyStart) : null; }
+function clientOpsWynikiMonthsForClient(clientId){
+  return state.clientOps.wyniki.filter(function(w){ return w.clientId===clientId; }).sort(function(a,b){ return b.rokMiesiac<a.rokMiesiac?-1:1; });
+}
+function clientOpsUpdateWynikiField(id, field, value){
+  var w = state.clientOps.wyniki.filter(function(x){ return x.id===id; })[0];
+  if(!w) return;
+  if(field==="komentarz"){ w[field] = value; }
+  else { w[field] = value===""? undefined : (+value||0); }
+  save(); renderAllKeepScroll("coWynikiScroll");
+}
+function clientOpsAddWynikiMonth(clientId){
+  var months = clientOpsWynikiMonthsForClient(clientId).map(function(w){ return w.rokMiesiac; });
+  var ym = todayStr().slice(0,7);
+  if(months.indexOf(ym)===-1){ clientOpsGetOrCreateWyniki(clientId, ym); save(); renderAll(); return; }
+  var next = nextMonthKey(months.length ? months.sort()[months.length-1] : ym);
+  clientOpsGetOrCreateWyniki(clientId, next);
+  save(); renderAll();
+}
+function clientOpsGuaranteePct(c, w){
+  if(!c.gwarancjaKlientowMc) return null;
+  var x = (w && w.zapisyNaZajecia) || 0;
+  return Math.round((x/c.gwarancjaKlientowMc)*100);
+}
+function clientOpsGuaranteeColor(pct){
+  if(pct==null) return "var(--muted)";
+  if(pct>=100) return "var(--success)";
+  if(pct>=50) return "var(--accent)";
+  return "var(--danger)";
+}
+function renderClientOpsGuaranteeWidget(c){
+  if(!c.gwarancjaKlientowMc) return "";
+  var ym = todayStr().slice(0,7);
+  var w = state.clientOps.wyniki.filter(function(x){ return x.clientId===c.id && x.rokMiesiac===ym; })[0];
+  var x = (w && w.zapisyNaZajecia) || 0;
+  var pct = clientOpsGuaranteePct(c, w);
+  var color = clientOpsGuaranteeColor(pct);
+  return '<span class="tag" style="background:'+color+'; color:#161519">Gwarancja: '+x+'/'+c.gwarancjaKlientowMc+'</span>';
+}
+function renderClientOpsMiniChart(clientId, c){
+  var months = clientOpsWynikiMonthsForClient(clientId).slice().sort(function(a,b){ return a.rokMiesiac<b.rokMiesiac?-1:1; });
+  if(!months.length) return '<div class="empty">Brak jeszcze danych do wykresu.</div>';
+  var max = Math.max(c.gwarancjaKlientowMc||0, 1);
+  months.forEach(function(w){ if((w.zapisyNaZajecia||0)>max) max = w.zapisyNaZajecia; });
+  var html = '<div style="display:flex; align-items:flex-end; gap:8px; height:110px; margin:14px 0; position:relative">';
+  if(c.gwarancjaKlientowMc){
+    var lineTop = 100 - Math.round((c.gwarancjaKlientowMc/max)*100);
+    html += '<div style="position:absolute; left:0; right:0; top:'+lineTop+'%; border-top:1.5px dashed var(--accent); font-size:9px; color:var(--accent)">gwarancja '+c.gwarancjaKlientowMc+'</div>';
+  }
+  months.forEach(function(w){
+    var v = w.zapisyNaZajecia||0;
+    var h = Math.max(2, Math.round((v/max)*100));
+    html += '<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%">'+
+      '<div title="'+v+'" style="width:100%; max-width:26px; height:'+h+'%; background:'+(v>=(c.gwarancjaKlientowMc||0)&&c.gwarancjaKlientowMc?"var(--success)":"var(--accent)")+'; border-radius:3px 3px 0 0"></div>'+
+      '<div style="font-size:9px; color:var(--muted); margin-top:4px">'+w.rokMiesiac.slice(5)+'</div></div>';
   });
   html += '</div>';
   return html;
 }
-function renderClientOpsChecklist(clientId){
-  var tasks = state.clientOps.tasks.filter(function(t){ return t.clientId===clientId; })
-    .sort(function(a,b){ return (a.nextDue||"9999").localeCompare(b.nextDue||"9999"); });
-  var html = '<div style="margin-top:16px"><label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Zadania</label>';
-  if(!tasks.length){ html += '<div class="empty" style="margin-top:6px">Brak zadań.</div>'; }
-  tasks.forEach(function(t){
-    var checked = t.freq==="once" && t.done;
-    html += '<div class="taskitem">'+
-      '<input type="checkbox" '+(checked?"checked":"")+' onchange="toggleClientOpsTask(\''+t.id+'\')">'+
-      '<span class="dot"></span>'+
-      '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span><br>'+
-      '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted)">'+clientOpsFreqLabel(t)+'</span>'+
-      (t.freq!=="once" ? ' <span style="font-size:11px; color:var(--muted)">następne: '+fmtDate(t.nextDue)+'</span>' : '')+
-      '</div>'+
-      '<button class="linklike danger" onclick="deleteClientOpsTask(\''+t.id+'\')">Usuń</button>'+
-      '</div>';
+
+/* ---- Generator raportu miesięcznego + podsumowanie umowy (sekcja 8) ---- */
+function clientOpsMonthNameSlownie(ym){
+  var p = ym.split("-");
+  return monthName(+p[1]-1).toLowerCase()+" "+p[0];
+}
+function clientOpsBuildReportText(c, w){
+  var lines = [];
+  lines.push("📊 RAPORT — "+c.nazwa+" — "+clientOpsMonthNameSlownie(w.rokMiesiac));
+  lines.push("");
+  if(c.oferta==="OFERTA_2" && (w.wydatki!=null || w.leady!=null || w.rozmowyDM!=null)){
+    lines.push("REKLAMY META:");
+    if(w.wydatki!=null) lines.push("• Budżet wykorzystany: "+fmtPln(w.wydatki));
+    if(w.leady!=null){
+      var kl = clientOpsWynikiKosztLeada(w);
+      lines.push("• Pozyskane leady: "+w.leady+(kl!=null?" (koszt leada: "+fmtPln(kl)+")":""));
+    }
+    if(w.rozmowyDM!=null) lines.push("• Rozpoczęte rozmowy w DM: "+w.rozmowyDM);
+    lines.push("");
+  }
+  if(w.zapisyNaZajecia!=null){
+    lines.push("EFEKTY:");
+    lines.push("• Nowe zapisy na zajęcia: "+w.zapisyNaZajecia+" ✅"+(c.gwarancjaKlientowMc?" (gwarancja: "+c.gwarancjaKlientowMc+"/mc)":""));
+    var kz = clientOpsWynikiKosztZapisu(w);
+    if(kz!=null) lines.push("• Koszt pozyskania jednej osoby: "+fmtPln(kz));
+    lines.push("");
+  }
+  if(w.obserwujacyStart!=null || w.obserwujacyKoniec!=null || w.opublikowaneRolki!=null || w.opublikowaneKaruzele!=null){
+    lines.push("INSTAGRAM (organicznie):");
+    if(w.obserwujacyStart!=null && w.obserwujacyKoniec!=null){
+      var przyrost = clientOpsWynikiPrzyrost(w);
+      lines.push("• Obserwujący: "+w.obserwujacyStart+" → "+w.obserwujacyKoniec+" (+"+przyrost+")");
+    }
+    if(w.opublikowaneRolki!=null || w.opublikowaneKaruzele!=null){
+      lines.push("• Publikacje: "+(w.opublikowaneRolki||0)+" rolek, "+(w.opublikowaneKaruzele||0)+" karuzele");
+    }
+    lines.push("");
+  }
+  lines.push("WNIOSKI I PLAN NA KOLEJNY MIESIĄC:");
+  lines.push(w.komentarz || "—");
+  return lines.join("\n");
+}
+function openClientOpsReportModal(clientId, wynikId){
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  var w = state.clientOps.wyniki.filter(function(x){ return x.id===wynikId; })[0];
+  if(!c || !w) return;
+  var text = clientOpsBuildReportText(c, w);
+  var html = '<div class="modal-overlay" id="coReportModal" data-close="closeClientOpsReportModal">'+
+    '<div class="modal-box card" style="max-width:520px">'+
+    '<h3>Raport — '+escapeHtml(c.nazwa)+' — '+w.rokMiesiac+'</h3>'+
+    '<textarea id="coReportText" rows="16" style="width:100%; font-family:inherit; font-size:12.5px; white-space:pre-wrap">'+escapeHtml(text)+'</textarea>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    '<button class="btn secondary small" onclick="closeClientOpsReportModal()">Zamknij</button>'+
+    '<button class="btn small" onclick="clientOpsCopyReport(\''+wynikId+'\')">📋 Kopiuj</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeClientOpsReportModal(){ var e=document.getElementById("coReportModal"); if(e) e.remove(); }
+function clientOpsCopyReport(wynikId){
+  var ta = document.getElementById("coReportText");
+  if(!ta) return;
+  var text = ta.value;
+  var w = state.clientOps.wyniki.filter(function(x){ return x.id===wynikId; })[0];
+  var done = function(){
+    if(w) w.raportWygenerowany = true;
+    save(); renderAll();
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(function(){ ta.select(); document.execCommand("copy"); done(); });
+  } else {
+    ta.select(); document.execCommand("copy"); done();
+  }
+}
+function clientOpsContractSummary(clientId){
+  var rows = clientOpsWynikiMonthsForClient(clientId);
+  var out = {miesiecy:rows.length, sumaZapisow:0, sumaWydatkow:0, sredniKosztZapisu:null, sumaPrzyrost:0};
+  var kzSum=0, kzCount=0;
+  rows.forEach(function(w){
+    out.sumaZapisow += (+w.zapisyNaZajecia||0);
+    out.sumaWydatkow += (+w.wydatki||0);
+    var przyrost = clientOpsWynikiPrzyrost(w);
+    if(przyrost!=null) out.sumaPrzyrost += przyrost;
+    var kz = clientOpsWynikiKosztZapisu(w);
+    if(kz!=null){ kzSum += kz; kzCount++; }
   });
-  html += '<div class="row" style="gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center">'+
-    '<input type="text" id="coNewTaskTitle_'+clientId+'" placeholder="Nowe zadanie…" style="flex:1; min-width:160px" onkeydown="if(event.key===\'Enter\'){ addClientOpsTask(\''+clientId+'\'); }">'+
-    '<select id="coNewTaskFreq_'+clientId+'" onchange="clientOpsToggleCustomDaysInput(\''+clientId+'\')" style="width:auto">'+
-      '<option value="once">Jednorazowe</option><option value="weekly">Co tydzień</option><option value="monthly">Co miesiąc</option><option value="custom">Co N dni</option>'+
-    '</select>'+
-    '<input type="number" id="coNewTaskDays_'+clientId+'" min="1" value="3" style="width:60px; display:none">'+
-    '<button class="btn small" onclick="addClientOpsTask(\''+clientId+'\')">+ Dodaj</button>'+
+  if(kzCount) out.sredniKosztZapisu = kzSum/kzCount;
+  return out;
+}
+function openClientOpsSummaryModal(clientId){
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  if(!c) return;
+  var s = clientOpsContractSummary(clientId);
+  var html = '<div class="modal-overlay" id="coSummaryModal" data-close="closeClientOpsSummaryModal">'+
+    '<div class="modal-box card" style="max-width:460px">'+
+    '<h3>Podsumowanie całej umowy — '+escapeHtml(c.nazwa)+'</h3>'+
+    '<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px">'+
+    '<div><div class="stat-value" style="font-size:22px">'+s.miesiecy+'</div><div class="stat-sub">miesięcy współpracy</div></div>'+
+    '<div><div class="stat-value" style="font-size:22px">'+s.sumaZapisow+'</div><div class="stat-sub">łącznie zapisów</div></div>'+
+    '<div><div class="stat-value" style="font-size:22px">'+fmtPln(s.sumaWydatkow)+'</div><div class="stat-sub">suma wydatków reklamowych</div></div>'+
+    '<div><div class="stat-value" style="font-size:22px">'+(s.sredniKosztZapisu!=null?fmtPln(s.sredniKosztZapisu):"—")+'</div><div class="stat-sub">średni koszt zapisu</div></div>'+
+    '<div><div class="stat-value" style="font-size:22px">+'+s.sumaPrzyrost+'</div><div class="stat-sub">łączny przyrost obserwujących</div></div>'+
+    '</div>'+
+    '<div class="row" style="justify-content:flex-end; margin-top:16px"><button class="btn secondary small" onclick="closeClientOpsSummaryModal()">Zamknij</button></div>'+
     '</div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeClientOpsSummaryModal(){ var e=document.getElementById("coSummaryModal"); if(e) e.remove(); }
+
+/* ---- Eksport / import JSON modułu (sekcja 9) ---- */
+function exportClientOpsJSON(){
+  var data = {clients:state.clientOps.clients, tasks:state.clientOps.tasks, historia:state.clientOps.historia, wyniki:state.clientOps.wyniki, platnosci:state.clientOps.platnosci, exportedAt:new Date().toISOString()};
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = "obsluga-klientow-backup-"+todayStr()+".json";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function importClientOpsJSONFile(inputEl){
+  var file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    try{
+      var data = JSON.parse(reader.result);
+      if(!confirm("Zaimportować dane? To DOPISZE klientów/zadania/historię/wyniki z pliku do obecnych danych (nie nadpisze istniejących).")) return;
+      (data.clients||[]).forEach(function(c){ if(!state.clientOps.clients.filter(function(x){return x.id===c.id;})[0]) state.clientOps.clients.push(c); });
+      (data.tasks||[]).forEach(function(t){ if(!state.clientOps.tasks.filter(function(x){return x.id===t.id;})[0]) state.clientOps.tasks.push(t); });
+      (data.historia||[]).forEach(function(h){ if(!state.clientOps.historia.filter(function(x){return x.id===h.id;})[0]) state.clientOps.historia.push(h); });
+      (data.wyniki||[]).forEach(function(w){ if(!state.clientOps.wyniki.filter(function(x){return x.id===w.id;})[0]) state.clientOps.wyniki.push(w); });
+      (data.platnosci||[]).forEach(function(p){ if(!state.clientOps.platnosci.filter(function(x){return x.id===p.id;})[0]) state.clientOps.platnosci.push(p); });
+      save(); renderAll();
+      alert("Zaimportowano dane.");
+    }catch(e){
+      alert("Błąd importu: plik nie jest poprawnym JSON-em z tego modułu.");
+    }
+  };
+  reader.readAsText(file);
+  inputEl.value = "";
+}
+
+/* ---- Dashboard modułu (sekcja 5.1) ---- */
+function clientOpsAllOpenTasks(){
+  return state.clientOps.tasks.filter(function(t){ return !t.done && t.date; });
+}
+function renderClientOpsDashboard(){
+  var today = todayStr();
+  var clients = state.clientOps.clients;
+  var openTasks = clientOpsAllOpenTasks();
+  var todayTasks = openTasks.filter(function(t){ return t.date===today; });
+  var overdueTasks = openTasks.filter(function(t){ return t.date<today; }).sort(function(a,b){ return a.date<b.date?-1:1; });
+  var horizon = coAddDays(today,30);
+  var endingClients = clients.filter(function(c){
+    if(c.status==="zakonczony") return false;
+    var k = computeKoniecDate(c);
+    return k && k>=today && k<=horizon;
+  }).sort(function(a,b){ return computeKoniecDate(a)<computeKoniecDate(b)?-1:1; });
+  var mrr = clients.filter(function(c){ return c.status==="aktywny"||c.status==="miesiac_probny"; }).reduce(function(s,c){ return s+(+c.stawkaMc||0); },0);
+
+  if(!clients.length){
+    return '<div class="card"><div class="empty">Nie masz jeszcze klientów — dodaj pierwszego przyciskiem "+ Dodaj klienta" u góry strony.</div></div>';
+  }
+
+  var html = '<div class="grid grid-4" style="margin-bottom:16px">';
+  html += '<div class="card"><div class="stat-value">'+todayTasks.length+'</div><div class="stat-sub">Dziś do zrobienia</div></div>';
+  html += '<div class="card"'+(overdueTasks.length?' style="border-color:var(--danger)"':'')+'><div class="stat-value"'+(overdueTasks.length?' style="color:var(--danger)"':'')+'>'+overdueTasks.length+'</div><div class="stat-sub">Zaległe</div></div>';
+  html += '<div class="card"><div style="font-size:14.5px; font-weight:700; color:#fff; min-height:36px">'+(endingClients.length? endingClients.map(function(c){return escapeHtml(c.nazwa);}).join(', ') : '—')+'</div><div class="stat-sub">Umowy kończące się w 30 dni ('+endingClients.length+')</div></div>';
+  html += '<div class="card"><div class="stat-value">'+fmtPln(mrr)+'</div><div class="stat-sub">MRR</div></div>';
+  html += '</div>';
+
+  html += '<div class="grid grid-2">';
+  html += '<div class="card"><h3>Zadania: dziś i zaległe</h3>';
+  var listItems = overdueTasks.concat(todayTasks);
+  if(!listItems.length){ html += '<div class="empty">Brak zadań na dziś — dobra robota.</div>'; }
+  else {
+    listItems.forEach(function(t){
+      var c = clients.filter(function(x){ return x.id===t.clientId; })[0];
+      var overdue = t.date<today;
+      html += '<div class="taskitem">'+
+        '<input type="checkbox" onchange="toggleClientOpsTask(\''+t.id+'\')">'+
+        '<span class="dot" style="background:'+(overdue?"var(--danger)":"var(--accent)")+'"></span>'+
+        '<div style="flex:1"><span class="ttitle">'+escapeHtml(t.title)+'</span>'+
+        ' <span style="font-size:11px; font-weight:700; color:'+clientOpsColorFor(t.clientId)+'; cursor:pointer" onclick="clientOpsOpenKarta(\''+t.clientId+'\')">— '+(c?escapeHtml(c.nazwa):"(usunięty klient)")+'</span><br>'+
+        '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted)">'+(CLIENT_OPS_TASK_TYPE_LABEL[t.type]||t.type)+'</span> '+
+        '<span style="font-size:11px; color:'+(overdue?"var(--danger)":"var(--muted)")+'">'+(overdue?"zaległe — ":"")+fmtDate(t.date)+'</span>'+
+        '</div></div>';
+    });
+  }
+  html += '</div>';
+  html += renderClientOpsWeekCalendar();
+  html += '</div>';
+
+  html += '<div class="card" style="margin-top:16px"><h3>Kopia zapasowa modułu</h3>'+
+    '<button class="btn secondary small" onclick="exportClientOpsJSON()">⬇️ Eksportuj JSON</button> '+
+    '<input type="file" accept="application/json" id="coImportInput" style="display:none" onchange="importClientOpsJSONFile(this)">'+
+    '<button class="btn secondary small" onclick="document.getElementById(\'coImportInput\').click()">⬆️ Importuj JSON</button>'+
+    '</div>';
   return html;
 }
-function clientOpsToggleCustomDaysInput(clientId){
-  var freqSel = document.getElementById("coNewTaskFreq_"+clientId);
-  var daysInput = document.getElementById("coNewTaskDays_"+clientId);
-  if(freqSel && daysInput) daysInput.style.display = freqSel.value==="custom" ? "" : "none";
+function renderClientOpsWeekCalendar(){
+  var html = '<div class="card">';
+  html += '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">'+
+    '<h3 style="margin:0">Kalendarz zadań klientów</h3>'+
+    '<div class="chiprow" style="margin:0">'+
+    '<span class="chip'+(clientOpsCalMode==="tydzien"?" active":"")+'" onclick="setClientOpsCalMode(\'tydzien\')">Tydzień</span>'+
+    '<span class="chip'+(clientOpsCalMode==="miesiac"?" active":"")+'" onclick="setClientOpsCalMode(\'miesiac\')">Miesiąc</span>'+
+    '</div></div>';
+  html += clientOpsCalMode==="miesiac" ? renderClientOpsCalMonth() : renderClientOpsCalWeek();
+  html += '</div>';
+  return html;
 }
+function setClientOpsCalMode(m){ clientOpsCalMode=m; renderAll(); }
+function clientOpsTasksOnDate(dateStr){
+  return state.clientOps.tasks.filter(function(t){ return t.date===dateStr; });
+}
+function renderClientOpsCalWeek(){
+  var monday = clientOpsCalAnchor || currentWeekDates()[0];
+  var dates = [];
+  var d0 = new Date(monday+"T00:00:00");
+  for(var i=0;i<7;i++){ var dd=new Date(d0); dd.setDate(d0.getDate()+i); dates.push(isoLocal(dd)); }
+  var today = todayStr();
+  var html = '<div class="row" style="gap:6px; margin-bottom:10px; align-items:center">'+
+    '<button class="btn secondary small" onclick="clientOpsCalShiftWeek(-1)">◀</button>'+
+    '<button class="btn secondary small" onclick="clientOpsCalToday()">Dziś</button>'+
+    '<button class="btn secondary small" onclick="clientOpsCalShiftWeek(1)">▶</button></div>';
+  html += '<div class="cal-scroll"><div class="cal-grid-outer"><div class="cal-weekgrid">';
+  dates.forEach(function(ds, i){
+    var tasks = clientOpsTasksOnDate(ds);
+    html += '<div class="cal-cell'+(ds===today?" today":"")+'"><div class="cal-daynum">'+WEEKDAYS_SHORT[i]+' '+(+ds.slice(8,10))+'</div>';
+    tasks.slice(0,4).forEach(function(t){
+      var c = state.clientOps.clients.filter(function(x){ return x.id===t.clientId; })[0];
+      html += '<div class="cal-ev" style="background:'+clientOpsColorFor(t.clientId)+'" title="'+escapeHtml((c?c.nazwa+" — ":"")+t.title)+'" onclick="clientOpsOpenKarta(\''+t.clientId+'\')">'+(c?escapeHtml(c.nazwa)+": ":"")+escapeHtml(t.title)+'</div>';
+    });
+    if(tasks.length>4) html += '<div style="font-size:10px; color:var(--muted)">+'+(tasks.length-4)+' więcej</div>';
+    html += '</div>';
+  });
+  html += '</div></div></div>';
+  return html;
+}
+function clientOpsCalShiftWeek(delta){
+  var base = clientOpsCalAnchor || currentWeekDates()[0];
+  var d = new Date(base+"T00:00:00"); d.setDate(d.getDate()+delta*7);
+  clientOpsCalAnchor = isoLocal(d);
+  renderAll();
+}
+function clientOpsCalToday(){ clientOpsCalAnchor = currentWeekDates()[0]; renderAll(); }
+function renderClientOpsCalMonth(){
+  var anchor = clientOpsCalAnchor || todayStr();
+  var y=+anchor.slice(0,4), m=+anchor.slice(5,7)-1;
+  var first = new Date(y,m,1);
+  var startOffset = (first.getDay()+6)%7;
+  var gridStart = new Date(y,m,1-startOffset);
+  var today = todayStr();
+  var html = '<div class="row" style="gap:6px; margin-bottom:10px; align-items:center">'+
+    '<button class="btn secondary small" onclick="clientOpsCalShiftMonth(-1)">◀</button>'+
+    '<b style="font-size:13px">'+monthName(m)+' '+y+'</b>'+
+    '<button class="btn secondary small" onclick="clientOpsCalShiftMonth(1)">▶</button></div>';
+  html += '<div class="cal-scroll"><div class="cal-grid">';
+  WEEKDAYS_SHORT.forEach(function(w){ html += '<div class="cal-dow">'+w+'</div>'; });
+  for(var i=0;i<42;i++){
+    var gd = new Date(gridStart); gd.setDate(gridStart.getDate()+i);
+    var ds = isoLocal(gd);
+    var inMonth = gd.getMonth()===m;
+    var tasks = clientOpsTasksOnDate(ds);
+    html += '<div class="cal-cell'+(inMonth?"":" out")+(ds===today?" today":"")+'"><div class="cal-daynum">'+gd.getDate()+'</div>';
+    tasks.slice(0,3).forEach(function(t){
+      var c = state.clientOps.clients.filter(function(x){ return x.id===t.clientId; })[0];
+      html += '<div class="cal-ev" style="background:'+clientOpsColorFor(t.clientId)+'" title="'+escapeHtml((c?c.nazwa+" — ":"")+t.title)+'" onclick="clientOpsOpenKarta(\''+t.clientId+'\')">'+(c?escapeHtml(c.nazwa):"")+'</div>';
+    });
+    if(tasks.length>3) html += '<div style="font-size:9px; color:var(--muted)">+'+(tasks.length-3)+'</div>';
+    html += '</div>';
+  }
+  html += '</div></div>';
+  return html;
+}
+function clientOpsCalShiftMonth(delta){
+  var anchor = clientOpsCalAnchor || todayStr();
+  var d = new Date(anchor+"T00:00:00"); d.setMonth(d.getMonth()+delta);
+  clientOpsCalAnchor = isoLocal(d);
+  renderAll();
+}
+
+/* ---- Lista klientów (sekcja 5.2) ---- */
+function clientOpsSetListFilter(kind, v){
+  if(kind==="status") clientOpsListStatusFilter=v;
+  else if(kind==="segment") clientOpsListSegmentFilter=v;
+  else clientOpsListOfertaFilter=v;
+  renderAll();
+}
+function renderClientOpsLista(){
+  var topFilters = '<div class="chiprow">';
+  [""].concat(Object.keys(CLIENT_OPS_STATUS_LABEL)).forEach(function(s){
+    topFilters += '<span class="chip'+(clientOpsListStatusFilter===s?" active":"")+'" onclick="clientOpsSetListFilter(\'status\',\''+s+'\')">'+(s?CLIENT_OPS_STATUS_LABEL[s]:"Wszystkie statusy")+'</span>';
+  });
+  topFilters += '</div><div class="chiprow">';
+  ["","B2B","B2C"].forEach(function(s){
+    topFilters += '<span class="chip'+(clientOpsListSegmentFilter===s?" active":"")+'" onclick="clientOpsSetListFilter(\'segment\',\''+s+'\')">'+(s||"Wszystkie segmenty")+'</span>';
+  });
+  ["","OFERTA_1","OFERTA_2"].forEach(function(s){
+    topFilters += '<span class="chip'+(clientOpsListOfertaFilter===s?" active":"")+'" onclick="clientOpsSetListFilter(\'oferta\',\''+s+'\')">'+(s?CLIENT_OPS_OFERTA_LABEL[s]:"Wszystkie oferty")+'</span>';
+  });
+  topFilters += '</div>';
+
+  var clients = state.clientOps.clients.filter(function(c){
+    if(clientOpsListStatusFilter && c.status!==clientOpsListStatusFilter) return false;
+    if(clientOpsListSegmentFilter && c.segment!==clientOpsListSegmentFilter) return false;
+    if(clientOpsListOfertaFilter && c.oferta!==clientOpsListOfertaFilter) return false;
+    return true;
+  });
+  if(!state.clientOps.clients.length){
+    return '<div class="card"><div class="empty">Nie masz jeszcze klientów — dodaj pierwszego przyciskiem "+ Dodaj klienta" u góry strony.</div></div>';
+  }
+  if(!clients.length){
+    return topFilters+'<div class="card"><div class="empty">Brak klientów pasujących do filtrów.</div></div>';
+  }
+  var today = todayStr();
+  var html = topFilters+'<div class="card" style="overflow-x:auto"><table style="width:100%; border-collapse:collapse; font-size:12.5px">';
+  html += '<tr style="text-align:left; color:var(--muted); font-size:11px; text-transform:uppercase">'+
+    '<th style="padding:8px">Nazwa</th><th>Segment</th><th>Oferta</th><th>Status</th><th>Stawka</th><th>Koniec umowy</th><th>Gwarancja</th><th>Ostatni kontakt</th></tr>';
+  clients.forEach(function(c){
+    var koniec = computeKoniecDate(c);
+    var daysLeft = koniec ? Math.round((new Date(koniec+"T00:00:00")-new Date(today+"T00:00:00"))/86400000) : null;
+    var lastHist = state.clientOps.historia.filter(function(h){ return h.clientId===c.id; }).sort(function(a,b){ return b.date<a.date?-1:1; })[0];
+    var daysSince = lastHist ? Math.round((new Date(today+"T00:00:00")-new Date(lastHist.date+"T00:00:00"))/86400000) : null;
+    var contactColor = daysSince==null ? "var(--muted)" : daysSince>14 ? "var(--danger)" : daysSince>7 ? "var(--accent)" : "var(--text)";
+    html += '<tr style="border-top:1px solid var(--border); cursor:pointer" onclick="clientOpsOpenKarta(\''+c.id+'\')">'+
+      '<td style="padding:8px; font-weight:700; color:#fff">'+escapeHtml(c.nazwa)+'</td>'+
+      '<td>'+(c.segment||"")+'</td>'+
+      '<td>'+(CLIENT_OPS_OFERTA_LABEL[c.oferta]||"")+'</td>'+
+      '<td><span class="tag" style="background:'+CLIENT_OPS_STATUS_COLOR[c.status]+'; color:#161519">'+(CLIENT_OPS_STATUS_LABEL[c.status]||c.status)+'</span></td>'+
+      '<td>'+fmtPln(c.stawkaMc)+'</td>'+
+      '<td>'+(koniec?(fmtDate(koniec)+(daysLeft!=null?' ('+daysLeft+' dni)':'')):"—")+'</td>'+
+      '<td>'+(c.gwarancjaKlientowMc?renderClientOpsGuaranteeWidget(c):"—")+'</td>'+
+      '<td style="color:'+contactColor+'">'+(daysSince==null?"brak":daysSince===0?"dziś":daysSince+" dni temu")+'</td>'+
+      '</tr>';
+  });
+  html += '</table></div>';
+  return html;
+}
+
+/* ---- Karta klienta (sekcja 5.3) ---- */
+function renderClientOpsKarta(clientId){
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  if(!c) return '<div class="empty">Klient nie znaleziony. <button class="linklike" onclick="setClientOpsView(\'lista\')">Wróć do listy</button></div>';
+  var html = '';
+  if(clientOpsFlashMsg){
+    html += '<div class="stub-note" style="background:rgba(127,184,138,.12); border-color:rgba(127,184,138,.35); color:var(--success); margin-bottom:12px">✅ '+escapeHtml(clientOpsFlashMsg)+'</div>';
+    clientOpsFlashMsg = "";
+  }
+  html += '<button class="linklike" onclick="setClientOpsView(\'lista\')">← Wróć do listy</button>';
+  var koniec = computeKoniecDate(c);
+  var totalDays = c.okresDni || 1;
+  var elapsedDays = c.startKampanii ? Math.max(0, Math.min(totalDays, Math.round((new Date(todayStr()+"T00:00:00")-new Date(c.startKampanii+"T00:00:00"))/86400000))) : 0;
+  var pct = Math.min(100, Math.max(0, Math.round((elapsedDays/totalDays)*100)));
+  var totalMonths = Math.max(1, Math.round(totalDays/30));
+  var curMonth = Math.min(totalMonths, Math.max(1, Math.ceil(elapsedDays/30) || 1));
+
+  html += '<div class="card" style="margin:12px 0 16px">';
+  html += '<div class="row" style="justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px">';
+  html += '<div><div style="font-size:19px; font-weight:700; color:#fff">'+escapeHtml(c.nazwa)+'</div>'+
+    '<div style="color:var(--muted); font-size:12.5px; margin-top:2px">'+escapeHtml(c.miasto||"")+'</div></div>';
+  html += '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">'+
+    '<span class="tag" style="background:var(--tool4arts-bg); color:var(--tool4arts-text)">'+(c.segment||"")+'</span>'+
+    '<span class="tag" style="background:var(--rozwoj-bg); color:var(--rozwoj-text)">'+(CLIENT_OPS_OFERTA_LABEL[c.oferta]||"")+'</span>'+
+    '<span class="tag" style="background:'+(CLIENT_OPS_STATUS_COLOR[c.status]||"var(--muted)")+'; color:#161519">'+(CLIENT_OPS_STATUS_LABEL[c.status]||c.status)+'</span>'+
+    (c.gwarancjaKlientowMc?renderClientOpsGuaranteeWidget(c):'')+
+    '<button class="btn secondary small" onclick="openClientOpsClientModal(\''+c.id+'\')">Edytuj</button>'+
+    '</div></div>';
+  html += '<div class="row" style="gap:16px; flex-wrap:wrap; margin-top:12px; font-size:12.5px; color:var(--muted-light)">'+
+    '<span>💰 '+fmtPln(c.stawkaMc)+'/mc</span>'+
+    (c.instagram ? '<a href="'+escapeHtml(c.instagram.indexOf("http")===0?c.instagram:("https://instagram.com/"+c.instagram.replace("@","")))+'" target="_blank" rel="noopener" class="linklike">📷 Instagram</a>' : '')+
+    (c.telefon ? '<a href="tel:'+escapeHtml(c.telefon.replace(/\s+/g,""))+'" class="linklike">📞 '+escapeHtml(c.telefon)+'</a>' : '')+
+    (c.email ? '<a href="mailto:'+escapeHtml(c.email)+'" class="linklike">✉️ '+escapeHtml(c.email)+'</a>' : '')+
+    (c.osobaKontaktowa ? '<span>👤 '+escapeHtml(c.osobaKontaktowa)+'</span>' : '')+
+    '</div>';
+  if(c.startKampanii && koniec){
+    html += '<div style="margin-top:14px"><div class="progress-label"><span>miesiąc '+curMonth+' z '+totalMonths+'</span><span>'+fmtDate(c.startKampanii)+' → '+fmtDate(koniec)+'</span></div>'+
+      '<div class="habit-bar"><div style="width:'+pct+'%"></div></div></div>';
+  }
+  html += '</div>';
+
+  html += '<div class="tabsw">'+
+    ["zadania:Kalendarz i zadania","historia:Historia obsługi","wyniki:Wyniki i raporty","umowa:Umowa i rozliczenia"].map(function(p){
+      var parts = p.split(":");
+      return '<button class="'+(clientOpsKartaTab===parts[0]?"active":"")+'" onclick="clientOpsSetKartaTab(\''+parts[0]+'\')">'+parts[1]+'</button>';
+    }).join("")+
+    '</div>';
+
+  if(clientOpsKartaTab==="historia") html += renderClientOpsTabHistoria(c);
+  else if(clientOpsKartaTab==="wyniki") html += renderClientOpsTabWyniki(c);
+  else if(clientOpsKartaTab==="umowa") html += renderClientOpsTabUmowa(c);
+  else html += renderClientOpsTabZadania(c);
+  return html;
+}
+function renderClientOpsTabZadania(c){
+  var tasks = state.clientOps.tasks.filter(function(t){ return t.clientId===c.id; }).sort(function(a,b){ return a.date<b.date?-1:1; });
+  var today = todayStr();
+  var past = tasks.filter(function(t){ return t.done; }).sort(function(a,b){ return b.date<a.date?-1:1; });
+  var upcoming = tasks.filter(function(t){ return !t.done; });
+  var html = '<div class="card"><button class="btn small" onclick="openClientOpsTaskModal(\''+c.id+'\')">+ Dodaj zadanie</button></div>';
+  html += '<div class="card" style="margin-top:12px"><h3>Nadchodzące i zaległe</h3>';
+  if(!upcoming.length){ html += '<div class="empty">Brak zaplanowanych zadań.</div>'; }
+  upcoming.forEach(function(t){
+    var overdue = t.date<today;
+    html += '<div class="taskitem">'+
+      '<input type="checkbox" onchange="toggleClientOpsTask(\''+t.id+'\')">'+
+      '<span class="dot" style="background:'+(overdue?"var(--danger)":t.date===today?"var(--accent)":"var(--muted)")+'"></span>'+
+      '<div style="flex:1"><span class="ttitle">'+(t.auto?"🔁 ":"")+escapeHtml(t.title)+'</span><br>'+
+      '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted)">'+(CLIENT_OPS_TASK_TYPE_LABEL[t.type]||t.type)+'</span> '+
+      '<span style="font-size:11px; color:'+(overdue?"var(--danger)":"var(--muted)")+'">'+(overdue?"zaległe — ":"")+fmtDate(t.date)+(t.time?" "+t.time:"")+'</span></div>'+
+      (!t.auto ? '<button class="linklike danger" onclick="deleteClientOpsTask(\''+t.id+'\')">Usuń</button>' : '')+
+      '</div>';
+  });
+  html += '</div>';
+  html += '<div class="card" style="margin-top:12px; opacity:.75"><h3>Wykonane</h3>';
+  if(!past.length){ html += '<div class="empty">Brak jeszcze wykonanych zadań.</div>'; }
+  past.slice(0,30).forEach(function(t){
+    html += '<div class="taskitem">'+
+      '<input type="checkbox" checked onchange="toggleClientOpsTask(\''+t.id+'\')">'+
+      '<span class="dot"></span>'+
+      '<div style="flex:1"><span class="ttitle" style="text-decoration:line-through">'+escapeHtml(t.title)+'</span><br>'+
+      '<span style="font-size:11px; color:var(--muted)">'+fmtDate(t.date)+(t.result?' — '+escapeHtml(t.result):'')+'</span></div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+function renderClientOpsTabHistoria(c){
+  var html = '<div class="card"><div class="row" style="gap:6px; flex-wrap:wrap; align-items:center">'+
+    '<select id="coHistType_'+c.id+'" style="width:auto">'+
+    Object.keys(CLIENT_OPS_HISTORY_TYPE_LABEL).map(function(k){ return '<option value="'+k+'">'+CLIENT_OPS_HISTORY_TYPE_LABEL[k]+'</option>'; }).join("")+
+    '</select>'+
+    '<input type="text" id="coHistInput_'+c.id+'" placeholder="Szybki wpis…" style="flex:1; min-width:160px" onkeydown="if(event.key===\'Enter\'){ clientOpsAddHistoryQuick(\''+c.id+'\'); }">'+
+    '<button class="btn small" onclick="clientOpsAddHistoryQuick(\''+c.id+'\')">Dodaj</button>'+
+    '</div></div>';
+  var entries = state.clientOps.historia.filter(function(h){ return h.clientId===c.id; }).sort(function(a,b){ return b.date<a.date?-1:1; });
+  html += '<div class="card" style="margin-top:12px">';
+  if(!entries.length){ html += '<div class="empty">Brak jeszcze wpisów w historii.</div>'; }
+  entries.forEach(function(h){
+    html += '<div class="taskitem"><span class="dot" style="opacity:0"></span>'+
+      '<div style="flex:1"><span style="font-size:11px; color:var(--muted)">'+fmtDate(h.date)+'</span> '+
+      '<span class="tag" style="background:var(--sidebar-bg); color:var(--muted)">'+(CLIENT_OPS_HISTORY_TYPE_LABEL[h.type]||h.type)+'</span><br>'+
+      '<span style="font-size:13px">'+escapeHtml(h.text)+'</span></div>'+
+      '<button class="linklike danger" onclick="deleteClientOpsHistory(\''+h.id+'\')">Usuń</button></div>';
+  });
+  html += '</div>';
+  return html;
+}
+function renderClientOpsTabWyniki(c){
+  var months = clientOpsWynikiMonthsForClient(c.id);
+  var html = '<div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">'+
+    '<button class="btn small" onclick="clientOpsAddWynikiMonth(\''+c.id+'\')">+ Dodaj miesiąc</button>'+
+    '<button class="btn secondary small" onclick="openClientOpsSummaryModal(\''+c.id+'\')">📈 Podsumowanie całej umowy</button>'+
+    '</div>';
+  html += '<div class="card" style="margin-top:12px"><h3>Zapisy na zajęcia'+(c.gwarancjaKlientowMc?' vs gwarancja':'')+'</h3>'+renderClientOpsMiniChart(c.id, c)+'</div>';
+  var isO2 = c.oferta==="OFERTA_2";
+  var cols = ["Miesiąc"];
+  if(isO2) cols = cols.concat(["Wydatki","Zasięg","Wyśw.","Klikn.","Leady","Koszt leada","Rozmowy DM"]);
+  cols = cols.concat(["Zapisy","Koszt zapisu","Obs. start","Obs. koniec","Przyrost","Rolki","Karuzele","Raport"]);
+  html += '<div class="card" style="margin-top:12px; overflow-x:auto" id="coWynikiScroll"><table style="width:100%; border-collapse:collapse; font-size:12px; min-width:900px">';
+  html += '<tr style="text-align:left; color:var(--muted); font-size:10.5px; text-transform:uppercase">'+cols.map(function(x){ return '<th style="padding:6px">'+x+'</th>'; }).join("")+'</tr>';
+  months.forEach(function(w){
+    function numCell(field){
+      return '<td><input type="number" value="'+(w[field]==null?"":w[field])+'" style="width:75px" onchange="clientOpsUpdateWynikiField(\''+w.id+'\',\''+field+'\',this.value)"></td>';
+    }
+    html += '<tr style="border-top:1px solid var(--border)"><td style="padding:6px; font-weight:700; color:#fff">'+w.rokMiesiac+'</td>';
+    if(isO2){
+      html += numCell("wydatki")+numCell("zasieg")+numCell("wyswietlenia")+numCell("klikniecia")+numCell("leady");
+      var kl = clientOpsWynikiKosztLeada(w);
+      html += '<td style="color:var(--muted)">'+(kl!=null?fmtPln(kl):"—")+'</td>';
+      html += numCell("rozmowyDM");
+    }
+    html += numCell("zapisyNaZajecia");
+    var kz = clientOpsWynikiKosztZapisu(w);
+    html += '<td style="color:var(--muted)">'+(kz!=null?fmtPln(kz):"—")+'</td>';
+    html += numCell("obserwujacyStart")+numCell("obserwujacyKoniec");
+    var przyrost = clientOpsWynikiPrzyrost(w);
+    html += '<td style="color:var(--muted)">'+(przyrost!=null?("+"+przyrost):"—")+'</td>';
+    html += numCell("opublikowaneRolki")+numCell("opublikowaneKaruzele");
+    html += '<td><button class="btn secondary small" onclick="openClientOpsReportModal(\''+c.id+'\',\''+w.id+'\')">'+(w.raportWygenerowany?"↻ Generuj":"Generuj")+'</button>'+(w.raportWyslanyData?'<div style="font-size:9.5px; color:var(--success); margin-top:3px">wysłany '+fmtDate(w.raportWyslanyData)+'</div>':'')+'</td>';
+    html += '</tr>';
+    html += '<tr><td colspan="'+cols.length+'" style="padding:4px 6px 12px"><textarea placeholder="Komentarz / wnioski i plan na kolejny miesiąc…" rows="2" style="width:100%; font-size:11.5px" onchange="clientOpsUpdateWynikiField(\''+w.id+'\',\'komentarz\',this.value)">'+escapeHtml(w.komentarz||"")+'</textarea></td></tr>';
+  });
+  if(!months.length){ html += '<tr><td colspan="'+cols.length+'" class="empty">Brak jeszcze danych — dodaj pierwszy miesiąc.</td></tr>'; }
+  html += '</table></div>';
+  if(isO2){ html += renderClientOpsScreenshots(c.id) + renderClientOpsApiKeySettings(); }
+  return html;
+}
+function clientOpsPaymentFor(clientId, ym){
+  return state.clientOps.platnosci.filter(function(x){ return x.clientId===clientId && x.ym===ym; })[0] || {clientId:clientId, ym:ym, oplacony:false};
+}
+function clientOpsTogglePayment(clientId, ym){
+  var p = state.clientOps.platnosci.filter(function(x){ return x.clientId===clientId && x.ym===ym; })[0];
+  if(!p){ p = {id:uid("cop"), clientId:clientId, ym:ym, oplacony:false}; state.clientOps.platnosci.push(p); }
+  p.oplacony = !p.oplacony;
+  state.clientOps.historia.push({id:uid("coh"), clientId:clientId, date:todayStr(), type:"platnosc", text:"Płatność za "+ym+": "+(p.oplacony?"opłacona":"cofnięto oznaczenie opłacenia")+"."});
+  save(); renderAll();
+}
+function renderClientOpsTabUmowa(c){
+  var koniec = computeKoniecDate(c);
+  var html = '<div class="card"><h3>Szczegóły umowy</h3>'+
+    '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; font-size:13px">'+
+    '<div><span style="color:var(--muted)">Segment / oferta</span><br>'+(c.segment||"")+' — '+(CLIENT_OPS_OFERTA_LABEL[c.oferta]||"")+'</div>'+
+    '<div><span style="color:var(--muted)">Płatność</span><br>'+(c.platnosc==="z_gory"?"Z góry":"Miesięczna")+'</div>'+
+    '<div><span style="color:var(--muted)">Były klient</span><br>'+(c.czyBylyKlient?"Tak":"Nie")+'</div>'+
+    '<div><span style="color:var(--muted)">Miesiąc próbny</span><br>'+(c.miesiacProbny?"Tak":"Nie")+'</div>'+
+    '<div><span style="color:var(--muted)">Wyłączność w mieście</span><br>'+(c.wylacznoscMiasto?"Tak":"Nie")+'</div>'+
+    '<div><span style="color:var(--muted)">Start → koniec</span><br>'+(c.startKampanii?fmtDate(c.startKampanii):"—")+' → '+(koniec?fmtDate(koniec):"—")+'</div>'+
+    '</div></div>';
+  if(c.status==="negocjacje_przedluzenia"){
+    var cennik = clientOpsCennik(c.segment, c.oferta, true);
+    html += '<div class="stub-note" style="margin-top:12px; background:rgba(207,155,74,.1); border-color:rgba(207,155,74,.3); color:var(--accent)">'+
+      '💡 Podpowiedź warunków dla byłego klienta ('+(c.segment||"")+' — '+(CLIENT_OPS_OFERTA_LABEL[c.oferta]||"")+'): '+fmtPln(cennik.stawka)+'/mc, umowa '+Math.round(cennik.umowaDni/30)+' mc'+(cennik.gwarancja?(", gwarancja "+cennik.gwarancja+"/mc"):"")+'.</div>';
+  }
+  html += '<div class="card" style="margin-top:12px"><h3>Płatności per miesiąc</h3>';
+  var totalMonths = Math.max(1, Math.round((c.okresDni||90)/30));
+  if(c.startKampanii){
+    for(var i=0;i<totalMonths;i++){
+      var ym = coAddMonths(c.startKampanii, i).slice(0,7);
+      var p = clientOpsPaymentFor(c.id, ym);
+      html += '<div class="taskitem"><input type="checkbox" '+(p.oplacony?"checked":"")+' onchange="clientOpsTogglePayment(\''+c.id+'\',\''+ym+'\')">'+
+        '<span class="dot" style="background:'+(p.oplacony?"var(--success)":"var(--muted)")+'"></span>'+
+        '<div style="flex:1">'+ym+' — '+(p.oplacony?"opłacony":"nieopłacony")+'</div></div>';
+    }
+  }
+  html += '</div>';
+  html += '<div class="card" style="margin-top:12px"><h3>Historia zmian statusu / płatności</h3>';
+  var statusHist = state.clientOps.historia.filter(function(h){ return h.clientId===c.id && (h.type==="zmiana_umowy"||h.type==="platnosc"); }).sort(function(a,b){ return b.date<a.date?-1:1; });
+  if(!statusHist.length){ html += '<div class="empty">Brak zmian.</div>'; }
+  statusHist.forEach(function(h){ html += '<div class="taskitem"><span class="dot" style="opacity:0"></span><div style="flex:1"><span style="font-size:11px; color:var(--muted)">'+fmtDate(h.date)+'</span> — '+escapeHtml(h.text)+'</div></div>'; });
+  html += '</div>';
+  return html;
+}
+
+/* ---- Analiza screenshotów kampanii (Anthropic Vision) — bez zmian z poprzedniej wersji modułu ---- */
 function renderClientOpsScreenshots(clientId){
   var shots = state.clientOps.screenshots.filter(function(s){ return s.clientId===clientId; })
     .sort(function(a,b){ return (b.uploadedAt||"").localeCompare(a.uploadedAt||""); });
@@ -6700,7 +7747,7 @@ function renderClientOpsScreenshots(clientId){
     html += '<div class="stub-note" style="margin-top:8px">Wgrywanie screenshotów jest chwilowo wstrzymane — wymaga jednorazowej decyzji o Firebase Storage (plan Blaze) albo przejścia na przechowywanie w Firestore. Odłożone na później, wróć tu jak zdecydujesz.</div>';
   } else {
     if(!localStorage.getItem("mdgtal_anthropic_key")){
-      html += '<div class="stub-note" style="margin-top:8px">Brak klucza API Anthropic — ustaw go w sekcji "Ustawienia AI" na dole listy klientów, żeby włączyć analizę.</div>';
+      html += '<div class="stub-note" style="margin-top:8px">Brak klucza API Anthropic — ustaw go w sekcji "Ustawienia AI" poniżej, żeby włączyć analizę.</div>';
     }
     html += '<div class="row" style="gap:8px; margin:10px 0; align-items:center">'+
       '<input type="file" accept="image/*" id="coShotInput_'+clientId+'" style="display:none" onchange="uploadClientOpsScreenshot(\''+clientId+'\', this)">'+
@@ -6747,108 +7794,6 @@ function clearClientOpsApiKey(){
   if(!confirm("Usunąć zapisany klucz API?")) return;
   localStorage.removeItem("mdgtal_anthropic_key");
   renderAll();
-}
-function renderClientOpsKlienci(){
-  var clients = state.clientOps.clients.filter(function(c){ return !c.archived; });
-  var html = '';
-  if(!clients.length){
-    html += '<div class="card"><div class="empty">Brak klientów. Dodaj przyciskiem "+ Dodaj klienta".</div></div>';
-  } else {
-    clients.forEach(function(c){
-      var expanded = clientOpsExpandedId===c.id;
-      var koniec = computeKoniecDate(c);
-      var kColor = resolvedDateColor(c, "koniecKampanii");
-      html += '<div class="card" style="margin-bottom:12px">';
-      html += '<div class="row" style="justify-content:space-between; align-items:center; gap:10px">'+
-        '<input type="text" value="'+escapeHtml(c.nazwa||"")+'" placeholder="Nazwa klienta" onchange="updateClientOpsField(\''+c.id+'\',\'nazwa\',this.value)" style="font-weight:700; font-size:14.5px; flex:1; min-width:160px">'+
-        '<span style="font-size:11px; color:var(--muted); white-space:nowrap">'+(koniec?('koniec: '+fmtDate(koniec)):'')+'</span>'+
-        '<button class="linklike" onclick="toggleClientOpsExpand(\''+c.id+'\')">'+(expanded?"Zwiń ▲":"Rozwiń ▼")+'</button>'+
-        '</div>';
-      if(expanded){
-        html += '<div style="margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">';
-        html += '<div class="field"><label>Typ oferty</label><input type="text" value="'+escapeHtml(c.typOferty||"")+'" onchange="updateClientOpsField(\''+c.id+'\',\'typOferty\',this.value)"></div>';
-        html += '<div class="field"><label>Start współpracy</label><input type="date" value="'+(c.startKampanii||"")+'" onchange="updateClientOpsField(\''+c.id+'\',\'startKampanii\',this.value)"></div>';
-        html += '<div class="field"><label>Okres (dni)</label><input type="number" value="'+(c.okresDni||0)+'" onchange="updateClientOpsField(\''+c.id+'\',\'okresDni\',this.value)"></div>';
-        html += '<div class="field"><label>Koniec (auto)</label><div style="padding:9px 6px; border-radius:8px; border:1px solid '+(kColor||"var(--border)")+'; background:'+(kColor||"var(--sidebar-bg)")+'; color:'+(kColor?"#fff":"var(--text)")+'">'+(koniec||"—")+'</div></div>';
-        html += '</div>';
-        html += '<div class="field" style="margin-top:10px"><label style="display:flex; align-items:center; gap:6px"><input type="checkbox" style="width:auto" '+(c.obslugaKampanii?"checked":"")+' onchange="updateClientOpsField(\''+c.id+'\',\'obslugaKampanii\',this.checked)"> Obsługa kampanii reklamowych (odblokowuje analizę screenshotów)</label></div>';
-        html += '<div style="margin-top:6px"><button class="linklike danger" onclick="deleteClientOpsClient(\''+c.id+'\')">Usuń klienta</button></div>';
-        html += renderClientOpsChecklist(c.id);
-        if(c.obslugaKampanii){ html += renderClientOpsScreenshots(c.id); }
-      }
-      html += '</div>';
-    });
-  }
-  html += renderClientOpsApiKeySettings();
-  return html;
-}
-function addClientOpsClient(){
-  var c = {id:uid("co"), nazwa:"", typOferty:"", startKampanii:todayStr(), okresDni:30, koniecKampanii:"", obslugaKampanii:false, archived:false, createdAt:todayStr()};
-  state.clientOps.clients.push(c);
-  pushClientOpsUndo({type:"addClient", id:c.id});
-  clientOpsExpandedId = c.id;
-  save(); renderAll();
-}
-function updateClientOpsField(id, field, value){
-  var c = state.clientOps.clients.filter(function(x){return x.id===id;})[0];
-  if(!c) return;
-  var prev = c[field];
-  var val = (field==="okresDni") ? (+value||0) : (field==="obslugaKampanii") ? !!value : value;
-  if(prev===val) return;
-  pushClientOpsUndo({type:"field", id:id, field:field, prevValue:prev});
-  c[field] = val;
-  save(); renderAll();
-}
-function deleteClientOpsClient(id){
-  if(!confirm("Na pewno usunąć tego klienta wraz z jego zadaniami? Historia screenshotów zostanie (dane w Storage), ale zniknie z widoku. Można cofnąć przyciskiem \"Cofnij\".")) return;
-  var idx = state.clientOps.clients.findIndex(function(x){return x.id===id;});
-  if(idx===-1) return;
-  var client = state.clientOps.clients[idx];
-  var tasks = state.clientOps.tasks.filter(function(t){ return t.clientId===id; });
-  state.clientOps.clients.splice(idx,1);
-  state.clientOps.tasks = state.clientOps.tasks.filter(function(t){ return t.clientId!==id; });
-  pushClientOpsUndo({type:"deleteClient", index:idx, client:client, tasks:tasks});
-  if(clientOpsExpandedId===id) clientOpsExpandedId=null;
-  save(); renderAll();
-}
-function toggleClientOpsExpand(id){ clientOpsExpandedId = (clientOpsExpandedId===id) ? null : id; renderAll(); }
-function addClientOpsTask(clientId){
-  var titleEl = document.getElementById("coNewTaskTitle_"+clientId);
-  var freqEl = document.getElementById("coNewTaskFreq_"+clientId);
-  var daysEl = document.getElementById("coNewTaskDays_"+clientId);
-  var title = titleEl ? titleEl.value.trim() : "";
-  if(!title) return;
-  var freq = freqEl ? freqEl.value : "once";
-  var customDays = freq==="custom" ? Math.max(1, +((daysEl&&daysEl.value)||1)) : null;
-  var t = {id:uid("cot"), clientId:clientId, title:title, freq:freq, customDays:customDays, nextDue:todayStr(), done:false, lastDoneAt:null, createdAt:todayStr()};
-  state.clientOps.tasks.push(t);
-  pushClientOpsUndo({type:"addTask", id:t.id});
-  save(); renderAll();
-}
-function toggleClientOpsTask(id){
-  var t = state.clientOps.tasks.filter(function(x){return x.id===id;})[0];
-  if(!t) return;
-  var prevNextDue = t.nextDue, prevDone = t.done, prevLastDoneAt = t.lastDoneAt;
-  if(t.freq==="once"){
-    t.done = !t.done;
-  } else {
-    var d = new Date();
-    if(t.freq==="weekly") d.setDate(d.getDate()+7);
-    else if(t.freq==="monthly") d.setMonth(d.getMonth()+1);
-    else d.setDate(d.getDate()+Math.max(1, t.customDays||1));
-    t.nextDue = isoLocal(d);
-    t.lastDoneAt = todayStr();
-  }
-  pushClientOpsUndo({type:"toggleTask", id:id, prevNextDue:prevNextDue, prevDone:prevDone, prevLastDoneAt:prevLastDoneAt});
-  save(); renderAll();
-}
-function deleteClientOpsTask(id){
-  var idx = state.clientOps.tasks.findIndex(function(x){return x.id===id;});
-  if(idx===-1) return;
-  var task = state.clientOps.tasks[idx];
-  state.clientOps.tasks.splice(idx,1);
-  pushClientOpsUndo({type:"deleteTask", index:idx, task:task});
-  save(); renderAll();
 }
 function fileToBase64(file){
   return new Promise(function(resolve, reject){
@@ -10605,6 +11550,22 @@ function closeCrmModal(){
   if(m) m.remove();
   __crmModalCtx = null;
 }
+function crmConvertToClientOps(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  closeCrmModal();
+  currentTab = "clientops";
+  clientOpsView = "dashboard";
+  renderAll();
+  openClientOpsClientModal(null);
+  var setVal = function(elId, val){ var el = document.getElementById(elId); if(el && val) el.value = val; };
+  setVal("coNazwa", c.name);
+  setVal("coOsoba", c.contactPerson);
+  setVal("coTelefon", c.phone);
+  setVal("coEmail", c.email);
+  setVal("coInstagram", c.ig);
+  setVal("coMiasto", c.city);
+}
 function crmCategoryOptions(selected){
   var html = '<option value=""'+(!selected?" selected":"")+'>— bez kategorii —</option>';
   (state.crmCategories||[]).forEach(function(cat){
@@ -10667,6 +11628,7 @@ function openCrmModal(id){
     '<div class="field"><label>Mail</label><input type="text" id="cmEmail" value="'+escapeHtml(opts.email||"")+'"></div>'+
     '<div class="field"><label>Telefon</label><input type="text" id="cmPhone" value="'+escapeHtml(opts.phone||"")+'"></div>'+
     '<div class="field"><label>Notatki</label><textarea id="cmNotes" rows="4">'+escapeHtml(opts.notes||"")+'</textarea></div>'+
+    (isEdit ? '<div class="row" style="margin-top:6px"><button class="btn secondary small" onclick="crmConvertToClientOps(\''+opts.id+'\')">→ Konwertuj na klienta (Obsługa Klientów)</button></div>' : '')+
     '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
     (isEdit ? '<button class="btn danger small" onclick="deleteCrmModal()">Usuń</button>' : '')+
     '<button class="btn secondary small" onclick="closeCrmModal()">Anuluj</button>'+
