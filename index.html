@@ -2670,8 +2670,22 @@ function addBrand(){
   postyFilter = name;
   save(); renderAll();
 }
+function autoPublishPastPosts(){
+  var today = todayStr();
+  var changed = false;
+  state.posts.forEach(function(p){
+    if(p.deletedAt || p.stage!=="zaplanowany") return;
+    if(!p.date || p.date>=today) return;
+    p.stage = "opublikowany";
+    ceoAwardXpEvent(p.video ? "reelPublished" : "postPublished");
+    syncContentCalendarFromPost(p);
+    changed = true;
+  });
+  if(changed) save();
+}
 function renderPosty(el){
   ensurePostyFilter();
+  autoPublishPastPosts();
   setTopActions('');
 
   var html = '<div class="tabsw">'+
@@ -2878,7 +2892,14 @@ function saveCCModal(){
     var r = state.contentCalendar.filter(function(x){return x.id===ctx.id;})[0];
     if(r){ r.date=date; r.day=day; r.format=format; r.category=category; r.topic=topic; r.haslo=haslo; }
   } else {
-    state.contentCalendar.push({id:uid("cc"), brand:ctx.brand, date:date, day:day, format:format, category:category, topic:topic, haslo:haslo});
+    var newEntry = {id:uid("cc"), brand:ctx.brand, date:date, day:day, format:format, category:category, topic:topic, haslo:haslo};
+    state.contentCalendar.push(newEntry);
+    if(topic){
+      var draftPost = {id:uid("post"), title:topic, brand:ctx.brand, stage:"szkic", category:category||null, date:date, platform:null,
+        captionFb:"", captionIg:"", images:[], isCarousel:false, fbImage:"", video:null};
+      state.posts.unshift(draftPost);
+      newEntry.sourcePostId = draftPost.id;
+    }
   }
   syncHaslaFromContentCalendar(state);
   closeCCModal();
