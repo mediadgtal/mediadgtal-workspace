@@ -1005,6 +1005,31 @@ function migrateState(s){
     });
     s._financeEntriesHistory20232025Seeded = true;
   }
+  if(!s._ccPostLinkBackfillV1){
+    // Auto-łącznik Posty <-> Kalendarz publikacji: linkuje istniejące wpisy planu do postów o tej samej
+    // marce+dacie (jeśli dopasowanie jednoznaczne), a dla postów bez odpowiadającego wpisu — dogenerowuje go.
+    var linkedIds = {};
+    (s.contentCalendar||[]).forEach(function(c){ if(c.sourcePostId) linkedIds[c.sourcePostId]=true; });
+    (s.contentCalendar||[]).forEach(function(c){
+      if(c.sourcePostId || c.deletedAt) return;
+      var matches = (s.posts||[]).filter(function(p){
+        return !p.deletedAt && p.brand===c.brand && p.date===c.date && (p.stage==="zaplanowany"||p.stage==="opublikowany");
+      });
+      if(matches.length===1){ c.sourcePostId = matches[0].id; linkedIds[matches[0].id]=true; }
+    });
+    if(!s.contentCalendar) s.contentCalendar = [];
+    (s.posts||[]).forEach(function(p){
+      if(p.deletedAt || !p.date) return;
+      if(p.stage!=="zaplanowany" && p.stage!=="opublikowany") return;
+      if(linkedIds[p.id]) return;
+      s.contentCalendar.push({
+        id: uid("cc"), sourcePostId: p.id, brand: p.brand, date: p.date, day: weekdayFullPL(p.date),
+        format: inferPostFormat(p), category: p.category||"", topic: p.title||"", haslo: ""
+      });
+      linkedIds[p.id] = true;
+    });
+    s._ccPostLinkBackfillV1 = true;
+  }
   if(!s._klienciHistory20232025Seeded){
     if(!s.clientsMonthly) s.clientsMonthly = {};
     Object.keys(KLIENCI_HISTORY_2023_2025).forEach(function(ym){
@@ -2868,6 +2893,33 @@ function deleteCCModal(){
   closeCCModal();
   save(); renderAll();
 }
+function inferPostFormat(p){
+  if(p.video) return "Rolka";
+  var n = (p.images||[]).length;
+  if(n>1) return "Karuzela";
+  if(n===1) return "Zdjęcie";
+  return "";
+}
+function syncContentCalendarFromPost(p){
+  if(!p) return;
+  var linked = state.contentCalendar.filter(function(c){ return c.sourcePostId===p.id; })[0];
+  var qualifies = !p.deletedAt && p.date && (p.stage==="zaplanowany" || p.stage==="opublikowany");
+  if(!qualifies){
+    if(linked && !linked.deletedAt) linked.deletedAt = todayStr();
+    return;
+  }
+  if(linked){
+    linked.deletedAt = null;
+    linked.date = p.date;
+    linked.day = weekdayFullPL(p.date);
+    linked.brand = p.brand;
+  } else {
+    state.contentCalendar.push({
+      id: uid("cc"), sourcePostId: p.id, brand: p.brand, date: p.date, day: weekdayFullPL(p.date),
+      format: inferPostFormat(p), category: p.category||"", topic: p.title||"", haslo: ""
+    });
+  }
+}
 var zapMonth, zapYear;
 function changeZapMonth(dir){
   var now = new Date();
@@ -3315,7 +3367,7 @@ function saveIdeaModal(){
 function deleteIdea(id){
   if(!confirm("Usunąć ten pomysł? Trafi do Kosza na 30 dni.")) return;
   var p = state.posts.filter(function(x){return x.id===id;})[0];
-  if(p) p.deletedAt = todayStr();
+  if(p){ p.deletedAt = todayStr(); syncContentCalendarFromPost(p); }
   closeIdeaModal();
   save(); renderAll();
 }
@@ -3449,16 +3501,19 @@ function savePostModal(){
   var video = normalizeVideoUrl(document.getElementById("pmVideo").value.trim()) || null;
   var ctx = window.__postModalCtx || {};
   var prevStage = null;
+  var p;
   if(ctx.id){
-    var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
+    p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
     if(p){ prevStage = p.stage; p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.captionFb=captionFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; p.video=video; }
   } else {
-    state.posts.unshift({id:uid("post"), title:title, brand:brand, stage:stage, category:null, date:date, platform:platform,
-      captionFb:captionFb, captionIg:captionIg, images:images, isCarousel:isCarousel, fbImage:fbImage, video:video});
+    p = {id:uid("post"), title:title, brand:brand, stage:stage, category:null, date:date, platform:platform,
+      captionFb:captionFb, captionIg:captionIg, images:images, isCarousel:isCarousel, fbImage:fbImage, video:video};
+    state.posts.unshift(p);
   }
   if(stage==="opublikowany" && prevStage!=="opublikowany"){
     ceoAwardXpEvent(video ? "reelPublished" : "postPublished");
   }
+  if(p) syncContentCalendarFromPost(p);
   closePostModal();
   save(); renderAll();
 }
@@ -3467,7 +3522,7 @@ function deletePostModal(){
   if(!ctx || !ctx.id) return;
   if(!confirm('Usunąć post "'+ctx.title+'"? Trafi do Kosza na 30 dni.')) return;
   var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
-  if(p) p.deletedAt = todayStr();
+  if(p){ p.deletedAt = todayStr(); syncContentCalendarFromPost(p); }
   closePostModal();
   save(); renderAll();
 }
@@ -3496,6 +3551,7 @@ function markSzkicReady(){
   readSzkicFieldsInto(p);
   if(!p.date){ alert("Ustaw najpierw planowaną datę publikacji, zanim przeniesiesz do Zaplanowanych."); return; }
   p.stage = "zaplanowany";
+  syncContentCalendarFromPost(p);
   szkicActiveId = null;
   save(); renderAll();
 }
