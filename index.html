@@ -6857,6 +6857,13 @@ function openClientOpsClientModal(id, opts){
   var html = '<div class="modal-overlay" id="coClientModal" data-close="closeClientOpsClientModal">'+
     '<div class="modal-box card" style="max-width:560px">'+
     '<h3>'+(isEdit?"Edytuj klienta":"Nowy klient")+'</h3>'+
+    (!isEdit ? (
+      '<div class="field" style="margin-top:12px"><label>Uzupełnij z istniejącego klienta (zakładka Klienci)</label>'+
+      '<select id="coPickExisting" onchange="clientOpsFillFromKlienci(this.value)"><option value="">— wybierz, żeby uzupełnić dane —</option>'+
+      clientOpsKlienciPickerOptions()+
+      '</select></div>'+
+      '<div id="coPickWarn"></div>'
+    ) : '')+
     '<div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin:14px 0 8px">Dane kontaktowe</div>'+
     '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">'+
     '<div class="field"><label>Nazwa</label><input type="text" id="coNazwa" value="'+escapeHtml(c.nazwa||"")+'"></div>'+
@@ -6910,6 +6917,14 @@ function closeClientOpsClientModal(){
   var el = document.getElementById("coClientModal");
   if(el) el.remove();
 }
+function clientOpsSyncOfertaVisibility(){
+  var oferta = document.getElementById("coOferta").value;
+  var isO2 = oferta==="OFERTA_2";
+  document.getElementById("coBudzetWrap").style.display = isO2 ? "" : "none";
+  document.getElementById("coMiesiacProbnyWrap").style.display = isO2 ? "" : "none";
+  document.getElementById("coWylacznoscWrap").style.display = isO2 ? "" : "none";
+  if(!isO2){ document.getElementById("coMiesiacProbny").checked = false; document.getElementById("coWylacznosc").checked = false; }
+}
 function clientOpsRecalcDefaults(){
   var segment = document.getElementById("coSegment").value;
   var oferta = document.getElementById("coOferta").value;
@@ -6919,11 +6934,62 @@ function clientOpsRecalcDefaults(){
   var months = Math.max(1, Math.round(cennik.umowaDni/30));
   document.getElementById("coStawka").value = (platnosc==="z_gory" && cennik.zGory) ? Math.round(cennik.zGory/months) : cennik.stawka;
   document.getElementById("coOkresDni").value = cennik.umowaDni;
-  var isO2 = oferta==="OFERTA_2";
-  document.getElementById("coBudzetWrap").style.display = isO2 ? "" : "none";
-  document.getElementById("coMiesiacProbnyWrap").style.display = isO2 ? "" : "none";
-  document.getElementById("coWylacznoscWrap").style.display = isO2 ? "" : "none";
-  if(!isO2){ document.getElementById("coMiesiacProbny").checked = false; document.getElementById("coWylacznosc").checked = false; }
+  clientOpsSyncOfertaVisibility();
+}
+/* ---- Wybór istniejącego klienta z zakładki Klienci (billing), autouzupełnienie formularza ---- */
+function clientOpsKlienciPickerOptions(){
+  var byYear = {};
+  Object.keys(state.clientsMonthly||{}).forEach(function(ym){
+    var year = ym.slice(0,4);
+    (state.clientsMonthly[ym]||[]).forEach(function(r){
+      if(!r.nazwa) return;
+      if(!byYear[year]) byYear[year] = [];
+      byYear[year].push({ym:ym, row:r});
+    });
+  });
+  var years = Object.keys(byYear).sort(function(a,b){ return b-a; });
+  var html = "";
+  years.forEach(function(year){
+    var items = byYear[year].sort(function(a,b){
+      if(a.ym!==b.ym) return a.ym<b.ym?1:-1;
+      return (a.row.nazwa||"").localeCompare(b.row.nazwa||"", "pl");
+    });
+    html += '<optgroup label="'+year+'">';
+    items.forEach(function(it){
+      var label = it.ym.slice(5,7)+"."+year+" — "+it.row.nazwa+(it.row.wynagrodzenie?(" ("+fmtPln(it.row.wynagrodzenie)+")"):"");
+      html += '<option value="'+it.ym+'::'+it.row.id+'">'+escapeHtml(label)+'</option>';
+    });
+    html += '</optgroup>';
+  });
+  return html;
+}
+function clientOpsFillFromKlienci(val){
+  var warnEl = document.getElementById("coPickWarn");
+  if(warnEl) warnEl.innerHTML = "";
+  if(!val) return;
+  var parts = val.split("::");
+  var ym = parts[0], rowId = parts[1];
+  var r = ((state.clientsMonthly && state.clientsMonthly[ym]) || []).filter(function(x){ return x.id===rowId; })[0];
+  if(!r) return;
+  var setVal = function(elId, v){ var el = document.getElementById(elId); if(el && v!=null && v!=="") el.value = v; };
+  setVal("coNazwa", r.nazwa);
+  setVal("coMiasto", r.lokalizacja);
+  setVal("coStawka", r.wynagrodzenie);
+  setVal("coStart", r.startKampanii);
+  setVal("coOkresDni", r.okresDni);
+  setVal("coNotatki", r.notatki);
+  var ofertaSel = document.getElementById("coOferta");
+  if(ofertaSel){
+    ofertaSel.value = (+r.budzetRekl>0) ? "OFERTA_2" : "OFERTA_1";
+    clientOpsSyncOfertaVisibility();
+    if(+r.budzetRekl>0) setVal("coBudzet", r.budzetRekl);
+  }
+  var bylySel = document.getElementById("coByly");
+  if(bylySel) bylySel.checked = (r.statusKlienta==="Kontynuacja");
+  var existing = state.clientOps.clients.filter(function(x){ return (x.nazwa||"").trim().toLowerCase()===(r.nazwa||"").trim().toLowerCase(); })[0];
+  if(warnEl && existing){
+    warnEl.innerHTML = '<div class="stub-note" style="margin-top:6px">⚠️ Klient o tej nazwie już istnieje w Obsłudze Klientów ("'+escapeHtml(existing.nazwa)+'"). Jeśli to ten sam klient, lepiej otwórz jego kartę zamiast tworzyć duplikat.</div>';
+  }
 }
 function saveClientOpsClientModal(){
   var nazwaEl = document.getElementById("coNazwa");
