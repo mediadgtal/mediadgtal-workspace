@@ -2713,8 +2713,21 @@ function postyDateInFilter(dateStr){
   }
   return true;
 }
+var postySortCol = "date", postySortDir = "desc";
+function postySetSort(col){
+  if(postySortCol===col){ postySortDir = (postySortDir==="asc") ? "desc" : "asc"; }
+  else { postySortCol = col; postySortDir = col==="date" ? "desc" : "asc"; }
+  renderAll();
+}
+function postySortValue(p, col){
+  if(col==="date") return p.date||"";
+  if(col==="dzien") return p.date ? weekdayShortPl(p.date) : "";
+  if(col==="platforma") return p.platform ? POST_PLATFORM_LABEL[p.platform] : "";
+  if(col==="marka") return p.brand||"";
+  if(col==="etap") return POST_STAGE_LABEL[p.stage]||"";
+  return (p.title||"").toString().toLowerCase();
+}
 function renderPostyPulpit(){
-  var STAGE_ORDER = {szkic:0, zaplanowany:1, opublikowany:2};
   var filtered = state.posts.filter(function(p){
     if(p.deletedAt) return false;
     if(p.stage==="pomysl") return false;
@@ -2724,16 +2737,23 @@ function renderPostyPulpit(){
     return true;
   });
   filtered = filtered.slice().sort(function(a,b){
-    if(a.date && b.date) return a.date<b.date ? -1 : (a.date>b.date ? 1 : 0);
-    if(a.date && !b.date) return -1;
-    if(!a.date && b.date) return 1;
-    return (STAGE_ORDER[a.stage]||0) - (STAGE_ORDER[b.stage]||0);
+    var va = postySortValue(a, postySortCol), vb = postySortValue(b, postySortCol);
+    if(!va && va!==0) return vb ? 1 : 0;
+    if(!vb && vb!==0) return -1;
+    var cmp = String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
+    return postySortDir==="asc" ? cmp : -cmp;
   });
   if(!filtered.length){
     return '<div class="card"><div class="empty">Brak zaplanowanych materiałów. Pomysły bez terminu znajdziesz w zakładce "Baza".</div></div>';
   }
-  var html = '<div class="card"><div style="overflow-x:auto"><table><thead><tr>'+
-    '<th>Data</th><th>Dzień</th><th>Platforma</th><th>Marka</th><th>Tytuł</th><th>Etap</th></tr></thead><tbody>';
+  var TH = 'cursor:pointer; user-select:none';
+  var postyCols = [["date","Data"],["dzien","Dzień"],["platforma","Platforma"],["marka","Marka"],["title","Tytuł"],["etap","Etap"]];
+  var html = '<div class="card"><div style="overflow-x:auto"><table><thead><tr>';
+  postyCols.forEach(function(pc){
+    var arrow = postySortCol===pc[0] ? (postySortDir==="asc" ? " ▲" : " ▼") : "";
+    html += '<th style="'+TH+'" onclick="postySetSort(\''+pc[0]+'\')">'+pc[1]+arrow+'</th>';
+  });
+  html += '</tr></thead><tbody>';
   filtered.forEach(function(p){
     html += '<tr style="cursor:pointer" onclick="openPostPreview(\''+p.id+'\')">'+
       '<td>'+(p.date ? fmtDate(p.date) : '<span style="color:var(--muted)">— brak daty —</span>')+'</td>'+
@@ -2748,8 +2768,7 @@ function renderPostyPulpit(){
   return html;
 }
 function renderPostyKalendarz(){
-  var rows = state.contentCalendar.filter(function(c){ return c.brand===postyFilter && !c.deletedAt; })
-    .slice().sort(function(a,b){ return a.date<b.date?-1:(a.date>b.date?1:0); });
+  var rows = state.contentCalendar.filter(function(c){ return c.brand===postyFilter && !c.deletedAt; });
   var html = '<div class="card">'+
     '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px">'+
     '<h3 style="margin:0">Plan</h3>'+
@@ -2758,10 +2777,31 @@ function renderPostyKalendarz(){
     contentCalendarTable(rows)+'</div>';
   return html;
 }
+var ccSortCol = "date", ccSortDir = "desc";
+function ccSetSort(col){
+  if(ccSortCol===col){ ccSortDir = (ccSortDir==="asc") ? "desc" : "asc"; }
+  else { ccSortCol = col; ccSortDir = col==="date" ? "desc" : "asc"; }
+  renderAll();
+}
+function ccSortValue(r, col){
+  if(col==="date") return r.date||"";
+  return (r[col]||"").toString().toLowerCase();
+}
 function contentCalendarTable(rows){
   if(!rows.length){ return '<div class="empty">Brak wpisów.</div>'; }
-  var html = '<div style="overflow-x:auto"><table id="ccTable"><thead><tr><th>Data</th><th>Dzień</th><th>Format</th><th>Kategoria</th><th>Temat</th><th>Hasło</th></tr></thead><tbody>';
-  rows.forEach(function(r){
+  var TH = 'cursor:pointer; user-select:none';
+  var ccCols = [["date","Data"],["day","Dzień"],["format","Format"],["category","Kategoria"],["topic","Temat"],["haslo","Hasło"]];
+  var html = '<div style="overflow-x:auto"><table id="ccTable"><thead><tr>';
+  ccCols.forEach(function(cc){
+    var arrow = ccSortCol===cc[0] ? (ccSortDir==="asc" ? " ▲" : " ▼") : "";
+    html += '<th style="'+TH+'" onclick="ccSetSort(\''+cc[0]+'\')">'+cc[1]+arrow+'</th>';
+  });
+  html += '</tr></thead><tbody>';
+  rows.slice().sort(function(a,b){
+    var va = ccSortValue(a, ccSortCol), vb = ccSortValue(b, ccSortCol);
+    var cmp = String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
+    return ccSortDir==="asc" ? cmp : -cmp;
+  }).forEach(function(r){
     html += '<tr data-cc-id="'+r.id+'" style="cursor:pointer" onclick="openCCModal({id:\''+r.id+'\'})"><td>'+fmtDate(r.date)+'</td><td>'+escapeHtml(r.day)+'</td><td>'+escapeHtml(r.format||"—")+'</td>'+
       '<td>'+escapeHtml(r.category||"—")+'</td><td>'+escapeHtml(r.topic||"—")+'</td><td>'+escapeHtml(r.haslo||"—")+'</td></tr>';
   });
