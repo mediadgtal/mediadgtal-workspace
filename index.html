@@ -1110,6 +1110,7 @@ function migrateState(s){
     if(c.email==null) c.email = "";
     if(c.instagram==null) c.instagram = "";
     if(c.miasto==null) c.miasto = "";
+    if(c.typUmowy==null) c.typUmowy = "czasowa";
   });
   s.clientOps.tasks.forEach(function(t){
     if(!t.date){
@@ -1324,6 +1325,7 @@ var CLIENT_FIELDS = [
   {key:"notatki", label:"Notatki/Uwagi", type:"text"}
 ];
 function computeKoniecDate(r){
+  if(r.typUmowy==="bezterminowa") return "";
   if(!r.startKampanii || !r.okresDni) return r.koniecKampanii||"";
   var d = new Date(r.startKampanii+"T00:00:00");
   d.setDate(d.getDate()+(+r.okresDni||0));
@@ -2173,6 +2175,8 @@ function defaultState(){
   s.geoCache = {};
 
   s.clientOps = {clients:[], tasks:[], screenshots:[], historia:[], wyniki:[], platnosci:[]};
+  s.clientOpsBackupSheetId = null;
+  s.clientOpsBackupSheetUrl = null;
 
   s.audits = [];
 
@@ -2189,7 +2193,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); scheduleFinanceBackupPush(); }
+function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); scheduleFinanceBackupPush(); scheduleClientOpsBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -6658,18 +6662,42 @@ var CLIENT_OPS_OFERTA_LABEL = {OFERTA_1:"Oferta 1 — IG bez reklam", OFERTA_2:"
 var CLIENT_OPS_STATUS_LABEL = {aktywny:"Aktywny", miesiac_probny:"Miesiąc próbny", negocjacje_przedluzenia:"Negocjacje przedłużenia", zakonczony:"Zakończony", zawieszony:"Zawieszony"};
 var CLIENT_OPS_STATUS_COLOR = {aktywny:"var(--success)", miesiac_probny:"var(--accent)", negocjacje_przedluzenia:"#4a9eff", zakonczony:"var(--muted)", zawieszony:"var(--danger)"};
 var CLIENT_OPS_TASK_TYPE_LABEL = {
-  konsultacja_tygodniowa:"Konsultacja tygodniowa",
+  konsultacja_tygodniowa:"Konsultacja tygodniowa", // legacy, zadania juz wygenerowane starym modelem
+  umowa_podpisanie:"Podpisanie umowy",
+  oplacenie_faktury:"Opłacenie faktury",
+  wystawienie_faktury:"Wystawienie faktury za kolejny miesiąc",
+  onboarding:"Spotkanie wdrożeniowe",
+  szkolenie_sprzedazowe:"Szkolenie sprzedażowe",
+  przygotowanie_kampanii:"Przygotowanie pierwszej kampanii",
+  przygotowanie_grafik:"Przygotowanie grafik",
+  przygotowanie_tekstow:"Przygotowanie tekstów reklamowych",
+  publikacja_kampanii:"Opublikowanie pierwszej kampanii",
+  konsultacja_7dni:"Konsultacja — 7 dni od startu kampanii",
+  konsultacja_30dni:"Konsultacja — 30 dni od startu kampanii",
+  konsultacja_60dni:"Konsultacja — 60 dni od startu kampanii",
+  spotkanie_koncowe:"Spotkanie końcowe — podsumowanie umowy",
   raport_miesieczny:"Raport miesięczny",
   kontrola_jakosci_leadow:"Kontrola jakości leadów",
   kontrola_gwarancji:"Kontrola gwarancji",
   rozmowa_przedluzenie:"Rozmowa o przedłużeniu",
   decyzja_przedluzenie:"Decyzja o przedłużeniu",
   koniec_miesiaca_probnego:"Koniec miesiąca próbnego",
-  onboarding:"Onboarding",
   spotkanie_online:"Spotkanie online",
   rozmowa_telefoniczna:"Rozmowa telefoniczna",
   inne:"Inne"
 };
+// Zadania "reaktywne" — planowane nie z góry na cały okres umowy, tylko w momencie zajścia zdarzenia
+// (start pierwszej kampanii). Wyłączone z automatycznego czyszczenia/regeneracji przy edycji klienta.
+var CLIENT_OPS_REACTIVE_TASK_TYPES = ["konsultacja_7dni","konsultacja_30dni","konsultacja_60dni","spotkanie_koncowe"];
+// Typy zadań, których odznaczenie otwiera notatkę/transkrypcję ze spotkania zamiast krótkiego promptu.
+var CLIENT_OPS_MEETING_TASK_TYPES = ["onboarding","konsultacja_7dni","konsultacja_30dni","konsultacja_60dni","spotkanie_koncowe","spotkanie_online"];
+function clientOpsMonthlyEquivalent(c){
+  var months = Math.max(1, Math.round((c.okresDni||30)/30));
+  return c.platnosc==="z_gory" ? Math.round((+c.stawkaMc||0)/months) : (+c.stawkaMc||0);
+}
+function clientOpsCampaignAnchorTaskType(c){
+  return c.oferta==="OFERTA_2" ? "publikacja_kampanii" : "onboarding";
+}
 var CLIENT_OPS_HISTORY_TYPE_LABEL = {
   rozmowa:"📞 Rozmowa", spotkanie_online:"💻 Spotkanie online", wiadomosc:"💬 Wiadomość",
   email:"✉️ Email", raport_wyslany:"📊 Raport wysłany", kontrola_leadow:"🔍 Kontrola leadów",
@@ -6693,49 +6721,72 @@ function coLastBizDay(y, m){
 }
 function coLastDayOfMonth(y, m){ return isoLocal(new Date(y, m+1, 0)); }
 
-/* ---- Generator zadań (sekcja 4) ---- */
+/* ---- Generator zadań (sekcja 4 + rozszerzenia: zadania początkowe, faktury, umowa bezterminowa) ---- */
 function clientOpsGenerateTaskCandidates(c){
   var out = [];
-  var start = c.startKampanii, end = computeKoniecDate(c);
-  if(!start || !end || end < start) return out;
+  var start = c.startKampanii;
+  if(!start) return out;
+  var isOpenEnded = c.typUmowy==="bezterminowa";
+  var end = computeKoniecDate(c); // "" dla umowy bezterminowej
+  if(!isOpenEnded && (!end || end < start)) return out;
   function push(type, date, title, opis){
     if(!date) return;
-    if(type!=="konsultacja_tygodniowa") date = coShiftWeekend(date);
+    date = coShiftWeekend(date);
     out.push({type:type, date:date, title:title, opis:opis||""});
   }
-  push("onboarding", start, "Spotkanie startowe: cele, dostępy do IG/Meta, ustalenie planu contentu");
 
-  var wd = (c.dzienKonsultacji!=null && c.dzienKonsultacji!=="") ? +c.dzienKonsultacji : 0;
-  var d0 = new Date(start+"T00:00:00");
-  var curWd = (d0.getDay()+6)%7;
-  var delta = (wd - curWd + 7) % 7;
-  d0.setDate(d0.getDate()+delta);
-  var cd = isoLocal(d0);
-  while(cd <= end){
-    push("konsultacja_tygodniowa", cd, "Cotygodniowa konsultacja z klientem");
-    cd = coAddDays(cd, 7);
+  // Zadania początkowe — dzień podpisania umowy i kolejne dni
+  push("umowa_podpisanie", start, "Podpisanie umowy");
+  push("oplacenie_faktury", start, "Opłacenie faktury"+(c.platnosc==="z_gory"?" (za całą umowę)":" (za pierwszy miesiąc)"));
+  push("onboarding", start, "Spotkanie wdrożeniowe: cele, dostępy do IG/Meta, ustalenie planu contentu");
+  if(c.oferta==="OFERTA_2"){
+    push("szkolenie_sprzedazowe", coAddDays(start,1), "Szkolenie sprzedażowe");
+    push("przygotowanie_kampanii", coAddDays(start,2), "Przygotowanie pierwszej kampanii reklamowej");
+    push("przygotowanie_grafik", coAddDays(start,3), "Przygotowanie grafik do kampanii");
+    push("przygotowanie_tekstow", coAddDays(start,4), "Przygotowanie tekstów reklamowych");
+    push("publikacja_kampanii", coAddDays(start,5), "Opublikowanie pierwszej kampanii");
   }
 
-  var sD = new Date(start+"T00:00:00"), eD = new Date(end+"T00:00:00");
+  // Horyzont pętli miesięcznych: koniec umowy, albo (dla bezterminowej) 12 miesięcy do przodu od dziś/startu
+  var horizonEnd = isOpenEnded ? coAddMonths((todayStr()>start?todayStr():start), 12) : end;
+  var sD = new Date(start+"T00:00:00"), eD = new Date(horizonEnd+"T00:00:00");
+
+  // Raport miesięczny — ostatni dzień roboczy każdego pełnego miesiąca współpracy
   var my = sD.getFullYear(), mm = sD.getMonth();
   while(true){
     var lbd = coLastBizDay(my, mm);
-    if(lbd >= start && lbd <= end){
+    if(lbd >= start && lbd <= horizonEnd){
       push("raport_miesieczny", lbd, "Uzupełnij wyniki miesiąca i wyślij raport", my+"-"+String(mm+1).padStart(2,"0"));
     }
     mm++; if(mm>11){ mm=0; my++; }
     if(my>eD.getFullYear() || (my===eD.getFullYear() && mm>eD.getMonth())) break;
   }
 
-  push("rozmowa_przedluzenie", coAddDays(end,-30), "Zaplanuj rozmowę o przedłużeniu. Przygotuj podsumowanie wyników z całej umowy + ofertę dla byłego klienta (niższa stawka, dłuższa umowa)");
-  push("decyzja_przedluzenie", coAddDays(end,-14), "Follow-up: czy klient przedłuża? Jeśli brak decyzji — zadzwoń, nie pisz");
+  // Przypomnienie o wystawieniu faktury — tylko przy płatności miesięcznej. Miesiąc rozliczeniowy
+  // liczony od daty podpisania umowy (nie od 1. dnia kalendarzowego), przypomnienie 3 dni przed jego końcem.
+  if(c.platnosc!=="z_gory"){
+    var i = 0;
+    while(true){
+      var cycleEnd = coAddDays(coAddMonths(start, i+1), -1);
+      if(cycleEnd > horizonEnd) break;
+      var reminder = coAddDays(cycleEnd, -3);
+      if(reminder >= start) push("wystawienie_faktury", reminder, "Wystaw fakturę za kolejny miesiąc współpracy (miesiąc rozliczeniowy kończy się "+fmtDate(cycleEnd)+")");
+      i++;
+      if(i>36) break; // zabezpieczenie przed nieskończoną pętlą
+    }
+  }
+
+  if(!isOpenEnded){
+    push("rozmowa_przedluzenie", coAddDays(end,-30), "Zaplanuj rozmowę o przedłużeniu. Przygotuj podsumowanie wyników z całej umowy + ofertę dla byłego klienta (niższa stawka, dłuższa umowa)");
+    push("decyzja_przedluzenie", coAddDays(end,-14), "Follow-up: czy klient przedłuża? Jeśli brak decyzji — zadzwoń, nie pisz");
+  }
 
   if(c.oferta==="OFERTA_2"){
     var my2=sD.getFullYear(), mm2=sD.getMonth();
     while(true){
       [10,25].forEach(function(day){
         var ds = isoLocal(new Date(my2, mm2, day));
-        if(ds>=start && ds<=end) push("kontrola_jakosci_leadow", ds, "Zapytaj klienta o jakość leadów: ile z nich odpisuje, ile przychodzi na zajęcia, czy są z targetu");
+        if(ds>=start && ds<=horizonEnd) push("kontrola_jakosci_leadow", ds, "Zapytaj klienta o jakość leadów: ile z nich odpisuje, ile przychodzi na zajęcia, czy są z targetu");
       });
       mm2++; if(mm2>11){ mm2=0; my2++; }
       if(my2>eD.getFullYear() || (my2===eD.getFullYear() && mm2>eD.getMonth())) break;
@@ -6743,9 +6794,9 @@ function clientOpsGenerateTaskCandidates(c){
     var my3=sD.getFullYear(), mm3=sD.getMonth();
     while(true){
       var d15 = isoLocal(new Date(my3, mm3, 15));
-      if(d15>=start && d15<=end) push("kontrola_gwarancji", d15, "Sprawdź licznik zapisów vs gwarancja ("+(c.gwarancjaKlientowMc||0)+"/mc). Jeśli poniżej 50% — eskalacja: zmiana kreacji/budżetu w tym tygodniu");
+      if(d15>=start && d15<=horizonEnd) push("kontrola_gwarancji", d15, "Sprawdź licznik zapisów vs gwarancja ("+(c.gwarancjaKlientowMc||0)+"/mc). Jeśli poniżej 50% — eskalacja: zmiana kreacji/budżetu w tym tygodniu");
       var dLast = coLastDayOfMonth(my3, mm3);
-      if(dLast>=start && dLast<=end) push("kontrola_gwarancji", dLast, "Rozliczenie gwarancji za miesiąc. Jeśli niedowieziona — ustal z klientem plan naprawczy i zapisz ustalenia w historii", my3+"-"+String(mm3+1).padStart(2,"0"));
+      if(dLast>=start && dLast<=horizonEnd) push("kontrola_gwarancji", dLast, "Rozliczenie gwarancji za miesiąc. Jeśli niedowieziona — ustal z klientem plan naprawczy i zapisz ustalenia w historii", my3+"-"+String(mm3+1).padStart(2,"0"));
       mm3++; if(mm3>11){ mm3=0; my3++; }
       if(my3>eD.getFullYear() || (my3===eD.getFullYear() && mm3>eD.getMonth())) break;
     }
@@ -6764,7 +6815,7 @@ function regenerateClientOpsAutoTasks(clientId, opts){
   var isNew = !!opts.isNew;
   if(!isNew){
     state.clientOps.tasks = state.clientOps.tasks.filter(function(t){
-      return !(t.clientId===clientId && t.auto && !t.done && t.date && t.date>=today);
+      return !(t.clientId===clientId && t.auto && !t.done && t.date && t.date>=today && CLIENT_OPS_REACTIVE_TASK_TYPES.indexOf(t.type)===-1);
     });
   }
   var candidates = clientOpsGenerateTaskCandidates(c);
@@ -6784,6 +6835,31 @@ function regenerateClientOpsAutoTasks(clientId, opts){
     existingKeys[key] = true;
     added++;
   });
+  return added;
+}
+/* ---- Zaplanuj spotkania konsultacyjne po faktycznym starcie pierwszej kampanii (reaktywne, sekcja 4) ---- */
+function clientOpsScheduleFollowupConsultations(clientId, launchDate){
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  if(!c) return 0;
+  state.clientOps.tasks = state.clientOps.tasks.filter(function(t){
+    return !(t.clientId===clientId && t.auto && !t.done && CLIENT_OPS_REACTIVE_TASK_TYPES.indexOf(t.type)!==-1);
+  });
+  var end = computeKoniecDate(c); // "" dla bezterminowej — wtedy bez spotkania końcowego
+  var checkpoints = [
+    {type:"konsultacja_7dni", date:coAddDays(launchDate,7), title:CLIENT_OPS_TASK_TYPE_LABEL.konsultacja_7dni},
+    {type:"konsultacja_30dni", date:coAddDays(launchDate,30), title:CLIENT_OPS_TASK_TYPE_LABEL.konsultacja_30dni},
+    {type:"konsultacja_60dni", date:coAddDays(launchDate,60), title:CLIENT_OPS_TASK_TYPE_LABEL.konsultacja_60dni}
+  ];
+  var added = 0;
+  checkpoints.forEach(function(cp){
+    if(end && cp.date >= coAddDays(end,-3)) return; // zbyt blisko końca, pokrywa się ze spotkaniem końcowym
+    state.clientOps.tasks.push({id:uid("cot"), clientId:clientId, type:cp.type, title:cp.title, opis:"", date:coShiftWeekend(cp.date), time:null, done:false, doneAt:null, result:"", auto:true, createdAt:todayStr()});
+    added++;
+  });
+  if(end){
+    state.clientOps.tasks.push({id:uid("cot"), clientId:clientId, type:"spotkanie_koncowe", title:CLIENT_OPS_TASK_TYPE_LABEL.spotkanie_koncowe, opis:"", date:coShiftWeekend(coAddDays(end,-3)), time:null, done:false, doneAt:null, result:"", auto:true, createdAt:todayStr()});
+    added++;
+  }
   return added;
 }
 
@@ -6851,7 +6927,8 @@ function openClientOpsClientModal(id, opts){
   var c = existing || {
     segment:"B2B", oferta:"OFERTA_1", czyBylyKlient:false, platnosc:"miesieczna",
     stawkaMc:clientOpsCennik("B2B","OFERTA_1",false).stawka, budzetReklamowyMc:0,
-    miesiacProbny:false, wylacznoscMiasto:false, startKampanii:todayStr(), okresDni:90,
+    miesiacProbny:false, wylacznoscMiasto:false, typUmowy:"czasowa", okresWypowiedzenia:30,
+    startKampanii:todayStr(), okresDni:90,
     dzienKonsultacji:0, status:"aktywny", notatki:""
   };
   var html = '<div class="modal-overlay" id="coClientModal" data-close="closeClientOpsClientModal">'+
@@ -6885,18 +6962,23 @@ function openClientOpsClientModal(id, opts){
       '</select></div>'+
     '<div class="field"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coByly" style="width:auto" '+(c.czyBylyKlient?"checked":"")+' onchange="clientOpsRecalcDefaults()"> Były klient</label></div>'+
     '<div class="field"><label>Płatność</label><select id="coPlatnosc" onchange="clientOpsRecalcDefaults()">'+
-      '<option value="miesieczna"'+(c.platnosc==="miesieczna"?" selected":"")+'>Miesięczna</option>'+
-      '<option value="z_gory"'+(c.platnosc==="z_gory"?" selected":"")+'>Z góry</option>'+
+      '<option value="miesieczna"'+(c.platnosc==="miesieczna"?" selected":"")+'>Miesięczna (co miesiąc określona stawka)</option>'+
+      '<option value="z_gory"'+(c.platnosc==="z_gory"?" selected":"")+'>Z góry (jedna kwota za całą umowę)</option>'+
       '</select></div>'+
-    '<div class="field"><label>Stawka (zł/mc)</label><input type="number" id="coStawka" value="'+(c.stawkaMc||0)+'"></div>'+
+    '<div class="field"><label id="coStawkaLabel">'+(c.platnosc==="z_gory"?"Kwota za całą umowę (zł)":"Stawka (zł/mc)")+'</label><input type="number" id="coStawka" value="'+(c.stawkaMc||0)+'"></div>'+
     '<div class="field" id="coBudzetWrap" style="display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label>Budżet reklamowy (zł/mc)</label><input type="number" id="coBudzet" value="'+(c.budzetReklamowyMc||0)+'"></div>'+
     '</div>'+
     '<div class="field" id="coMiesiacProbnyWrap" style="margin-top:8px; display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coMiesiacProbny" style="width:auto" '+(c.miesiacProbny?"checked":"")+'> Miesiąc próbny</label></div>'+
     '<div class="field" id="coWylacznoscWrap" style="display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coWylacznosc" style="width:auto" '+(c.wylacznoscMiasto?"checked":"")+'> Wyłączność w mieście</label></div>'+
     '<div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin:14px 0 8px">Umowa</div>'+
     '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">'+
-    '<div class="field"><label>Data startu umowy</label><input type="date" id="coStart" value="'+(c.startKampanii||todayStr())+'"></div>'+
-    '<div class="field"><label>Okres umowy (dni)</label><input type="number" id="coOkresDni" value="'+(c.okresDni||90)+'"></div>'+
+    '<div class="field"><label>Data startu (podpisania) umowy</label><input type="date" id="coStart" value="'+(c.startKampanii||todayStr())+'"></div>'+
+    '<div class="field"><label>Typ umowy</label><select id="coTypUmowy" onchange="clientOpsSyncTypUmowyVisibility()">'+
+      '<option value="czasowa"'+(c.typUmowy!=="bezterminowa"?" selected":"")+'>Czasowa (z terminem końca)</option>'+
+      '<option value="bezterminowa"'+(c.typUmowy==="bezterminowa"?" selected":"")+'>Bez terminu (z okresem wypowiedzenia)</option>'+
+      '</select></div>'+
+    '<div class="field" id="coOkresDniWrap" style="display:'+(c.typUmowy==="bezterminowa"?"none":"")+'"><label>Okres umowy (dni)</label><input type="number" id="coOkresDni" value="'+(c.okresDni||90)+'"></div>'+
+    '<div class="field" id="coOkresWypWrap" style="display:'+(c.typUmowy==="bezterminowa"?"":"none")+'"><label>Okres wypowiedzenia (dni)</label><input type="number" id="coOkresWyp" value="'+(c.okresWypowiedzenia||30)+'"></div>'+
     '<div class="field"><label>Dzień konsultacji</label><select id="coDzienKonsultacji">'+
       WEEKDAYS_FULL.map(function(w,i){ return '<option value="'+i+'"'+((c.dzienKonsultacji||0)===i?" selected":"")+'>'+w+'</option>'; }).join("")+
       '</select></div>'+
@@ -6925,16 +7007,26 @@ function clientOpsSyncOfertaVisibility(){
   document.getElementById("coWylacznoscWrap").style.display = isO2 ? "" : "none";
   if(!isO2){ document.getElementById("coMiesiacProbny").checked = false; document.getElementById("coWylacznosc").checked = false; }
 }
+function clientOpsSyncTypUmowyVisibility(){
+  var bezterminowa = document.getElementById("coTypUmowy").value==="bezterminowa";
+  document.getElementById("coOkresDniWrap").style.display = bezterminowa ? "none" : "";
+  document.getElementById("coOkresWypWrap").style.display = bezterminowa ? "" : "none";
+}
+function clientOpsSyncPlatnoscLabel(){
+  var platnosc = document.getElementById("coPlatnosc").value;
+  var label = document.getElementById("coStawkaLabel");
+  if(label) label.textContent = platnosc==="z_gory" ? "Kwota za całą umowę (zł)" : "Stawka (zł/mc)";
+}
 function clientOpsRecalcDefaults(){
   var segment = document.getElementById("coSegment").value;
   var oferta = document.getElementById("coOferta").value;
   var byly = document.getElementById("coByly").checked;
   var platnosc = document.getElementById("coPlatnosc").value;
   var cennik = clientOpsCennik(segment, oferta, byly);
-  var months = Math.max(1, Math.round(cennik.umowaDni/30));
-  document.getElementById("coStawka").value = (platnosc==="z_gory" && cennik.zGory) ? Math.round(cennik.zGory/months) : cennik.stawka;
+  document.getElementById("coStawka").value = (platnosc==="z_gory" && cennik.zGory) ? cennik.zGory : cennik.stawka;
   document.getElementById("coOkresDni").value = cennik.umowaDni;
   clientOpsSyncOfertaVisibility();
+  clientOpsSyncPlatnoscLabel();
 }
 /* ---- Wybór istniejącego klienta z zakładki Klienci (billing), autouzupełnienie formularza ---- */
 function clientOpsKlienciPickerOptions(){
@@ -7013,7 +7105,14 @@ function saveClientOpsClientModal(){
   c.miesiacProbny = c.oferta==="OFERTA_2" && document.getElementById("coMiesiacProbny").checked;
   c.wylacznoscMiasto = c.oferta==="OFERTA_2" && document.getElementById("coWylacznosc").checked;
   c.startKampanii = document.getElementById("coStart").value || todayStr();
-  c.okresDni = +document.getElementById("coOkresDni").value || 90;
+  c.typUmowy = document.getElementById("coTypUmowy").value;
+  if(c.typUmowy==="bezterminowa"){
+    c.okresWypowiedzenia = +document.getElementById("coOkresWyp").value || 30;
+    c.okresDni = 0;
+  } else {
+    c.okresDni = +document.getElementById("coOkresDni").value || 90;
+    c.okresWypowiedzenia = undefined;
+  }
   c.koniecKampanii = "";
   c.dzienKonsultacji = +document.getElementById("coDzienKonsultacji").value;
   c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.oferta);
@@ -7027,7 +7126,7 @@ function saveClientOpsClientModal(){
   var koniec = computeKoniecDate(c);
   closeClientOpsClientModal();
   clientOpsView = "karta"; clientOpsActiveClientId = c.id; clientOpsKartaTab = "zadania";
-  if(isNew) clientOpsFlashMsg = "Wygenerowano "+added+" zadań do dnia "+fmtDate(koniec)+".";
+  if(isNew) clientOpsFlashMsg = "Wygenerowano "+added+" zadań"+(koniec?(" do dnia "+fmtDate(koniec)):" (umowa bezterminowa)")+".";
   save(); renderAll();
 }
 function clientOpsSyncKlienciBilling(c){
@@ -7070,7 +7169,9 @@ function deleteClientOpsClient(id){
 function clientOpsHistoryTypeForTask(t){
   if(t.type==="raport_miesieczny") return "raport_wyslany";
   if(t.type==="kontrola_jakosci_leadow") return "kontrola_leadow";
-  if(t.type==="spotkanie_online") return "spotkanie_online";
+  if(t.type==="oplacenie_faktury" || t.type==="wystawienie_faktury") return "platnosc";
+  if(t.type==="umowa_podpisanie") return "zmiana_umowy";
+  if(CLIENT_OPS_MEETING_TASK_TYPES.indexOf(t.type)!==-1) return "spotkanie_online";
   if(t.type==="rozmowa_telefoniczna" || t.type==="konsultacja_tygodniowa") return "rozmowa";
   return "notatka";
 }
@@ -7084,6 +7185,10 @@ function toggleClientOpsTask(id){
   }
   if(t.type==="decyzja_przedluzenie"){
     openClientOpsExtModal(id);
+    return;
+  }
+  if(CLIENT_OPS_MEETING_TASK_TYPES.indexOf(t.type)!==-1){
+    openClientOpsMeetingNoteModal(id);
     return;
   }
   var wynik = prompt("Wynik (opcjonalnie, 1-2 zdania):", "");
@@ -7103,7 +7208,15 @@ function clientOpsCompleteTask(id, wynik){
   } else if(wynik){
     state.clientOps.historia.push({id:uid("coh"), clientId:t.clientId, date:todayStr(), type:clientOpsHistoryTypeForTask(t), text:wynik, taskId:t.id});
   }
+  var c = state.clientOps.clients.filter(function(x){ return x.id===t.clientId; })[0];
+  if(c && t.type===clientOpsCampaignAnchorTaskType(c)){
+    var added = clientOpsScheduleFollowupConsultations(c.id, t.doneAt);
+    if(added) clientOpsFlashMsg = "Start pierwszej kampanii zapisany — zaplanowano "+added+" spotkań konsultacyjnych.";
+  }
   save(); renderAll();
+  if(t.type==="spotkanie_koncowe" && c){
+    openClientOpsSummaryModal(c.id);
+  }
 }
 function deleteClientOpsTask(id){
   var idx = state.clientOps.tasks.findIndex(function(x){ return x.id===id; });
@@ -7357,12 +7470,37 @@ function clientOpsContractSummary(clientId){
   if(kzCount) out.sredniKosztZapisu = kzSum/kzCount;
   return out;
 }
+function clientOpsMeetingNotes(clientId){
+  return state.clientOps.historia.filter(function(h){
+    return h.clientId===clientId && (h.type==="spotkanie_online" || h.type==="rozmowa") && h.text;
+  }).sort(function(a,b){ return a.date<b.date?-1:1; });
+}
+function clientOpsFinalReportText(clientId){
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  if(!c) return "";
+  var s = clientOpsContractSummary(clientId);
+  var notes = clientOpsMeetingNotes(clientId);
+  var lines = [];
+  lines.push("📋 PODSUMOWANIE UMOWY — "+c.nazwa);
+  lines.push("");
+  lines.push("LICZBY Z RAPORTOWANIA KAMPANII ("+s.miesiecy+" mc współpracy):");
+  lines.push("• Łącznie zapisów na zajęcia: "+s.sumaZapisow);
+  lines.push("• Suma wydatków reklamowych: "+fmtPln(s.sumaWydatkow));
+  lines.push("• Średni koszt zapisu: "+(s.sredniKosztZapisu!=null?fmtPln(s.sredniKosztZapisu):"—"));
+  lines.push("• Łączny przyrost obserwujących: +"+s.sumaPrzyrost);
+  lines.push("");
+  lines.push("WNIOSKI ZE SPOTKAŃ ONLINE:");
+  if(!notes.length){ lines.push("— brak zapisanych notatek ze spotkań —"); }
+  else{ notes.forEach(function(n){ lines.push("• "+fmtDate(n.date)+": "+n.text); }); }
+  return lines.join("\n");
+}
 function openClientOpsSummaryModal(clientId){
   var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
   if(!c) return;
   var s = clientOpsContractSummary(clientId);
+  var notes = clientOpsMeetingNotes(clientId);
   var html = '<div class="modal-overlay" id="coSummaryModal" data-close="closeClientOpsSummaryModal">'+
-    '<div class="modal-box card" style="max-width:460px">'+
+    '<div class="modal-box card" style="max-width:520px">'+
     '<h3>Podsumowanie całej umowy — '+escapeHtml(c.nazwa)+'</h3>'+
     '<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px">'+
     '<div><div class="stat-value" style="font-size:22px">'+s.miesiecy+'</div><div class="stat-sub">miesięcy współpracy</div></div>'+
@@ -7371,43 +7509,141 @@ function openClientOpsSummaryModal(clientId){
     '<div><div class="stat-value" style="font-size:22px">'+(s.sredniKosztZapisu!=null?fmtPln(s.sredniKosztZapisu):"—")+'</div><div class="stat-sub">średni koszt zapisu</div></div>'+
     '<div><div class="stat-value" style="font-size:22px">+'+s.sumaPrzyrost+'</div><div class="stat-sub">łączny przyrost obserwujących</div></div>'+
     '</div>'+
-    '<div class="row" style="justify-content:flex-end; margin-top:16px"><button class="btn secondary small" onclick="closeClientOpsSummaryModal()">Zamknij</button></div>'+
+    '<div style="margin-top:16px"><label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Wnioski ze spotkań online</label>'+
+    (notes.length ? notes.map(function(n){ return '<div style="margin-top:6px; font-size:12.5px"><span style="color:var(--muted)">'+fmtDate(n.date)+':</span> '+escapeHtml(n.text)+'</div>'; }).join("") : '<div class="empty" style="margin-top:6px">Brak jeszcze notatek ze spotkań.</div>')+
+    '</div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:16px">'+
+    '<button class="btn secondary small" onclick="clientOpsCopyFinalReport(\''+clientId+'\')">📋 Kopiuj jako raport</button>'+
+    '<button class="btn secondary small" onclick="closeClientOpsSummaryModal()">Zamknij</button>'+
     '</div></div>';
   document.body.insertAdjacentHTML("beforeend", html);
 }
 function closeClientOpsSummaryModal(){ var e=document.getElementById("coSummaryModal"); if(e) e.remove(); }
+function clientOpsCopyFinalReport(clientId){
+  var text = clientOpsFinalReportText(clientId);
+  var copy = function(){
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).catch(function(){}); }
+  };
+  copy();
+}
+/* ---- Notatka / transkrypcja ze spotkania online (sekcja 4 — spotkania będą nagrywane/transkrybowane) ---- */
+function openClientOpsMeetingNoteModal(taskId){
+  var t = state.clientOps.tasks.filter(function(x){ return x.id===taskId; })[0];
+  if(!t) return;
+  var html = '<div class="modal-overlay" id="coMeetingModal" data-close="closeClientOpsMeetingModal">'+
+    '<div class="modal-box card" style="max-width:540px">'+
+    '<h3>'+escapeHtml(CLIENT_OPS_TASK_TYPE_LABEL[t.type]||t.title)+'</h3>'+
+    '<div class="field"><label>Notatka ze spotkania / transkrypcja (opcjonalnie — możesz wkleić cały tekst, przeanalizuję i podsumuję wnioski)</label>'+
+    '<textarea id="coMeetingNote" rows="10" placeholder="Wklej notatki lub transkrypcję ze spotkania…"></textarea></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    '<button class="btn secondary small" onclick="closeClientOpsMeetingModal()">Anuluj</button>'+
+    '<button class="btn secondary small" onclick="clientOpsFinishMeeting(\''+taskId+'\', true)">Pomiń (bez notatki)</button>'+
+    '<button class="btn small" onclick="clientOpsFinishMeeting(\''+taskId+'\', false)">Zapisz i zakończ</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeClientOpsMeetingModal(){ var e=document.getElementById("coMeetingModal"); if(e) e.remove(); }
+function clientOpsFinishMeeting(taskId, skip){
+  var noteEl = document.getElementById("coMeetingNote");
+  var note = (skip || !noteEl) ? "" : noteEl.value.trim();
+  closeClientOpsMeetingModal();
+  clientOpsCompleteTask(taskId, note);
+}
 
 /* ---- Eksport / import JSON modułu (sekcja 9) ---- */
-function exportClientOpsJSON(){
-  var data = {clients:state.clientOps.clients, tasks:state.clientOps.tasks, historia:state.clientOps.historia, wyniki:state.clientOps.wyniki, platnosci:state.clientOps.platnosci, exportedAt:new Date().toISOString()};
-  var blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
-  a.href = url; a.download = "obsluga-klientow-backup-"+todayStr()+".json";
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-function importClientOpsJSONFile(inputEl){
-  var file = inputEl.files && inputEl.files[0];
-  if(!file) return;
-  var reader = new FileReader();
-  reader.onload = function(){
-    try{
-      var data = JSON.parse(reader.result);
-      if(!confirm("Zaimportować dane? To DOPISZE klientów/zadania/historię/wyniki z pliku do obecnych danych (nie nadpisze istniejących).")) return;
-      (data.clients||[]).forEach(function(c){ if(!state.clientOps.clients.filter(function(x){return x.id===c.id;})[0]) state.clientOps.clients.push(c); });
-      (data.tasks||[]).forEach(function(t){ if(!state.clientOps.tasks.filter(function(x){return x.id===t.id;})[0]) state.clientOps.tasks.push(t); });
-      (data.historia||[]).forEach(function(h){ if(!state.clientOps.historia.filter(function(x){return x.id===h.id;})[0]) state.clientOps.historia.push(h); });
-      (data.wyniki||[]).forEach(function(w){ if(!state.clientOps.wyniki.filter(function(x){return x.id===w.id;})[0]) state.clientOps.wyniki.push(w); });
-      (data.platnosci||[]).forEach(function(p){ if(!state.clientOps.platnosci.filter(function(x){return x.id===p.id;})[0]) state.clientOps.platnosci.push(p); });
+/* ---- Kopia zapasowa Obsługi Klientów w osobnym arkuszu Google Sheets ---- */
+var clientOpsBackupSyncTimer = null;
+var clientOpsBackupPending = false;
+var clientOpsBackupCreating = false;
+var clientOpsBackupStatus = "idle";
+function ensureClientOpsBackupSheet(){
+  if(!window.__gcalToken || state.clientOpsBackupSheetId || clientOpsBackupCreating) return;
+  clientOpsBackupCreating = true;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      properties:{title:"Obsługa Klientów — kopia zapasowa (system)"},
+      sheets:[{properties:{title:"KLIENCI"}},{properties:{title:"ZADANIA"}},{properties:{title:"HISTORIA"}},{properties:{title:"WYNIKI"}},{properties:{title:"PLATNOSCI"}}]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    clientOpsBackupCreating = false;
+    if(data.spreadsheetId){
+      state.clientOpsBackupSheetId = data.spreadsheetId;
+      state.clientOpsBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
       save(); renderAll();
-      alert("Zaimportowano dane.");
-    }catch(e){
-      alert("Błąd importu: plik nie jest poprawnym JSON-em z tego modułu.");
     }
-  };
-  reader.readAsText(file);
-  inputEl.value = "";
+  }).catch(function(){ clientOpsBackupCreating = false; });
+}
+function scheduleClientOpsBackupPush(){
+  if(!window.__gcalToken || !state.clientOpsBackupSheetId) return;
+  clientOpsBackupPending = true;
+  if(clientOpsBackupSyncTimer) clearTimeout(clientOpsBackupSyncTimer);
+  clientOpsBackupSyncTimer = setTimeout(flushClientOpsBackupPush, 1500);
+}
+function flushClientOpsBackupPush(){
+  if(!clientOpsBackupPending) return;
+  clientOpsBackupPending = false;
+  if(!window.__gcalToken || !state.clientOpsBackupSheetId) return;
+  var nameOf = function(clientId){ var c=state.clientOps.clients.filter(function(x){return x.id===clientId;})[0]; return c?c.nazwa:"(usunięty)"; };
+
+  var klienciRows = [["id","nazwa","segment","oferta","status","stawkaMc","platnosc","czyBylyKlient","budzetReklamowyMc","miesiacProbny","typUmowy","wylacznoscMiasto","startKampanii","koniecUmowy","okresDni","okresWypowiedzenia","gwarancjaKlientowMc","dzienKonsultacji","miasto","osobaKontaktowa","telefon","email","instagram","notatki","createdAt"]];
+  state.clientOps.clients.forEach(function(c){
+    klienciRows.push([c.id,c.nazwa,c.segment,c.oferta,c.status,c.stawkaMc,c.platnosc,c.czyBylyKlient,c.budzetReklamowyMc,c.miesiacProbny,c.typUmowy||"czasowa",c.wylacznoscMiasto,c.startKampanii,computeKoniecDate(c),c.okresDni,c.okresWypowiedzenia||"",c.gwarancjaKlientowMc,c.dzienKonsultacji,c.miasto,c.osobaKontaktowa,c.telefon,c.email,c.instagram,c.notatki,c.createdAt]);
+  });
+
+  var zadaniaRows = [["id","klient","typ","tytul","data","godzina","wykonane","dataWykonania","wynik","auto"]];
+  state.clientOps.tasks.slice().sort(function(a,b){ return (a.date||"")<(b.date||"")?-1:1; }).forEach(function(t){
+    zadaniaRows.push([t.id,nameOf(t.clientId),CLIENT_OPS_TASK_TYPE_LABEL[t.type]||t.type,t.title,t.date,t.time||"",t.done,t.doneAt||"",t.result||"",t.auto]);
+  });
+
+  var historiaRows = [["id","klient","data","typ","tresc"]];
+  state.clientOps.historia.slice().sort(function(a,b){ return (a.date||"")<(b.date||"")?-1:1; }).forEach(function(h){
+    historiaRows.push([h.id,nameOf(h.clientId),h.date,CLIENT_OPS_HISTORY_TYPE_LABEL[h.type]||h.type,h.text]);
+  });
+
+  var wynikiRows = [["id","klient","rokMiesiac","wydatki","zasieg","wyswietlenia","klikniecia","leady","kosztLeada","rozmowyDM","zapisyNaZajecia","kosztZapisu","obserwujacyStart","obserwujacyKoniec","przyrostObserwujacych","opublikowaneRolki","opublikowaneKaruzele","komentarz","raportWygenerowany","raportWyslanyData"]];
+  state.clientOps.wyniki.slice().sort(function(a,b){ return (a.rokMiesiac||"")<(b.rokMiesiac||"")?-1:1; }).forEach(function(w){
+    wynikiRows.push([w.id,nameOf(w.clientId),w.rokMiesiac,w.wydatki,w.zasieg,w.wyswietlenia,w.klikniecia,w.leady,clientOpsWynikiKosztLeada(w),w.rozmowyDM,w.zapisyNaZajecia,clientOpsWynikiKosztZapisu(w),w.obserwujacyStart,w.obserwujacyKoniec,clientOpsWynikiPrzyrost(w),w.opublikowaneRolki,w.opublikowaneKaruzele,w.komentarz,w.raportWygenerowany,w.raportWyslanyData||""]);
+  });
+
+  var platnosciRows = [["id","klient","miesiac","oplacony"]];
+  state.clientOps.platnosci.slice().sort(function(a,b){ return (a.ym||"")<(b.ym||"")?-1:1; }).forEach(function(p){
+    platnosciRows.push([p.id,nameOf(p.clientId),p.ym,p.oplacony]);
+  });
+
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchUpdate", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({
+      valueInputOption:"RAW",
+      data:[
+        {range:"KLIENCI!A1", values: klienciRows},
+        {range:"ZADANIA!A1", values: zadaniaRows},
+        {range:"HISTORIA!A1", values: historiaRows},
+        {range:"WYNIKI!A1", values: wynikiRows},
+        {range:"PLATNOSCI!A1", values: platnosciRows}
+      ]
+    })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    clientOpsBackupStatus = r.ok ? "ok" : "error";
+  }).catch(function(){ clientOpsBackupStatus = "error"; });
+}
+function renderClientOpsBackupStatus(){
+  if(!window.__gcalToken){
+    return '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
+  }
+  if(!state.clientOpsBackupSheetId){
+    ensureClientOpsBackupSheet();
+    return '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
+  }
+  return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
+    (clientOpsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
+    ' — <a href="'+state.clientOpsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
 }
 
 /* ---- Dashboard modułu (sekcja 5.1) ---- */
@@ -7426,7 +7662,7 @@ function renderClientOpsDashboard(){
     var k = computeKoniecDate(c);
     return k && k>=today && k<=horizon;
   }).sort(function(a,b){ return computeKoniecDate(a)<computeKoniecDate(b)?-1:1; });
-  var mrr = clients.filter(function(c){ return c.status==="aktywny"||c.status==="miesiac_probny"; }).reduce(function(s,c){ return s+(+c.stawkaMc||0); },0);
+  var mrr = clients.filter(function(c){ return c.status==="aktywny"||c.status==="miesiac_probny"; }).reduce(function(s,c){ return s+clientOpsMonthlyEquivalent(c); },0);
 
   if(!clients.length){
     return '<div class="card"><div class="empty">Nie masz jeszcze klientów — dodaj pierwszego przyciskiem "+ Dodaj klienta" u góry strony.</div></div>';
@@ -7461,11 +7697,7 @@ function renderClientOpsDashboard(){
   html += renderClientOpsWeekCalendar();
   html += '</div>';
 
-  html += '<div class="card" style="margin-top:16px"><h3>Kopia zapasowa modułu</h3>'+
-    '<button class="btn secondary small" onclick="exportClientOpsJSON()">⬇️ Eksportuj JSON</button> '+
-    '<input type="file" accept="application/json" id="coImportInput" style="display:none" onchange="importClientOpsJSONFile(this)">'+
-    '<button class="btn secondary small" onclick="document.getElementById(\'coImportInput\').click()">⬆️ Importuj JSON</button>'+
-    '</div>';
+  html += '<div class="card" style="margin-top:16px"><h3>Kopia zapasowa modułu</h3>'+renderClientOpsBackupStatus()+'</div>';
   return html;
 }
 function renderClientOpsWeekCalendar(){
@@ -7599,8 +7831,8 @@ function renderClientOpsLista(){
       '<td>'+(c.segment||"")+'</td>'+
       '<td>'+(CLIENT_OPS_OFERTA_LABEL[c.oferta]||"")+'</td>'+
       '<td><span class="tag" style="background:'+CLIENT_OPS_STATUS_COLOR[c.status]+'; color:#161519">'+(CLIENT_OPS_STATUS_LABEL[c.status]||c.status)+'</span></td>'+
-      '<td>'+fmtPln(c.stawkaMc)+'</td>'+
-      '<td>'+(koniec?(fmtDate(koniec)+(daysLeft!=null?' ('+daysLeft+' dni)':'')):"—")+'</td>'+
+      '<td>'+fmtPln(c.stawkaMc)+(c.platnosc==="z_gory"?' <span style="color:var(--muted); font-size:10.5px">łącznie</span>':'<span style="color:var(--muted); font-size:10.5px">/mc</span>')+'</td>'+
+      '<td>'+(koniec?(fmtDate(koniec)+(daysLeft!=null?' ('+daysLeft+' dni)':'')):(c.typUmowy==="bezterminowa"?"bez terminu":"—"))+'</td>'+
       '<td>'+(c.gwarancjaKlientowMc?renderClientOpsGuaranteeWidget(c):"—")+'</td>'+
       '<td style="color:'+contactColor+'">'+(daysSince==null?"brak":daysSince===0?"dziś":daysSince+" dni temu")+'</td>'+
       '</tr>';
@@ -7638,7 +7870,7 @@ function renderClientOpsKarta(clientId){
     '<button class="btn secondary small" onclick="openClientOpsClientModal(\''+c.id+'\')">Edytuj</button>'+
     '</div></div>';
   html += '<div class="row" style="gap:16px; flex-wrap:wrap; margin-top:12px; font-size:12.5px; color:var(--muted-light)">'+
-    '<span>💰 '+fmtPln(c.stawkaMc)+'/mc</span>'+
+    '<span>💰 '+fmtPln(c.stawkaMc)+(c.platnosc==="z_gory"?' (z góry, łącznie za umowę)':'/mc')+'</span>'+
     (c.instagram ? '<a href="'+escapeHtml(c.instagram.indexOf("http")===0?c.instagram:("https://instagram.com/"+c.instagram.replace("@","")))+'" target="_blank" rel="noopener" class="linklike">📷 Instagram</a>' : '')+
     (c.telefon ? '<a href="tel:'+escapeHtml(c.telefon.replace(/\s+/g,""))+'" class="linklike">📞 '+escapeHtml(c.telefon)+'</a>' : '')+
     (c.email ? '<a href="mailto:'+escapeHtml(c.email)+'" class="linklike">✉️ '+escapeHtml(c.email)+'</a>' : '')+
@@ -7766,31 +7998,63 @@ function clientOpsTogglePayment(clientId, ym){
   state.clientOps.historia.push({id:uid("coh"), clientId:clientId, date:todayStr(), type:"platnosc", text:"Płatność za "+ym+": "+(p.oplacony?"opłacona":"cofnięto oznaczenie opłacenia")+"."});
   save(); renderAll();
 }
+function clientOpsStartNotice(clientId){
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  if(!c) return;
+  var dni = c.okresWypowiedzenia||30;
+  var koniec = coAddDays(todayStr(), dni);
+  if(!confirm("Rozpocząć okres wypowiedzenia ("+dni+" dni)? Współpraca zakończy się "+fmtDate(koniec)+".")) return;
+  c.wypowiedzenieData = todayStr();
+  state.clientOps.tasks.push({id:uid("cot"), clientId:clientId, type:"spotkanie_koncowe", title:CLIENT_OPS_TASK_TYPE_LABEL.spotkanie_koncowe, opis:"", date:coShiftWeekend(coAddDays(koniec,-3)), time:null, done:false, doneAt:null, result:"", auto:true, createdAt:todayStr()});
+  state.clientOps.historia.push({id:uid("coh"), clientId:clientId, date:todayStr(), type:"zmiana_umowy", text:"Rozpoczęto okres wypowiedzenia ("+dni+" dni), zakończenie współpracy "+fmtDate(koniec)+"."});
+  save(); renderAll();
+}
 function renderClientOpsTabUmowa(c){
   var koniec = computeKoniecDate(c);
+  var isOpenEnded = c.typUmowy==="bezterminowa";
   var html = '<div class="card"><h3>Szczegóły umowy</h3>'+
     '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; font-size:13px">'+
     '<div><span style="color:var(--muted)">Segment / oferta</span><br>'+(c.segment||"")+' — '+(CLIENT_OPS_OFERTA_LABEL[c.oferta]||"")+'</div>'+
-    '<div><span style="color:var(--muted)">Płatność</span><br>'+(c.platnosc==="z_gory"?"Z góry":"Miesięczna")+'</div>'+
+    '<div><span style="color:var(--muted)">Płatność</span><br>'+(c.platnosc==="z_gory"?"Z góry (jedna kwota za całą umowę)":"Miesięczna")+'</div>'+
     '<div><span style="color:var(--muted)">Były klient</span><br>'+(c.czyBylyKlient?"Tak":"Nie")+'</div>'+
     '<div><span style="color:var(--muted)">Miesiąc próbny</span><br>'+(c.miesiacProbny?"Tak":"Nie")+'</div>'+
     '<div><span style="color:var(--muted)">Wyłączność w mieście</span><br>'+(c.wylacznoscMiasto?"Tak":"Nie")+'</div>'+
-    '<div><span style="color:var(--muted)">Start → koniec</span><br>'+(c.startKampanii?fmtDate(c.startKampanii):"—")+' → '+(koniec?fmtDate(koniec):"—")+'</div>'+
-    '</div></div>';
+    (isOpenEnded ?
+      '<div><span style="color:var(--muted)">Typ umowy</span><br>Bezterminowa · okres wypowiedzenia: '+(c.okresWypowiedzenia||30)+' dni</div>' :
+      '<div><span style="color:var(--muted)">Start → koniec</span><br>'+(c.startKampanii?fmtDate(c.startKampanii):"—")+' → '+(koniec?fmtDate(koniec):"—")+'</div>')+
+    '</div>';
+  if(isOpenEnded){
+    if(c.wypowiedzenieData){
+      html += '<div class="stub-note" style="margin-top:10px">📩 Okres wypowiedzenia rozpoczęty '+fmtDate(c.wypowiedzenieData)+' — współpraca kończy się '+fmtDate(coAddDays(c.wypowiedzenieData, c.okresWypowiedzenia||30))+'.</div>';
+    } else {
+      html += '<button class="btn secondary small" style="margin-top:10px" onclick="clientOpsStartNotice(\''+c.id+'\')">Rozpocznij okres wypowiedzenia</button>';
+    }
+  }
+  html += '</div>';
   if(c.status==="negocjacje_przedluzenia"){
     var cennik = clientOpsCennik(c.segment, c.oferta, true);
     html += '<div class="stub-note" style="margin-top:12px; background:rgba(207,155,74,.1); border-color:rgba(207,155,74,.3); color:var(--accent)">'+
       '💡 Podpowiedź warunków dla byłego klienta ('+(c.segment||"")+' — '+(CLIENT_OPS_OFERTA_LABEL[c.oferta]||"")+'): '+fmtPln(cennik.stawka)+'/mc, umowa '+Math.round(cennik.umowaDni/30)+' mc'+(cennik.gwarancja?(", gwarancja "+cennik.gwarancja+"/mc"):"")+'.</div>';
   }
-  html += '<div class="card" style="margin-top:12px"><h3>Płatności per miesiąc</h3>';
-  var totalMonths = Math.max(1, Math.round((c.okresDni||90)/30));
+  html += '<div class="card" style="margin-top:12px"><h3>'+(c.platnosc==="z_gory"?"Płatność":"Płatności per miesiąc rozliczeniowy")+'</h3>';
   if(c.startKampanii){
-    for(var i=0;i<totalMonths;i++){
-      var ym = coAddMonths(c.startKampanii, i).slice(0,7);
-      var p = clientOpsPaymentFor(c.id, ym);
-      html += '<div class="taskitem"><input type="checkbox" '+(p.oplacony?"checked":"")+' onchange="clientOpsTogglePayment(\''+c.id+'\',\''+ym+'\')">'+
-        '<span class="dot" style="background:'+(p.oplacony?"var(--success)":"var(--muted)")+'"></span>'+
-        '<div style="flex:1">'+ym+' — '+(p.oplacony?"opłacony":"nieopłacony")+'</div></div>';
+    if(c.platnosc==="z_gory"){
+      var ym0 = c.startKampanii.slice(0,7);
+      var p0 = clientOpsPaymentFor(c.id, ym0);
+      html += '<div class="taskitem"><input type="checkbox" '+(p0.oplacony?"checked":"")+' onchange="clientOpsTogglePayment(\''+c.id+'\',\''+ym0+'\')">'+
+        '<span class="dot" style="background:'+(p0.oplacony?"var(--success)":"var(--muted)")+'"></span>'+
+        '<div style="flex:1">Faktura za całą umowę ('+fmtPln(c.stawkaMc)+') — '+(p0.oplacony?"opłacona":"nieopłacona")+'</div></div>';
+    } else {
+      var totalMonths = isOpenEnded
+        ? (Math.max(1, Math.round((new Date(todayStr()+"T00:00:00")-new Date(c.startKampanii+"T00:00:00"))/86400000/30)) + 2)
+        : Math.max(1, Math.round((c.okresDni||90)/30));
+      for(var i=0;i<totalMonths;i++){
+        var ym = coAddMonths(c.startKampanii, i).slice(0,7);
+        var p = clientOpsPaymentFor(c.id, ym);
+        html += '<div class="taskitem"><input type="checkbox" '+(p.oplacony?"checked":"")+' onchange="clientOpsTogglePayment(\''+c.id+'\',\''+ym+'\')">'+
+          '<span class="dot" style="background:'+(p.oplacony?"var(--success)":"var(--muted)")+'"></span>'+
+          '<div style="flex:1">'+ym+' — '+(p.oplacony?"opłacony":"nieopłacony")+'</div></div>';
+      }
     }
   }
   html += '</div>';
