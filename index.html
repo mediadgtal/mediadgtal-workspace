@@ -7218,6 +7218,28 @@ function clientOpsCompleteTask(id, wynik){
     openClientOpsSummaryModal(c.id);
   }
 }
+function clientOpsBulkCompleteOverdue(clientId){
+  var today = todayStr();
+  var overdue = state.clientOps.tasks.filter(function(t){ return t.clientId===clientId && !t.done && t.date<today && t.type!=="decyzja_przedluzenie"; });
+  if(!overdue.length) return;
+  if(!confirm("Oznaczyć "+overdue.length+" zaległych zadań jako wykonane (bez wpisywania wyniku)? Decyzje o przedłużeniu umowy trzeba podjąć osobno.")) return;
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  overdue.forEach(function(t){
+    t.done = true; t.doneAt = t.date; t.result = "";
+    if(t.type==="raport_miesieczny"){
+      var ym = t.opis || t.date.slice(0,7);
+      var w = clientOpsGetOrCreateWyniki(clientId, ym);
+      w.raportWyslanyData = t.date;
+    } else if(t.type==="kontrola_jakosci_leadow"){
+      state.clientOps.historia.push({id:uid("coh"), clientId:clientId, date:t.date, type:"kontrola_leadow", text:"Kontrola jakości leadów wykonana (zbiorczo).", taskId:t.id});
+    }
+    if(c && t.type===clientOpsCampaignAnchorTaskType(c)){
+      clientOpsScheduleFollowupConsultations(clientId, t.doneAt);
+    }
+  });
+  clientOpsFlashMsg = "Odznaczono zbiorczo "+overdue.length+" zaległych zadań.";
+  save(); renderAll();
+}
 function deleteClientOpsTask(id){
   var idx = state.clientOps.tasks.findIndex(function(x){ return x.id===id; });
   if(idx===-1) return;
@@ -7900,7 +7922,11 @@ function renderClientOpsTabZadania(c){
   var today = todayStr();
   var past = tasks.filter(function(t){ return t.done; }).sort(function(a,b){ return b.date<a.date?-1:1; });
   var upcoming = tasks.filter(function(t){ return !t.done; });
-  var html = '<div class="card"><button class="btn small" onclick="openClientOpsTaskModal(\''+c.id+'\')">+ Dodaj zadanie</button></div>';
+  var overdueCount = upcoming.filter(function(t){ return t.date<today; }).length;
+  var html = '<div class="card row" style="gap:8px; flex-wrap:wrap">'+
+    '<button class="btn small" onclick="openClientOpsTaskModal(\''+c.id+'\')">+ Dodaj zadanie</button>'+
+    (overdueCount ? '<button class="btn secondary small" onclick="clientOpsBulkCompleteOverdue(\''+c.id+'\')">✅ Odznacz wszystkie zaległe ('+overdueCount+')</button>' : '')+
+    '</div>';
   html += '<div class="card" style="margin-top:12px"><h3>Nadchodzące i zaległe</h3>';
   if(!upcoming.length){ html += '<div class="empty">Brak zaplanowanych zadań.</div>'; }
   upcoming.forEach(function(t){
@@ -11231,7 +11257,18 @@ function updateClientField(ym, rowId, field, value){
   pushKlienciUndo({type:"field", ym:ym, rowId:rowId, field:field, prevValue:prev});
   r[field] = val;
   if((field==="nazwa"||field==="lokalizacja") && r.nazwa) registerClientMapPin(r.nazwa, r.lokalizacja, null, "app");
+  if(field==="faktura" && val==="Opłacona") syncClientOpsPaymentFromInvoice(r, ym);
   save(); renderAllKeepScroll("klienciScrollBox");
+}
+function syncClientOpsPaymentFromInvoice(r, ym){
+  if(!r.nazwa) return;
+  var c = state.clientOps.clients.filter(function(x){ return (x.nazwa||"").trim().toLowerCase()===(r.nazwa||"").trim().toLowerCase(); })[0];
+  if(!c) return;
+  var p = state.clientOps.platnosci.filter(function(x){ return x.clientId===c.id && x.ym===ym; })[0];
+  if(!p){ p = {id:uid("cop"), clientId:c.id, ym:ym, oplacony:false}; state.clientOps.platnosci.push(p); }
+  if(p.oplacony) return;
+  p.oplacony = true;
+  state.clientOps.historia.push({id:uid("coh"), clientId:c.id, date:todayStr(), type:"platnosc", text:"Płatność za "+ym+": opłacona (auto, na podstawie faktury z zakładki Klienci)."});
 }
 function updateClientGoal(ym, value){
   var prev = state.clientsGoals[ym]||0;
