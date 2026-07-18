@@ -6971,11 +6971,13 @@ function openClientOpsClientModal(id, opts){
       '<option value="z_gory"'+(c.platnosc==="z_gory"?" selected":"")+'>Z góry (jedna kwota za całą umowę)</option>'+
       '</select></div>'+
     '<div class="field"><label id="coStawkaLabel">'+(c.platnosc==="z_gory"?"Kwota za całą umowę (zł)":"Stawka (zł/mc)")+'</label><input type="number" id="coStawka" value="'+(c.stawkaMc||0)+'"></div>'+
-    '<div class="field"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coReklamy" style="width:auto" '+(c.prowadzimyReklamy?"checked":"")+' onchange="clientOpsSyncOfertaVisibility()"> Prowadzimy reklamy (kampania płatna)</label></div>'+
+    '<div class="field"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coReklamy" style="width:auto" '+(c.prowadzimyReklamy?"checked":"")+' onchange="clientOpsSyncOfertaVisibility(); clientOpsSyncGwarancjaSuggestion();"> Prowadzimy reklamy (kampania płatna)</label></div>'+
     '<div class="field" id="coBudzetWrap" style="display:'+(c.prowadzimyReklamy?"":"none")+'"><label>Budżet reklamowy (zł/mc)</label><input type="number" id="coBudzet" value="'+(c.budzetReklamowyMc||0)+'"></div>'+
     '</div>'+
     '<div class="field" id="coMiesiacProbnyWrap" style="margin-top:8px; display:'+(c.prowadzimyReklamy?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coMiesiacProbny" style="width:auto" '+(c.miesiacProbny?"checked":"")+'> Miesiąc próbny</label></div>'+
     '<div class="field" id="coWylacznoscWrap" style="display:'+(c.prowadzimyReklamy?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coWylacznosc" style="width:auto" '+(c.wylacznoscMiasto?"checked":"")+'> Wyłączność w mieście</label></div>'+
+    '<div class="field" id="coMaGwarancjeWrap" style="margin-top:8px"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coMaGwarancje" style="width:auto" '+(c.gwarancjaKlientowMc?"checked":"")+' onchange="clientOpsSyncGwarancjaVisibility()"> Gwarancja liczby zapisów</label></div>'+
+    '<div class="field" id="coGwarancjaWrap" style="display:'+(c.gwarancjaKlientowMc?"":"none")+'"><label>Gwarancja (zapisów/mc)</label><input type="number" id="coGwarancja" value="'+(c.gwarancjaKlientowMc||clientOpsGwarancja(c.segment,c.prowadzimyReklamy)||0)+'"></div>'+
     '<div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin:14px 0 8px">Umowa</div>'+
     '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">'+
     '<div class="field"><label>Data startu (podpisania) umowy</label><input type="date" id="coStart" value="'+(c.startKampanii||todayStr())+'"></div>'+
@@ -7012,6 +7014,15 @@ function clientOpsSyncOfertaVisibility(){
   document.getElementById("coWylacznoscWrap").style.display = hasAds ? "" : "none";
   if(!hasAds){ document.getElementById("coMiesiacProbny").checked = false; document.getElementById("coWylacznosc").checked = false; }
 }
+function clientOpsSyncGwarancjaVisibility(){
+  var on = document.getElementById("coMaGwarancje").checked;
+  document.getElementById("coGwarancjaWrap").style.display = on ? "" : "none";
+}
+function clientOpsSyncGwarancjaSuggestion(){
+  var segment = document.getElementById("coSegment").value;
+  var hasAds = document.getElementById("coReklamy").checked;
+  document.getElementById("coGwarancja").value = clientOpsGwarancja(segment, hasAds);
+}
 function clientOpsSyncTypUmowyVisibility(){
   var bezterminowa = document.getElementById("coTypUmowy").value==="bezterminowa";
   document.getElementById("coOkresDniWrap").style.display = bezterminowa ? "none" : "";
@@ -7031,6 +7042,7 @@ function clientOpsRecalcDefaults(){
   document.getElementById("coStawka").value = (platnosc==="z_gory" && cennik.zGory) ? cennik.zGory : cennik.stawka;
   document.getElementById("coOkresDni").value = cennik.umowaDni;
   clientOpsSyncOfertaVisibility();
+  clientOpsSyncGwarancjaSuggestion();
   clientOpsSyncPlatnoscLabel();
 }
 /* ---- Wybór istniejącego klienta z zakładki Klienci (billing), autouzupełnienie formularza ---- */
@@ -7122,7 +7134,7 @@ function saveClientOpsClientModal(){
   }
   c.koniecKampanii = "";
   c.dzienKonsultacji = +document.getElementById("coDzienKonsultacji").value;
-  c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.prowadzimyReklamy);
+  c.gwarancjaKlientowMc = document.getElementById("coMaGwarancje").checked ? (+document.getElementById("coGwarancja").value || 0) : 0;
   c.status = document.getElementById("coStatus").value;
   c.notatki = document.getElementById("coNotatki").value.trim();
   c.typOferty = CLIENT_OPS_OFERTA_LABEL[c.oferta];
