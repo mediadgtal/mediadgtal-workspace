@@ -1095,6 +1095,7 @@ function migrateState(s){
   s.clientOps.clients.forEach(function(c){
     if(c.segment==null) c.segment = "B2B";
     if(c.oferta==null) c.oferta = (/reklam/i.test(c.typOferty||"") ? "OFERTA_2" : "OFERTA_1");
+    if(c.prowadzimyReklamy==null) c.prowadzimyReklamy = (c.oferta==="OFERTA_2");
     if(c.czyBylyKlient==null) c.czyBylyKlient = false;
     if(c.platnosc==null) c.platnosc = "miesieczna";
     if(c.stawkaMc==null) c.stawkaMc = 0;
@@ -1102,7 +1103,7 @@ function migrateState(s){
     if(c.miesiacProbny==null) c.miesiacProbny = false;
     if(c.wylacznoscMiasto==null) c.wylacznoscMiasto = false;
     if(c.dzienKonsultacji==null) c.dzienKonsultacji = 0;
-    if(c.gwarancjaKlientowMc==null) c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.oferta);
+    if(c.gwarancjaKlientowMc==null) c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.prowadzimyReklamy);
     if(c.status==null) c.status = "aktywny";
     if(c.notatki==null) c.notatki = "";
     if(c.osobaKontaktowa==null) c.osobaKontaktowa = "";
@@ -6654,11 +6655,11 @@ function clientOpsCennik(segment, oferta, czyByly){
   var of = seg[oferta] || seg.OFERTA_1;
   return of[czyByly ? "byly" : "nowy"] || of.nowy;
 }
-function clientOpsGwarancja(segment, oferta){
-  if(oferta!=="OFERTA_2") return 0;
+function clientOpsGwarancja(segment, prowadzimyReklamy){
+  if(!prowadzimyReklamy) return 0;
   return segment==="B2C" ? 5 : 10;
 }
-var CLIENT_OPS_OFERTA_LABEL = {OFERTA_1:"Oferta 1 — IG bez reklam", OFERTA_2:"Oferta 2 — IG + reklamy"};
+var CLIENT_OPS_OFERTA_LABEL = {OFERTA_1:"Oferta 1 — IG bez reklam", OFERTA_2:"Oferta 2 — IG + reklamy", OFERTA_3:"Oferta 3 — Indywidualna"};
 var CLIENT_OPS_STATUS_LABEL = {aktywny:"Aktywny", miesiac_probny:"Miesiąc próbny", negocjacje_przedluzenia:"Negocjacje przedłużenia", zakonczony:"Zakończony", zawieszony:"Zawieszony"};
 var CLIENT_OPS_STATUS_COLOR = {aktywny:"var(--success)", miesiac_probny:"var(--accent)", negocjacje_przedluzenia:"#4a9eff", zakonczony:"var(--muted)", zawieszony:"var(--danger)"};
 var CLIENT_OPS_TASK_TYPE_LABEL = {
@@ -6696,7 +6697,10 @@ function clientOpsMonthlyEquivalent(c){
   return c.platnosc==="z_gory" ? Math.round((+c.stawkaMc||0)/months) : (+c.stawkaMc||0);
 }
 function clientOpsCampaignAnchorTaskType(c){
-  return c.oferta==="OFERTA_2" ? "publikacja_kampanii" : "onboarding";
+  return clientOpsHasAds(c) ? "publikacja_kampanii" : "onboarding";
+}
+function clientOpsHasAds(c){
+  return !!c.prowadzimyReklamy;
 }
 var CLIENT_OPS_HISTORY_TYPE_LABEL = {
   rozmowa:"📞 Rozmowa", spotkanie_online:"💻 Spotkanie online", wiadomosc:"💬 Wiadomość",
@@ -6739,7 +6743,7 @@ function clientOpsGenerateTaskCandidates(c){
   push("umowa_podpisanie", start, "Podpisanie umowy");
   push("oplacenie_faktury", start, "Opłacenie faktury"+(c.platnosc==="z_gory"?" (za całą umowę)":" (za pierwszy miesiąc)"));
   push("onboarding", start, "Spotkanie wdrożeniowe: cele, dostępy do IG/Meta, ustalenie planu contentu");
-  if(c.oferta==="OFERTA_2"){
+  if(clientOpsHasAds(c)){
     push("szkolenie_sprzedazowe", coAddDays(start,1), "Szkolenie sprzedażowe");
     push("przygotowanie_kampanii", coAddDays(start,2), "Przygotowanie pierwszej kampanii reklamowej");
     push("przygotowanie_grafik", coAddDays(start,3), "Przygotowanie grafik do kampanii");
@@ -6781,7 +6785,7 @@ function clientOpsGenerateTaskCandidates(c){
     push("decyzja_przedluzenie", coAddDays(end,-14), "Follow-up: czy klient przedłuża? Jeśli brak decyzji — zadzwoń, nie pisz");
   }
 
-  if(c.oferta==="OFERTA_2"){
+  if(clientOpsHasAds(c)){
     var my2=sD.getFullYear(), mm2=sD.getMonth();
     while(true){
       [10,25].forEach(function(day){
@@ -6925,7 +6929,7 @@ function openClientOpsClientModal(id, opts){
   var existing = id ? state.clientOps.clients.filter(function(x){ return x.id===id; })[0] : null;
   var isEdit = !!existing;
   var c = existing || {
-    segment:"B2B", oferta:"OFERTA_1", czyBylyKlient:false, platnosc:"miesieczna",
+    segment:"B2B", oferta:"OFERTA_1", prowadzimyReklamy:false, czyBylyKlient:false, platnosc:"miesieczna",
     stawkaMc:clientOpsCennik("B2B","OFERTA_1",false).stawka, budzetReklamowyMc:0,
     miesiacProbny:false, wylacznoscMiasto:false, typUmowy:"czasowa", okresWypowiedzenia:30,
     startKampanii:todayStr(), okresDni:90,
@@ -6959,6 +6963,7 @@ function openClientOpsClientModal(id, opts){
     '<div class="field"><label>Oferta</label><select id="coOferta" onchange="clientOpsRecalcDefaults()">'+
       '<option value="OFERTA_1"'+(c.oferta==="OFERTA_1"?" selected":"")+'>Oferta 1 — IG bez reklam</option>'+
       '<option value="OFERTA_2"'+(c.oferta==="OFERTA_2"?" selected":"")+'>Oferta 2 — IG + reklamy</option>'+
+      '<option value="OFERTA_3"'+(c.oferta==="OFERTA_3"?" selected":"")+'>Oferta 3 — Indywidualna</option>'+
       '</select></div>'+
     '<div class="field"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coByly" style="width:auto" '+(c.czyBylyKlient?"checked":"")+' onchange="clientOpsRecalcDefaults()"> Były klient</label></div>'+
     '<div class="field"><label>Płatność</label><select id="coPlatnosc" onchange="clientOpsRecalcDefaults()">'+
@@ -6966,10 +6971,11 @@ function openClientOpsClientModal(id, opts){
       '<option value="z_gory"'+(c.platnosc==="z_gory"?" selected":"")+'>Z góry (jedna kwota za całą umowę)</option>'+
       '</select></div>'+
     '<div class="field"><label id="coStawkaLabel">'+(c.platnosc==="z_gory"?"Kwota za całą umowę (zł)":"Stawka (zł/mc)")+'</label><input type="number" id="coStawka" value="'+(c.stawkaMc||0)+'"></div>'+
-    '<div class="field" id="coBudzetWrap" style="display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label>Budżet reklamowy (zł/mc)</label><input type="number" id="coBudzet" value="'+(c.budzetReklamowyMc||0)+'"></div>'+
+    '<div class="field"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coReklamy" style="width:auto" '+(c.prowadzimyReklamy?"checked":"")+' onchange="clientOpsSyncOfertaVisibility()"> Prowadzimy reklamy (kampania płatna)</label></div>'+
+    '<div class="field" id="coBudzetWrap" style="display:'+(c.prowadzimyReklamy?"":"none")+'"><label>Budżet reklamowy (zł/mc)</label><input type="number" id="coBudzet" value="'+(c.budzetReklamowyMc||0)+'"></div>'+
     '</div>'+
-    '<div class="field" id="coMiesiacProbnyWrap" style="margin-top:8px; display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coMiesiacProbny" style="width:auto" '+(c.miesiacProbny?"checked":"")+'> Miesiąc próbny</label></div>'+
-    '<div class="field" id="coWylacznoscWrap" style="display:'+(c.oferta==="OFERTA_2"?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coWylacznosc" style="width:auto" '+(c.wylacznoscMiasto?"checked":"")+'> Wyłączność w mieście</label></div>'+
+    '<div class="field" id="coMiesiacProbnyWrap" style="margin-top:8px; display:'+(c.prowadzimyReklamy?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coMiesiacProbny" style="width:auto" '+(c.miesiacProbny?"checked":"")+'> Miesiąc próbny</label></div>'+
+    '<div class="field" id="coWylacznoscWrap" style="display:'+(c.prowadzimyReklamy?"":"none")+'"><label style="display:flex; align-items:center; gap:6px; cursor:pointer"><input type="checkbox" id="coWylacznosc" style="width:auto" '+(c.wylacznoscMiasto?"checked":"")+'> Wyłączność w mieście</label></div>'+
     '<div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin:14px 0 8px">Umowa</div>'+
     '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px">'+
     '<div class="field"><label>Data startu (podpisania) umowy</label><input type="date" id="coStart" value="'+(c.startKampanii||todayStr())+'"></div>'+
@@ -7000,12 +7006,11 @@ function closeClientOpsClientModal(){
   if(el) el.remove();
 }
 function clientOpsSyncOfertaVisibility(){
-  var oferta = document.getElementById("coOferta").value;
-  var isO2 = oferta==="OFERTA_2";
-  document.getElementById("coBudzetWrap").style.display = isO2 ? "" : "none";
-  document.getElementById("coMiesiacProbnyWrap").style.display = isO2 ? "" : "none";
-  document.getElementById("coWylacznoscWrap").style.display = isO2 ? "" : "none";
-  if(!isO2){ document.getElementById("coMiesiacProbny").checked = false; document.getElementById("coWylacznosc").checked = false; }
+  var hasAds = document.getElementById("coReklamy").checked;
+  document.getElementById("coBudzetWrap").style.display = hasAds ? "" : "none";
+  document.getElementById("coMiesiacProbnyWrap").style.display = hasAds ? "" : "none";
+  document.getElementById("coWylacznoscWrap").style.display = hasAds ? "" : "none";
+  if(!hasAds){ document.getElementById("coMiesiacProbny").checked = false; document.getElementById("coWylacznosc").checked = false; }
 }
 function clientOpsSyncTypUmowyVisibility(){
   var bezterminowa = document.getElementById("coTypUmowy").value==="bezterminowa";
@@ -7073,6 +7078,7 @@ function clientOpsFillFromKlienci(val){
   var ofertaSel = document.getElementById("coOferta");
   if(ofertaSel){
     ofertaSel.value = (+r.budzetRekl>0) ? "OFERTA_2" : "OFERTA_1";
+    document.getElementById("coReklamy").checked = (+r.budzetRekl>0);
     clientOpsSyncOfertaVisibility();
     if(+r.budzetRekl>0) setVal("coBudzet", r.budzetRekl);
   }
@@ -7098,12 +7104,13 @@ function saveClientOpsClientModal(){
   c.miasto = document.getElementById("coMiasto").value.trim();
   c.segment = document.getElementById("coSegment").value;
   c.oferta = document.getElementById("coOferta").value;
+  c.prowadzimyReklamy = document.getElementById("coReklamy").checked;
   c.czyBylyKlient = document.getElementById("coByly").checked;
   c.platnosc = document.getElementById("coPlatnosc").value;
   c.stawkaMc = +document.getElementById("coStawka").value || 0;
-  c.budzetReklamowyMc = c.oferta==="OFERTA_2" ? (+document.getElementById("coBudzet").value || 0) : 0;
-  c.miesiacProbny = c.oferta==="OFERTA_2" && document.getElementById("coMiesiacProbny").checked;
-  c.wylacznoscMiasto = c.oferta==="OFERTA_2" && document.getElementById("coWylacznosc").checked;
+  c.budzetReklamowyMc = c.prowadzimyReklamy ? (+document.getElementById("coBudzet").value || 0) : 0;
+  c.miesiacProbny = c.prowadzimyReklamy && document.getElementById("coMiesiacProbny").checked;
+  c.wylacznoscMiasto = c.prowadzimyReklamy && document.getElementById("coWylacznosc").checked;
   c.startKampanii = document.getElementById("coStart").value || todayStr();
   c.typUmowy = document.getElementById("coTypUmowy").value;
   if(c.typUmowy==="bezterminowa"){
@@ -7115,7 +7122,7 @@ function saveClientOpsClientModal(){
   }
   c.koniecKampanii = "";
   c.dzienKonsultacji = +document.getElementById("coDzienKonsultacji").value;
-  c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.oferta);
+  c.gwarancjaKlientowMc = clientOpsGwarancja(c.segment, c.prowadzimyReklamy);
   c.status = document.getElementById("coStatus").value;
   c.notatki = document.getElementById("coNotatki").value.trim();
   c.typOferty = CLIENT_OPS_OFERTA_LABEL[c.oferta];
@@ -7414,7 +7421,7 @@ function clientOpsBuildReportText(c, w){
   var lines = [];
   lines.push("📊 RAPORT — "+c.nazwa+" — "+clientOpsMonthNameSlownie(w.rokMiesiac));
   lines.push("");
-  if(c.oferta==="OFERTA_2" && (w.wydatki!=null || w.leady!=null || w.rozmowyDM!=null)){
+  if(clientOpsHasAds(c) && (w.wydatki!=null || w.leady!=null || w.rozmowyDM!=null)){
     lines.push("REKLAMY META:");
     if(w.wydatki!=null) lines.push("• Budżet wykorzystany: "+fmtPln(w.wydatki));
     if(w.leady!=null){
@@ -7821,7 +7828,7 @@ function renderClientOpsLista(){
   ["","B2B","B2C"].forEach(function(s){
     topFilters += '<span class="chip'+(clientOpsListSegmentFilter===s?" active":"")+'" onclick="clientOpsSetListFilter(\'segment\',\''+s+'\')">'+(s||"Wszystkie segmenty")+'</span>';
   });
-  ["","OFERTA_1","OFERTA_2"].forEach(function(s){
+  ["","OFERTA_1","OFERTA_2","OFERTA_3"].forEach(function(s){
     topFilters += '<span class="chip'+(clientOpsListOfertaFilter===s?" active":"")+'" onclick="clientOpsSetListFilter(\'oferta\',\''+s+'\')">'+(s?CLIENT_OPS_OFERTA_LABEL[s]:"Wszystkie oferty")+'</span>';
   });
   topFilters += '</div>';
@@ -7981,7 +7988,7 @@ function renderClientOpsTabWyniki(c){
     '<button class="btn secondary small" onclick="openClientOpsSummaryModal(\''+c.id+'\')">📈 Podsumowanie całej umowy</button>'+
     '</div>';
   html += '<div class="card" style="margin-top:12px"><h3>Zapisy na zajęcia'+(c.gwarancjaKlientowMc?' vs gwarancja':'')+'</h3>'+renderClientOpsMiniChart(c.id, c)+'</div>';
-  var isO2 = c.oferta==="OFERTA_2";
+  var isO2 = clientOpsHasAds(c);
   var cols = ["Miesiąc"];
   if(isO2) cols = cols.concat(["Wydatki","Zasięg","Wyśw.","Klikn.","Leady","Koszt leada","Rozmowy DM"]);
   cols = cols.concat(["Zapisy","Koszt zapisu","Obs. start","Obs. koniec","Przyrost","Rolki","Karuzele","Raport"]);
