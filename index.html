@@ -477,6 +477,8 @@
   .ideas-input-row{display:flex; gap:10px; margin-bottom:10px}
   .idea-item{padding:9px 4px; border-bottom:1px solid var(--border); font-size:13px; color:var(--muted-light)}
   .idea-item:last-child{border-bottom:none}
+  .idea-item.used{opacity:.5}
+  .idea-item.used b{text-decoration:line-through}
 
   ::-webkit-scrollbar{width:10px; height:10px}
   ::-webkit-scrollbar-thumb{background:#333038; border-radius:6px}
@@ -3311,18 +3313,44 @@ function renderPostyBaza(){
   }
   return html;
 }
+function ideaTopicKey(t){
+  return (t||"").toString().trim().toLowerCase();
+}
+function ideaUsageMatch(p){
+  var key = ideaTopicKey(p.title);
+  if(!key) return null;
+  var post = state.posts.filter(function(x){
+    return x.id!==p.id && !x.deletedAt && x.brand===p.brand &&
+      (x.stage==="zaplanowany"||x.stage==="opublikowany") &&
+      ideaTopicKey(x.title)===key;
+  })[0];
+  if(post) return {stage:post.stage, date:post.date};
+  var cc = (state.contentCalendar||[]).filter(function(c){
+    return !c.deletedAt && c.brand===p.brand && ideaTopicKey(c.topic)===key;
+  })[0];
+  if(!cc) return null;
+  var linked = cc.sourcePostId ? state.posts.filter(function(x){ return x.id===cc.sourcePostId && !x.deletedAt; })[0] : null;
+  return {stage:(linked ? linked.stage : "zaplanowany"), date:cc.date};
+}
 function ideaItemHtml(p){
   var meta = [];
   if(p.platform) meta.push(POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]);
   if(p.cta) meta.push('CTA: '+escapeHtml(p.cta));
-  return '<div class="idea-item" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
+  var used = ideaUsageMatch(p);
+  var usedNote = "";
+  if(used){
+    var label = used.stage==="opublikowany" ? "✓ Opublikowano" : "📅 Zaplanowano";
+    usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+label+(used.date?(' · '+escapeHtml(used.date)):'')+'</div>';
+  }
+  return '<div class="idea-item'+(used?" used":"")+'" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
     '<div><b>'+escapeHtml(p.title)+'</b>'+
       (p.captionFb ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">FB: '+escapeHtml(p.captionFb)+'</div>' : '')+
       (p.captionIg ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">IG: '+escapeHtml(p.captionIg)+'</div>' : '')+
       (meta.length ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+meta.join(' · ')+'</div>' : '')+
+      usedNote+
     '</div>'+
     '<div style="white-space:nowrap; flex:0 0 auto">'+
-      '<button class="btn secondary small" onclick="moveIdeaToSzkic(\''+p.id+'\')">→ Szkic</button> '+
+      (used ? '' : '<button class="btn secondary small" onclick="moveIdeaToSzkic(\''+p.id+'\')">→ Szkic</button> ')+
       '<button class="btn secondary small" onclick="openIdeaModal({id:\''+p.id+'\'})">Edytuj</button> '+
       '<button class="btn danger small" onclick="deleteIdea(\''+p.id+'\')">Usuń</button>'+
     '</div></div>';
