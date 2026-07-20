@@ -2182,6 +2182,7 @@ function defaultState(){
   s.audits = [];
 
   s.birthdays = [];
+  s.imieninyExtra = [];
 
   return s;
 }
@@ -2385,34 +2386,61 @@ function imieninyForName(fullName){
   var key = normalizeImieName(first);
   return idx[key] || null;
 }
+function ddmmLabel(md){
+  var p = md.split("-");
+  return p[1]+"."+p[0];
+}
+function imieninyEffectiveDate(b){
+  if(b.imieninyDate==="none") return null;
+  if(b.imieninyDate) return b.imieninyDate;
+  var auto = imieninyForName(b.name);
+  return (auto && auto.length) ? auto[0] : null;
+}
+function imieninyAllEntries(){
+  var list = [];
+  (state.birthdays||[]).forEach(function(b){
+    list.push({id:b.id, source:"birthday", name:b.name, relation:b.relation, date:imieninyEffectiveDate(b)});
+  });
+  (state.imieninyExtra||[]).forEach(function(x){
+    list.push({id:x.id, source:"extra", name:x.name, relation:x.relation, date:x.date});
+  });
+  return list;
+}
 function imieninyPeopleByDay(){
-  var idx = buildImieninyIndex();
   var byDay = {};
   var unassigned = [];
-  (state.birthdays||[]).forEach(function(b){
-    var dates = imieninyForName(b.name);
-    if(!dates || !dates.length){ unassigned.push(b); return; }
-    dates.forEach(function(md){
-      if(!byDay[md]) byDay[md] = [];
-      byDay[md].push(b);
-    });
+  imieninyAllEntries().forEach(function(e){
+    if(!e.date){ unassigned.push(e); return; }
+    if(!byDay[e.date]) byDay[e.date] = [];
+    byDay[e.date].push(e);
   });
   return {byDay:byDay, unassigned:unassigned};
+}
+function imieninyEntryRowHtml(e, dayLabel){
+  var actions = e.source==="birthday" ?
+    '<button class="btn secondary small" onclick="openImieninyEditModal(\''+e.id+'\')">Edytuj</button>' :
+    ('<button class="btn secondary small" onclick="openImieninyExtraModal({id:\''+e.id+'\'})">Edytuj</button> '+
+     '<button class="btn danger small" onclick="deleteImieninyExtra(\''+e.id+'\')">Usuń</button>');
+  return '<div class="idea-item" style="display:flex; justify-content:space-between; align-items:center; gap:10px">'+
+    '<div>'+(dayLabel?'<b>'+dayLabel+'</b> — ':'')+escapeHtml(e.name)+(e.relation?' <span style="color:var(--muted-light)">— '+escapeHtml(e.relation)+'</span>':'')+'</div>'+
+    '<div style="white-space:nowrap; flex:0 0 auto">'+actions+'</div>'+
+    '</div>';
 }
 function renderImieniny(el){
   var data = imieninyPeopleByDay();
   var t = new Date();
   var todayMD = String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
   var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">'+
-    '<h3 style="margin:0">Kalendarz imienin</h3>'+
-    '<div style="color:var(--muted); font-size:12px">Wyliczane automatycznie na podstawie imion wpisanych w Urodzinach</div>'+
+    '<div><h3 style="margin:0">Kalendarz imienin</h3>'+
+    '<div style="color:var(--muted); font-size:12px; margin-top:2px">Automatycznie z imion w Urodzinach — kliknij Edytuj, żeby poprawić datę, albo dodaj kogoś ręcznie.</div></div>'+
+    '<button class="btn small" onclick="openImieninyExtraModal({})">+ Dodaj imieniny</button>'+
     '</div>';
 
   var todays = data.byDay[todayMD] || [];
   if(todays.length){
     html += '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">'+
       '<h3 style="margin:0 0 8px">🎉 Dziś imieniny</h3>'+
-      todays.map(function(b){ return '<div class="idea-item">'+escapeHtml(b.name)+(b.relation?' <span style="color:var(--muted-light)">— '+escapeHtml(b.relation)+'</span>':'')+'</div>'; }).join("")+
+      todays.map(function(e){ return imieninyEntryRowHtml(e, null); }).join("")+
       '</div>';
   }
 
@@ -2425,9 +2453,7 @@ function renderImieniny(el){
       var people = data.byDay[md];
       if(people && people.length){
         any = true;
-        monthHtml += '<div class="idea-item"><b>'+String(d).padStart(2,"0")+'</b> — '+
-          people.map(function(b){ return escapeHtml(b.name)+(b.relation?' ('+escapeHtml(b.relation)+')':''); }).join(", ")+
-          '</div>';
+        people.forEach(function(e){ monthHtml += imieninyEntryRowHtml(e, String(d).padStart(2,"0")); });
       }
     }
     if(any){ html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 8px">'+monthName(m)+'</h3>'+monthHtml+'</div>'; }
@@ -2435,12 +2461,122 @@ function renderImieniny(el){
 
   if(data.unassigned.length){
     html += '<div class="card"><h3 style="margin:0 0 8px">Bez przypisanych imienin</h3>'+
-      '<div class="empty" style="margin-bottom:8px">Nie udało się dopasować imienia do kalendarza imienin — sprawdź, czy w polu "Imię i nazwisko" w Urodzinach wpisane jest prawdziwe imię (np. zamiast "Mama" wpisz jej faktyczne imię).</div>'+
-      data.unassigned.map(function(b){ return '<div class="idea-item">'+escapeHtml(b.name)+(b.relation?' <span style="color:var(--muted-light)">— '+escapeHtml(b.relation)+'</span>':'')+'</div>'; }).join("")+
+      '<div class="empty" style="margin-bottom:8px">Nie udało się dopasować imienia do kalendarza imienin (albo ręcznie oznaczono jako "brak") — kliknij Edytuj, żeby wpisać datę ręcznie.</div>'+
+      data.unassigned.map(function(e){ return imieninyEntryRowHtml(e, null); }).join("")+
       '</div>';
   }
 
   el.innerHTML = html;
+}
+function setImieninyDateField(md){
+  var f = document.getElementById("imDateInput");
+  if(f) f.value = "2000-"+md;
+}
+function openImieninyEditModal(id){
+  closeImieninyEditModal();
+  var b = (state.birthdays||[]).filter(function(x){return x.id===id;})[0];
+  if(!b) return;
+  var auto = imieninyForName(b.name) || [];
+  var isNone = b.imieninyDate==="none";
+  var current = (!isNone && b.imieninyDate) ? b.imieninyDate : ((!isNone && auto[0]) || "");
+  var dateVal = current ? ("2000-"+current) : "";
+  var chipsHtml = auto.length ? ('<div style="margin:6px 0 2px; font-size:12px; color:var(--muted)">Wykryte automatycznie:</div><div class="chiprow">'+
+    auto.map(function(md){ return '<span class="chip" onclick="setImieninyDateField(\''+md+'\')">'+ddmmLabel(md)+'</span>'; }).join("")+
+    '</div>') : '<div class="empty" style="margin-bottom:8px">Tego imienia nie ma w kalendarzu imienin — wpisz datę ręcznie.</div>';
+  var html = '<div class="modal-overlay" id="imieninyEditModal" data-close="closeImieninyEditModal">'+
+    '<div class="modal-box card">'+
+    '<h3>Imieniny — '+escapeHtml(b.name)+'</h3>'+
+    chipsHtml+
+    '<div class="field"><label>Data imienin</label><input type="date" id="imDateInput" value="'+dateVal+'"'+(isNone?" disabled":"")+'></div>'+
+    '<label style="display:flex; align-items:center; gap:6px; margin:8px 0; font-size:13px; color:var(--muted-light); cursor:pointer">'+
+      '<input type="checkbox" id="imNoneCheck" onchange="document.getElementById(\'imDateInput\').disabled=this.checked"'+(isNone?" checked":"")+'> Ta osoba nie ma tu obchodzić imienin (ukryj z kalendarza)'+
+    '</label>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (b.imieninyDate ? '<button class="btn secondary small" onclick="clearImieninyOverride(\''+id+'\')">Wyczyść ręczne ustawienie</button>' : '')+
+    '<button class="btn secondary small" onclick="closeImieninyEditModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveImieninyEditModal(\''+id+'\')">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeImieninyEditModal(){
+  var m = document.getElementById("imieninyEditModal");
+  if(m) m.remove();
+}
+function saveImieninyEditModal(id){
+  var b = (state.birthdays||[]).filter(function(x){return x.id===id;})[0];
+  if(!b) return;
+  var noneChecked = document.getElementById("imNoneCheck").checked;
+  if(noneChecked){ b.imieninyDate = "none"; }
+  else {
+    var val = document.getElementById("imDateInput").value;
+    if(!val){ b.imieninyDate = null; }
+    else {
+      var dt = new Date(val+"T00:00:00");
+      b.imieninyDate = String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+    }
+  }
+  closeImieninyEditModal();
+  save(); renderAll();
+}
+function clearImieninyOverride(id){
+  var b = (state.birthdays||[]).filter(function(x){return x.id===id;})[0];
+  if(!b) return;
+  b.imieninyDate = null;
+  closeImieninyEditModal();
+  save(); renderAll();
+}
+function openImieninyExtraModal(opts){
+  closeImieninyExtraModal();
+  opts = opts || {};
+  if(opts.id){
+    var existing = (state.imieninyExtra||[]).filter(function(x){return x.id===opts.id;})[0];
+    if(existing) opts = {id:existing.id, name:existing.name, date:existing.date, relation:existing.relation||"", notes:existing.notes||""};
+  }
+  var isEdit = !!opts.id;
+  var dateVal = opts.date ? ("2000-"+opts.date) : "";
+  var html = '<div class="modal-overlay" id="imieninyExtraModal" data-close="closeImieninyExtraModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj imieniny":"Nowe imieniny")+'</h3>'+
+    '<div class="field"><label>Imię</label><input type="text" id="ieName" value="'+escapeHtml(opts.name||"")+'" placeholder="np. Kasia"></div>'+
+    '<div class="field"><label>Data imienin</label><input type="date" id="ieDate" value="'+dateVal+'"></div>'+
+    '<div class="field"><label>Kim jest</label><input type="text" id="ieRelation" value="'+escapeHtml(opts.relation||"")+'" placeholder="np. Koleżanka"></div>'+
+    '<div class="field"><label>Notatki</label><textarea id="ieNotes" rows="2">'+escapeHtml(opts.notes||"")+'</textarea></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteImieninyExtra(\''+opts.id+'\')">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeImieninyExtraModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveImieninyExtraModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__imieninyExtraCtx = opts;
+}
+function closeImieninyExtraModal(){
+  var m = document.getElementById("imieninyExtraModal");
+  if(m) m.remove();
+}
+function saveImieninyExtraModal(){
+  var name = document.getElementById("ieName").value.trim();
+  var dateRaw = document.getElementById("ieDate").value;
+  if(!name || !dateRaw) return;
+  var dt = new Date(dateRaw+"T00:00:00");
+  var date = String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  var relation = document.getElementById("ieRelation").value.trim();
+  var notes = document.getElementById("ieNotes").value.trim();
+  var ctx = window.__imieninyExtraCtx || {};
+  if(!state.imieninyExtra) state.imieninyExtra = [];
+  if(ctx.id){
+    var x = state.imieninyExtra.filter(function(v){return v.id===ctx.id;})[0];
+    if(x){ x.name=name; x.date=date; x.relation=relation; x.notes=notes; }
+  } else {
+    state.imieninyExtra.push({id:uid("imie"), name:name, date:date, relation:relation, notes:notes});
+  }
+  closeImieninyExtraModal();
+  save(); renderAll();
+}
+function deleteImieninyExtra(id){
+  if(!confirm("Usunąć ten wpis z kalendarza imienin?")) return;
+  state.imieninyExtra = (state.imieninyExtra||[]).filter(function(x){ return x.id!==id; });
+  closeImieninyExtraModal();
+  save(); renderAll();
 }
 
 /* ================= Urodziny ================= */
