@@ -581,6 +581,7 @@ var TABS = [
   {id:"dashboard", label:"Pulpit", group:"Główne"},
   {id:"zadania", label:"Zadania", group:"Główne"},
   {id:"kalendarz", label:"Kalendarz", group:"Główne"},
+  {id:"urodziny", label:"Urodziny", group:"Główne"},
   {id:"finanse", label:"Finanse", group:"Główne"},
   {id:"ceo", label:"CEO", group:"Gra"},
   {id:"posty", label:"Posty", group:"Social Media"},
@@ -603,6 +604,7 @@ var TAB_ICON_SVG = {
   facebook: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
   zadania: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   kalendarz: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  urodziny: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7z"/><path d="M4 17c1.4 1 2.6 1 4 0s2.6-1 4 0 2.6 1 4 0 2.6-1 4 0"/><line x1="12" y1="12" x2="12" y2="7"/><path d="M12 7c-1.1 0-1.7-.8-1.7-1.7S11 3 12 2c1 1 1.7 1.9 1.7 2.8S13.1 7 12 7z"/></svg>',
   finanse: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 8.5h3.2a1.8 1.8 0 0 1 0 3.5H9.5m0 0h4a1.8 1.8 0 0 1 0 3.5H9.5"/><line x1="12" y1="6.5" x2="12" y2="17.5"/></svg>',
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
@@ -2181,6 +2183,8 @@ function defaultState(){
 
   s.audits = [];
 
+  s.birthdays = [];
+
   return s;
 }
 
@@ -2233,6 +2237,7 @@ var RENDERERS = {
   facebook: function(el){ renderSocial(el,"facebook"); },
   zadania: renderZadania,
   kalendarz: renderKalendarz,
+  urodziny: renderUrodziny,
   finanse: renderFinanse,
   nawyki: renderNawyki,
   klienci: renderKlienci,
@@ -2243,7 +2248,7 @@ var RENDERERS = {
   audyt: renderAudyt
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", urodziny:"Urodziny", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
 
 function renderAll(){
   renderNav();
@@ -2333,6 +2338,8 @@ function renderDashboard(el){
   }
   html += '</div>';
 
+  html += renderDashBirthdaysCard();
+
   html += '</div>'; // end grid-2
 
   html += renderDashClientOpsTile();
@@ -2341,6 +2348,152 @@ function renderDashboard(el){
 
   el.innerHTML = html;
   loadWeather();
+}
+/* ================= Urodziny ================= */
+function birthdayMD(b){
+  var dt = new Date(b.date+"T00:00:00");
+  return {m: dt.getMonth(), d: dt.getDate()};
+}
+function birthdayIsToday(b){
+  var t = new Date();
+  var md = birthdayMD(b);
+  return md.m===t.getMonth() && md.d===t.getDate();
+}
+function birthdayNextOccurrence(b){
+  var t = new Date(); t.setHours(0,0,0,0);
+  var md = birthdayMD(b);
+  var next = new Date(t.getFullYear(), md.m, md.d);
+  if(next < t) next = new Date(t.getFullYear()+1, md.m, md.d);
+  return next;
+}
+function birthdaysSortedUpcoming(list){
+  return list.slice().sort(function(a,b){ return birthdayNextOccurrence(a) - birthdayNextOccurrence(b); });
+}
+function toggleBirthdayWishes(id){
+  var b = (state.birthdays||[]).filter(function(x){return x.id===id;})[0];
+  if(!b) return;
+  var y = new Date().getFullYear();
+  b.wishesSentYear = (b.wishesSentYear===y) ? null : y;
+  save(); renderAll();
+}
+function renderDashBirthdaysCard(){
+  var list = state.birthdays || [];
+  var todays = list.filter(birthdayIsToday);
+  var y = new Date().getFullYear();
+  var html = '<div class="card"><h3>Urodziny</h3>';
+  if(todays.length){
+    todays.forEach(function(b){
+      var wished = b.wishesSentYear===y;
+      html += '<div class="taskitem"><input type="checkbox"'+(wished?" checked":"")+' onchange="toggleBirthdayWishes(\''+b.id+'\')"><span class="dot"></span><span class="ttitle">🎂 '+escapeHtml(b.name)+(b.relation?' — '+escapeHtml(b.relation):'')+'</span></div>';
+    });
+  } else {
+    html += '<div class="empty">Dziś nikt nie ma urodzin.</div>';
+    var upcoming = birthdaysSortedUpcoming(list)[0];
+    if(upcoming){
+      var todayMid = new Date(); todayMid.setHours(0,0,0,0);
+      var days = Math.round((birthdayNextOccurrence(upcoming) - todayMid)/86400000);
+      html += '<div style="color:var(--muted); font-size:11.5px; margin-top:6px">Najbliższe: '+escapeHtml(upcoming.name)+' — za '+days+' dni</div>';
+    }
+  }
+  html += '</div>';
+  return html;
+}
+function birthdayRowHtml(b, showDate){
+  var today = birthdayIsToday(b);
+  var y = new Date().getFullYear();
+  var wished = b.wishesSentYear===y;
+  var dt = new Date(b.date+"T00:00:00");
+  return '<div class="idea-item" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
+    '<div>'+
+      '<b>'+(today?'🎂 ':'')+escapeHtml(b.name)+'</b>'+
+      (showDate ? ' <span style="color:var(--muted); font-size:12px">'+String(dt.getDate()).padStart(2,"0")+'</span>' : '')+
+      (b.relation ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:2px">'+escapeHtml(b.relation)+'</div>' : '')+
+      (b.notes ? '<div style="color:var(--muted); font-size:11.5px; margin-top:3px; white-space:pre-wrap">'+escapeHtml(b.notes)+'</div>' : '')+
+      '<label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:12px; color:var(--muted-light); cursor:pointer">'+
+        '<input type="checkbox"'+(wished?" checked":"")+' onchange="toggleBirthdayWishes(\''+b.id+'\')"> Życzenia wysłane ('+y+')'+
+      '</label>'+
+    '</div>'+
+    '<div style="white-space:nowrap; flex:0 0 auto">'+
+      '<button class="btn secondary small" onclick="openBirthdayModal({id:\''+b.id+'\'})">Edytuj</button> '+
+      '<button class="btn danger small" onclick="deleteBirthday(\''+b.id+'\')">Usuń</button>'+
+    '</div></div>';
+}
+function renderUrodziny(el){
+  var list = state.birthdays || [];
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">'+
+    '<h3 style="margin:0">Kalendarz urodzin</h3>'+
+    '<button class="btn small" onclick="openBirthdayModal({})">+ Dodaj urodziny</button>'+
+    '</div>';
+
+  var todays = list.filter(birthdayIsToday);
+  if(todays.length){
+    html += '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">'+
+      '<h3 style="margin:0 0 8px">🎂 Dziś urodziny</h3>'+
+      todays.map(function(b){ return birthdayRowHtml(b, false); }).join("")+
+      '</div>';
+  }
+
+  for(var m=0; m<12; m++){
+    var monthItems = list.filter(function(b){ return birthdayMD(b).m===m; })
+      .sort(function(a,b){ return birthdayMD(a).d - birthdayMD(b).d; });
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<h3 style="margin:0 0 8px">'+monthName(m)+'</h3>';
+    if(!monthItems.length){ html += '<div class="empty">Brak urodzin w tym miesiącu.</div>'; }
+    else{ monthItems.forEach(function(b){ html += birthdayRowHtml(b, true); }); }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+function openBirthdayModal(opts){
+  closeBirthdayModal();
+  opts = opts || {};
+  if(opts.id){
+    var existing = (state.birthdays||[]).filter(function(x){return x.id===opts.id;})[0];
+    if(existing) opts = {id:existing.id, name:existing.name, date:existing.date, relation:existing.relation||"", notes:existing.notes||""};
+  }
+  var isEdit = !!opts.id;
+  var html = '<div class="modal-overlay" id="birthdayModal" data-close="closeBirthdayModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj urodziny":"Nowe urodziny")+'</h3>'+
+    '<div class="field"><label>Imię i nazwisko</label><input type="text" id="bdName" value="'+escapeHtml(opts.name||"")+'" placeholder="np. Marta Walicka"></div>'+
+    '<div class="field"><label>Data urodzenia</label><input type="date" id="bdDate" value="'+escapeHtml(opts.date||"")+'"></div>'+
+    '<div class="field"><label>Kim jest</label><input type="text" id="bdRelation" value="'+escapeHtml(opts.relation||"")+'" placeholder="np. Mama, Przyjaciel, Klient"></div>'+
+    '<div class="field"><label>Notatki</label><textarea id="bdNotes" rows="2" placeholder="np. pomysł na prezent">'+escapeHtml(opts.notes||"")+'</textarea></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteBirthday(\''+opts.id+'\')">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeBirthdayModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveBirthdayModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__birthdayModalCtx = opts;
+}
+function closeBirthdayModal(){
+  var m = document.getElementById("birthdayModal");
+  if(m) m.remove();
+}
+function saveBirthdayModal(){
+  var name = document.getElementById("bdName").value.trim();
+  var date = document.getElementById("bdDate").value;
+  if(!name || !date) return;
+  var relation = document.getElementById("bdRelation").value.trim();
+  var notes = document.getElementById("bdNotes").value.trim();
+  var ctx = window.__birthdayModalCtx || {};
+  if(!state.birthdays) state.birthdays = [];
+  if(ctx.id){
+    var b = state.birthdays.filter(function(x){return x.id===ctx.id;})[0];
+    if(b){ b.name=name; b.date=date; b.relation=relation; b.notes=notes; }
+  } else {
+    state.birthdays.push({id:uid("bday"), name:name, date:date, relation:relation, notes:notes, wishesSentYear:null});
+  }
+  closeBirthdayModal();
+  save(); renderAll();
+}
+function deleteBirthday(id){
+  if(!confirm("Usunąć te urodziny z kalendarza?")) return;
+  state.birthdays = (state.birthdays||[]).filter(function(x){ return x.id!==id; });
+  closeBirthdayModal();
+  save(); renderAll();
 }
 function renderDashClientOpsTile(){
   if(!state.clientOps || !state.clientOps.clients.length) return "";
