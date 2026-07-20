@@ -477,8 +477,6 @@
   .ideas-input-row{display:flex; gap:10px; margin-bottom:10px}
   .idea-item{padding:9px 4px; border-bottom:1px solid var(--border); font-size:13px; color:var(--muted-light)}
   .idea-item:last-child{border-bottom:none}
-  .idea-item.used{opacity:.5}
-  .idea-item.used b{text-decoration:line-through}
 
   ::-webkit-scrollbar{width:10px; height:10px}
   ::-webkit-scrollbar-thumb{background:#333038; border-radius:6px}
@@ -3276,43 +3274,6 @@ function gotoHasloInKalendarz(hasloId){
 }
 var bazaCategoryFilter = "Wszystkie";
 function setBazaCategoryFilter(c){ bazaCategoryFilter = c; renderAll(); }
-function renderPostyBaza(){
-  var b = postyFilter;
-  var cats = (state.ideaCategories && state.ideaCategories[b]) || [];
-  if(bazaCategoryFilter!=="Wszystkie" && bazaCategoryFilter!=="Pozostałe" && cats.indexOf(bazaCategoryFilter)===-1) bazaCategoryFilter = "Wszystkie";
-  var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">'+
-    '<h3 style="margin:0">Baza pomysłów — '+escapeHtml(b)+'</h3>'+
-    '<div class="row" style="gap:8px">'+
-      '<button class="btn secondary small" onclick="addIdeaCategory()">+ Kategoria</button>'+
-      '<button class="btn small" onclick="openIdeaModal({brand:\''+jsAttrStr(b)+'\'})">+ Dodaj pomysł</button>'+
-    '</div></div>';
-  html += '<div class="chiprow">';
-  ["Wszystkie"].concat(cats).concat(["Pozostałe"]).forEach(function(c){
-    html += '<span class="chip'+(bazaCategoryFilter===c?" active":"")+'" onclick="setBazaCategoryFilter(\''+jsAttrStr(c)+'\')">'+escapeHtml(c)+'</span>';
-  });
-  html += '</div>';
-  cats.forEach(function(cat){
-    if(bazaCategoryFilter!=="Wszystkie" && bazaCategoryFilter!==cat) return;
-    var items = state.posts.filter(function(p){ return !p.deletedAt && p.brand===b && p.stage==="pomysl" && p.category===cat; });
-    html += '<div class="card" style="margin-bottom:16px">'+
-      '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px">'+
-      '<h3 style="margin:0">'+escapeHtml(cat)+'</h3>'+
-      '<div><button class="linklike" onclick="renameIdeaCategory(\''+jsAttrStr(cat)+'\')">Zmień nazwę</button> '+
-        '<button class="linklike danger" onclick="deleteIdeaCategory(\''+jsAttrStr(cat)+'\')">Usuń kategorię</button></div>'+
-      '</div>';
-    if(!items.length){ html += '<div class="empty">Brak pomysłów w tej kategorii jeszcze.</div>'; }
-    else{ items.forEach(function(p){ html += ideaItemHtml(p); }); }
-    html += '</div>';
-  });
-  if(bazaCategoryFilter==="Wszystkie" || bazaCategoryFilter==="Pozostałe"){
-    var rest = state.posts.filter(function(p){ return !p.deletedAt && p.brand===b && p.stage==="pomysl" && cats.indexOf(p.category)===-1; });
-    html += '<div class="card"><h3 style="margin:0 0 8px">Pozostałe pomysły</h3>';
-    if(!rest.length){ html += '<div class="empty">Brak zapisanych pomysłów.</div>'; }
-    else{ rest.forEach(function(p){ html += ideaItemHtml(p); }); }
-    html += '</div>';
-  }
-  return html;
-}
 function ideaTopicKey(t){
   return (t||"").toString().trim().toLowerCase();
 }
@@ -3332,20 +3293,67 @@ function ideaUsageMatch(p){
   var linked = cc.sourcePostId ? state.posts.filter(function(x){ return x.id===cc.sourcePostId && !x.deletedAt; })[0] : null;
   return {stage:(linked ? linked.stage : "zaplanowany"), date:cc.date};
 }
-function ideaItemHtml(p){
+function ideaIsUsed(p){
+  return !!(ideaUsageMatch(p) || p.manualUsed);
+}
+function renderPostyBaza(){
+  var b = postyFilter;
+  var cats = (state.ideaCategories && state.ideaCategories[b]) || [];
+  var chips = ["Wszystkie"].concat(cats).concat(["Pozostałe","Opublikowane"]);
+  if(chips.indexOf(bazaCategoryFilter)===-1) bazaCategoryFilter = "Wszystkie";
+  var pub = bazaCategoryFilter==="Opublikowane";
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">'+
+    '<h3 style="margin:0">Baza pomysłów — '+escapeHtml(b)+'</h3>'+
+    '<div class="row" style="gap:8px">'+
+      '<button class="btn secondary small" onclick="addIdeaCategory()">+ Kategoria</button>'+
+      '<button class="btn small" onclick="openIdeaModal({brand:\''+jsAttrStr(b)+'\'})">+ Dodaj pomysł</button>'+
+    '</div></div>';
+  html += '<div class="chiprow">';
+  chips.forEach(function(c){
+    html += '<span class="chip'+(bazaCategoryFilter===c?" active":"")+'" onclick="setBazaCategoryFilter(\''+jsAttrStr(c)+'\')">'+escapeHtml(c)+'</span>';
+  });
+  html += '</div>';
+  cats.forEach(function(cat){
+    if(!pub && bazaCategoryFilter!=="Wszystkie" && bazaCategoryFilter!==cat) return;
+    var items = state.posts.filter(function(p){
+      return !p.deletedAt && p.brand===b && p.stage==="pomysl" && p.category===cat && ideaIsUsed(p)===pub;
+    });
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px">'+
+      '<h3 style="margin:0">'+escapeHtml(cat)+'</h3>'+
+      (pub ? '' : '<div><button class="linklike" onclick="renameIdeaCategory(\''+jsAttrStr(cat)+'\')">Zmień nazwę</button> '+
+        '<button class="linklike danger" onclick="deleteIdeaCategory(\''+jsAttrStr(cat)+'\')">Usuń kategorię</button></div>')+
+      '</div>';
+    if(!items.length){ html += '<div class="empty">'+(pub?'Brak opublikowanych pomysłów w tej kategorii.':'Brak pomysłów w tej kategorii jeszcze.')+'</div>'; }
+    else{ items.forEach(function(p){ html += ideaItemHtml(p, pub); }); }
+    html += '</div>';
+  });
+  if(pub || bazaCategoryFilter==="Wszystkie" || bazaCategoryFilter==="Pozostałe"){
+    var rest = state.posts.filter(function(p){
+      return !p.deletedAt && p.brand===b && p.stage==="pomysl" && cats.indexOf(p.category)===-1 && ideaIsUsed(p)===pub;
+    });
+    html += '<div class="card"><h3 style="margin:0 0 8px">Pozostałe pomysły</h3>';
+    if(!rest.length){ html += '<div class="empty">'+(pub?'Brak opublikowanych pomysłów.':'Brak zapisanych pomysłów.')+'</div>'; }
+    else{ rest.forEach(function(p){ html += ideaItemHtml(p, pub); }); }
+    html += '</div>';
+  }
+  return html;
+}
+function ideaItemHtml(p, published){
   var meta = [];
   if(p.platform) meta.push(POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]);
   if(p.cta) meta.push('CTA: '+escapeHtml(p.cta));
-  var auto = ideaUsageMatch(p);
-  var used = auto || (p.manualUsed ? {manual:true} : null);
   var usedNote = "";
-  if(auto){
-    var label = auto.stage==="opublikowany" ? "✓ Opublikowano" : "📅 Zaplanowano";
-    usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+label+(auto.date?(' · '+escapeHtml(auto.date)):'')+'</div>';
-  } else if(p.manualUsed){
-    usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">✓ Oznaczono ręcznie jako wykorzystany</div>';
+  if(published){
+    var auto = ideaUsageMatch(p);
+    if(auto){
+      var label = auto.stage==="opublikowany" ? "✓ Opublikowano" : "📅 Zaplanowano";
+      usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+label+(auto.date?(' · '+escapeHtml(auto.date)):'')+'</div>';
+    } else if(p.manualUsed){
+      usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">✓ Oznaczono ręcznie jako wykorzystany</div>';
+    }
   }
-  return '<div class="idea-item'+(used?" used":"")+'" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
+  return '<div class="idea-item" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
     '<div><b>'+escapeHtml(p.title)+'</b>'+
       (p.captionFb ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">FB: '+escapeHtml(p.captionFb)+'</div>' : '')+
       (p.captionIg ? '<div style="color:var(--muted-light); font-size:12.5px; margin-top:3px; white-space:pre-wrap">IG: '+escapeHtml(p.captionIg)+'</div>' : '')+
@@ -3353,10 +3361,10 @@ function ideaItemHtml(p){
       usedNote+
     '</div>'+
     '<div style="white-space:nowrap; flex:0 0 auto">'+
-      (auto ? '' : '<button class="btn secondary small" onclick="moveIdeaToSzkic(\''+p.id+'\')">→ Szkic</button> ')+
-      (p.manualUsed ?
-        '<button class="btn secondary small" onclick="toggleIdeaManualUsed(\''+p.id+'\')">↺ Cofnij oznaczenie</button> ' :
-        (auto ? '' : '<button class="btn secondary small" onclick="toggleIdeaManualUsed(\''+p.id+'\')">✓ Oznacz jako wykorzystany</button> '))+
+      (published ? '' : '<button class="btn secondary small" onclick="moveIdeaToSzkic(\''+p.id+'\')">→ Szkic</button> ')+
+      (published ?
+        (p.manualUsed ? '<button class="btn secondary small" onclick="toggleIdeaManualUsed(\''+p.id+'\')">↺ Cofnij oznaczenie</button> ' : '') :
+        '<button class="btn secondary small" onclick="toggleIdeaManualUsed(\''+p.id+'\')">✓ Oznacz jako wykorzystany</button> ')+
       '<button class="btn secondary small" onclick="openIdeaModal({id:\''+p.id+'\'})">Edytuj</button> '+
       '<button class="btn danger small" onclick="deleteIdea(\''+p.id+'\')">Usuń</button>'+
     '</div></div>';
