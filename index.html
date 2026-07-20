@@ -3336,11 +3336,14 @@ function ideaItemHtml(p){
   var meta = [];
   if(p.platform) meta.push(POST_PLATFORM_ICON[p.platform]+' '+POST_PLATFORM_LABEL[p.platform]);
   if(p.cta) meta.push('CTA: '+escapeHtml(p.cta));
-  var used = ideaUsageMatch(p);
+  var auto = ideaUsageMatch(p);
+  var used = auto || (p.manualUsed ? {manual:true} : null);
   var usedNote = "";
-  if(used){
-    var label = used.stage==="opublikowany" ? "✓ Opublikowano" : "📅 Zaplanowano";
-    usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+label+(used.date?(' · '+escapeHtml(used.date)):'')+'</div>';
+  if(auto){
+    var label = auto.stage==="opublikowany" ? "✓ Opublikowano" : "📅 Zaplanowano";
+    usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">'+label+(auto.date?(' · '+escapeHtml(auto.date)):'')+'</div>';
+  } else if(p.manualUsed){
+    usedNote = '<div style="color:var(--muted); font-size:11.5px; margin-top:4px">✓ Oznaczono ręcznie jako wykorzystany</div>';
   }
   return '<div class="idea-item'+(used?" used":"")+'" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">'+
     '<div><b>'+escapeHtml(p.title)+'</b>'+
@@ -3350,10 +3353,19 @@ function ideaItemHtml(p){
       usedNote+
     '</div>'+
     '<div style="white-space:nowrap; flex:0 0 auto">'+
-      (used ? '' : '<button class="btn secondary small" onclick="moveIdeaToSzkic(\''+p.id+'\')">→ Szkic</button> ')+
+      (auto ? '' : '<button class="btn secondary small" onclick="moveIdeaToSzkic(\''+p.id+'\')">→ Szkic</button> ')+
+      (p.manualUsed ?
+        '<button class="btn secondary small" onclick="toggleIdeaManualUsed(\''+p.id+'\')">↺ Cofnij oznaczenie</button> ' :
+        (auto ? '' : '<button class="btn secondary small" onclick="toggleIdeaManualUsed(\''+p.id+'\')">✓ Oznacz jako wykorzystany</button> '))+
       '<button class="btn secondary small" onclick="openIdeaModal({id:\''+p.id+'\'})">Edytuj</button> '+
       '<button class="btn danger small" onclick="deleteIdea(\''+p.id+'\')">Usuń</button>'+
     '</div></div>';
+}
+function toggleIdeaManualUsed(id){
+  var p = state.posts.filter(function(x){return x.id===id;})[0];
+  if(!p) return;
+  p.manualUsed = !p.manualUsed;
+  save(); renderAll();
 }
 function moveIdeaToSzkic(id){
   var p = state.posts.filter(function(x){return x.id===id;})[0];
