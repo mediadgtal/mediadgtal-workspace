@@ -581,7 +581,6 @@ var TABS = [
   {id:"dashboard", label:"Pulpit", group:"Główne"},
   {id:"zadania", label:"Zadania", group:"Główne"},
   {id:"kalendarz", label:"Kalendarz", group:"Główne"},
-  {id:"urodziny", label:"Urodziny", group:"Główne"},
   {id:"finanse", label:"Finanse", group:"Główne"},
   {id:"ceo", label:"CEO", group:"Gra"},
   {id:"posty", label:"Posty", group:"Social Media"},
@@ -604,7 +603,6 @@ var TAB_ICON_SVG = {
   facebook: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
   zadania: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   kalendarz: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-  urodziny: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7z"/><path d="M4 17c1.4 1 2.6 1 4 0s2.6-1 4 0 2.6 1 4 0 2.6-1 4 0"/><line x1="12" y1="12" x2="12" y2="7"/><path d="M12 7c-1.1 0-1.7-.8-1.7-1.7S11 3 12 2c1 1 1.7 1.9 1.7 2.8S13.1 7 12 7z"/></svg>',
   finanse: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 8.5h3.2a1.8 1.8 0 0 1 0 3.5H9.5m0 0h4a1.8 1.8 0 0 1 0 3.5H9.5"/><line x1="12" y1="6.5" x2="12" y2="17.5"/></svg>',
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
@@ -2237,7 +2235,6 @@ var RENDERERS = {
   facebook: function(el){ renderSocial(el,"facebook"); },
   zadania: renderZadania,
   kalendarz: renderKalendarz,
-  urodziny: renderUrodziny,
   finanse: renderFinanse,
   nawyki: renderNawyki,
   klienci: renderKlienci,
@@ -2248,7 +2245,7 @@ var RENDERERS = {
   audyt: renderAudyt
 };
 var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", urodziny:"Urodziny", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
 
 function renderAll(){
   renderNav();
@@ -2349,6 +2346,103 @@ function renderDashboard(el){
   el.innerHTML = html;
   loadWeather();
 }
+/* ================= Imieniny (polski kalendarz imion) ================= */
+var IMIENINY_DATA = {
+"01-01":["Mieczysław","Mieczysława","Mieszko"],"01-02":["Sylwester","Stefania"],"01-03":["Arleta","Danuta","Genowefa"],"01-04":["Eugeniusz","Angelika"],"01-05":["Marcelina","Genowefa"],"01-06":["Kacper","Kasper","Julian"],"01-07":["Julian","Lucjan","Rajmund"],"01-08":["Seweryn","Albert","Lucjan"],"01-09":["Julian","Marcelina","Marcjanna"],"01-10":["Wilhelm","Leonia"],"01-11":["Matylda","Dawid"],"01-12":["Arkadiusz","Benedykt","Greta"],"01-13":["Weronika"],"01-14":["Feliks","Nina"],"01-15":["Aleksander","Ida"],"01-16":["Włodzimierz","Marcel"],"01-17":["Antoni","Nina","Julian"],"01-18":["Krystyna","Monika"],"01-19":["Henryk","Mariusz","Sebastian"],"01-20":["Fabian","Sebastian","Bazyli"],"01-21":["Agnieszka","Jarosław","Ada"],"01-22":["Wincenty","Wiktor","Dorian"],"01-23":["Rajmund","Filip"],"01-24":["Milena","Tymoteusz","Franciszek","Felicja"],"01-25":["Miłosz","Emanuela","Emanuel","Henryk"],"01-26":["Paula","Tymoteusz"],"01-27":["Julian","Angelika"],"01-28":["Olimpia","Radomir"],"01-29":["Franciszek"],"01-30":["Maciej","Martyna"],"01-31":["Marcela","Marcelina"],
+"02-01":["Brygida","Ignacy"],"02-02":["Korneliusz","Maria"],"02-03":["Błażej","Oskar"],"02-04":["Weronika","Żanna","Abraham"],"02-05":["Agata"],"02-06":["Dorota","Tytus"],"02-07":["Alfons","Romuald"],"02-08":["Gabriela","Gniewomir"],"02-09":["Apolonia","Pola"],"02-10":["Gabriel","Jacek","Elwira"],"02-11":["Olgierd","Grzegorz","Teodora"],"02-12":["Damian"],"02-13":["Grzegorz","Jordan"],"02-14":["Walenty","Liliana"],"02-15":["Jowita"],"02-16":["Julianna","Samuel","Jeremiasz"],"02-17":["Donat","Klemens","Aleksy"],"02-18":["Klaudiusz","Konstancja"],"02-19":["Arnold","Konrad","Marceli"],"02-20":["Leon","Leo"],"02-21":["Eleonora","Feliks"],"02-22":["Małgorzata","Piotr"],"02-23":["Damian","Marta"],"02-24":["Maciej","Bogusz"],"02-25":["Wiktor","Zygfryd","Zygfryda"],"02-26":["Mirosław","Nestor","Mirosława"],"02-27":["Anastazja","Gabriel","Wiktor"],"02-28":["Roman","Hilary","Antonia"],
+"03-01":["Antoni","Albin","Antonina"],"03-02":["Helena","Radosław"],"03-03":["Kunegunda","Maryna"],"03-04":["Adrian","Kazimierz","Łucja","Adrianna"],"03-05":["Fryderyk","Oliwia","Teofil"],"03-06":["Eugenia","Róża","Wiktor"],"03-07":["Eugeniusz","Tomasz"],"03-08":["Beata","Julian","Wincenty"],"03-09":["Franciszka","Samanta"],"03-10":["Aleksander","Marceli","Gustaw"],"03-11":["Benedykt","Konstanty","Paula"],"03-12":["Grzegorz","Alojzy"],"03-13":["Bożena","Ernest","Krystyna"],"03-14":["Matylda","Dawid","Ewa"],"03-15":["Klemens","Longin","Longina","Ludwika"],"03-16":["Hilary","Izabela","Oktawia"],"03-17":["Gertruda","Patryk","Zbigniew"],"03-18":["Cyryl","Edward","Krystian"],"03-19":["Bogdan","Józef","Marek"],"03-20":["Aleksander","Anatol","Klaudia"],"03-21":["Benedykt","Lubomira","Marzanna"],"03-22":["Bazyli","Bogusław","Oktawian"],"03-23":["Oktawian","Pelagia","Zbysław"],"03-24":["Gabriel","Marek","Szymon"],"03-25":["Ireneusz","Maria","Mariola","Lucja"],"03-26":["Emanuel","Emanuela","Larysa","Teodor"],"03-27":["Benedykt","Ernest","Lidia"],"03-28":["Antoni","Joanna"],"03-29":["Cyryl","Marek"],"03-30":["Amadeusz","Leonard"],"03-31":["Balbina","Beniamin","Kornelia"],
+"04-01":["Grażyna","Hugo"],"04-02":["Franciszek","Teodozja"],"04-03":["Antoni","Ryszard"],"04-04":["Benedykt","Wacław","Wacława"],"04-05":["Wincenty","Julianna"],"04-06":["Ireneusz","Wilhelm","Zachariasz","Celestyna"],"04-07":["Donat","Herman","Donata"],"04-08":["August","Dionizy","January"],"04-09":["Dobrosława","Maja","Marceli"],"04-10":["Antoni","Marek","Magdalena"],"04-11":["Filip","Jaromir","Arleta"],"04-12":["Juliusz","Wiktor","Zenon"],"04-13":["Ida","Przemysław"],"04-14":["Julianna","Justyna","Walerian"],"04-15":["Anastazja","Olimpia","Bazyli"],"04-16":["Benedykt","Erwin","Julia"],"04-17":["Józef","Robert","Rudolf"],"04-18":["Bogusława","Ryszard"],"04-19":["Adolf","Leon","Tymon"],"04-20":["Agnieszka","Teodor","Czesław","Czesława"],"04-21":["Bartosz","Aleksandra","Sandra"],"04-22":["Łukasz","Gabriela","Idzi"],"04-23":["Gerard","Jerzy","Wojciech"],"04-24":["Aleksander","Aleksy","Erwin"],"04-25":["Jarosław","Marek"],"04-26":["Marcelina","Marzena","Aureliusz"],"04-27":["Felicja","Teofil","Zyta"],"04-28":["Paweł","Waleria","Ludwik","Emilian"],"04-29":["Angelina","Hugo","Katarzyna"],"04-30":["Katarzyna","Marian","Marianna"],
+"05-01":["Jeremi","Jeremiasz","Maja"],"05-02":["Anatol","Walenty","Zygmunt"],"05-03":["Aleksander","Maria","Nina"],"05-04":["Florian","Monika","Malwina"],"05-05":["Irena","Waldemar","Hilary"],"05-06":["Benedykta","Filip","Judyta","Jakub"],"05-07":["Benedykt","Gizela","Róża"],"05-08":["Ida","Stanisław","Augustyna"],"05-09":["Karolina","Jerzy"],"05-10":["Sylwester","Sylwestra","Antonina"],"05-11":["Benedykt","Franciszek","Iga"],"05-12":["Joanna","Bogdan"],"05-13":["Gloria","Robert","Agnieszka"],"05-14":["Maciej","Wiktor","Tamara"],"05-15":["Zofia","Nadia"],"05-16":["Andrzej","Jędrzej","Szymon"],"05-17":["Bruno","Weronika","Brunon"],"05-18":["Aleksander","Aleksandra","Eryk"],"05-19":["Kryspin","Iwo","Milan"],"05-20":["Teodor","Wiktoria","Aleksander"],"05-21":["Tymoteusz","Wiktor"],"05-22":["Helena","Julia","Wiesława","Rita"],"05-23":["Emilia","Iwo","Iwona"],"05-24":["Joanna","Milena","Zuzanna"],"05-25":["Magda","Magdalena"],"05-26":["Filip","Paulina","Marianna"],"05-27":["Juliusz","Augustyn","Oliwier"],"05-28":["Jaromir","Wiktor","Wilhelm"],"05-29":["Magdalena","Teodozja"],"05-30":["Bazyli","Feliks","Ferdynand"],"05-31":["Aniela","Feliks","Kamila"],
+"06-01":["Bernard","Jakub","Konrad","Gaweł"],"06-02":["Marianna","Marzena","Feliks"],"06-03":["Leszek","Tamara","Karol"],"06-04":["Franciszek","Karol","Filip"],"06-05":["Bonifacy","Waleria","Walter"],"06-06":["Norbert","Laura","Filip"],"06-07":["Robert","Wiesław"],"06-08":["Maksym","Wilhelm","Jadwiga"],"06-09":["Pelagia","Sylwester","Sylwestra"],"06-10":["Bogumił","Bogumiła","Małgorzata"],"06-11":["Teodozja","Benedykt"],"06-12":["Czesław","Czesława"],"06-13":["Antoni","Lucjan","Antonina"],"06-14":["Eliza","Bazyli","Justyna"],"06-15":["Jolanta","Wit","Witold"],"06-16":["Alina","Aneta","Justyna"],"06-17":["Adolf","Laura","Albert"],"06-18":["Elżbieta","Marek","Paula"],"06-19":["Julianna","Michalina","Romuald"],"06-20":["Bogna","Bożena","Rafał"],"06-21":["Alicja","Alojzy","Rudolf"],"06-22":["Flawiusz","Paulina"],"06-23":["Albin","Wanda","Zenon"],"06-24":["Danuta","Emilia","Jan","Janina"],"06-25":["Wilhelm","Lucja","Dorota"],"06-26":["Jan","Jeremiasz","Paweł","Aldona"],"06-27":["Cyryl","Władysław","Władysława"],"06-28":["Ireneusz","Olga","Florentyna"],"06-29":["Benedykta","Paweł","Piotr"],"06-30":["Emilia","Lucyna","Arnold"],
+"07-01":["Halina","Marian","Marianna","Szymon"],"07-02":["Aaron","Jagoda"],"07-03":["Anatol","Jacek"],"07-04":["Elżbieta","Malwina","Teodor"],"07-05":["Antoni","Filomena","Karolina","Zoja"],"07-06":["Dominik","Dominika","Lucja"],"07-07":["Antoni","Benedykt","Estera"],"07-08":["Adrian","Edgar","Elżbieta"],"07-09":["Weronika","Zenon","Hieronim"],"07-10":["Aleksander","Filip","Amelia"],"07-11":["Benedykt","Kalina","Olga"],"07-12":["Euzebiusz","Bruno","Brunon"],"07-13":["Ernest","Małgorzata","Henryk"],"07-14":["Kamil","Kosma","Wincenty"],"07-15":["Dawid","Włodzimierz","Brunon"],"07-16":["Benedykt","Alan"],"07-17":["Aneta","Bogdan","Marcelina"],"07-18":["Kamil","Szymon","Fryderyk"],"07-19":["Alfred","Wincenty"],"07-20":["Czesław","Czesława","Fryderyk"],"07-21":["Daniel","Ignacy","Wiktor"],"07-22":["Magdalena","Wawrzyniec","Maria"],"07-23":["Bogna","Joanna","Brygida"],"07-24":["Kinga","Krystyna","Olga"],"07-25":["Jakub","Krzysztof","Olimpia","Kuba"],"07-26":["Anna","Grażyna","Mirosława","Hanna"],"07-27":["Julia","Natalia","Aureliusz"],"07-28":["Marcela","Wiktor","Ada"],"07-29":["Marta","Olaf","Eugeniusz"],"07-30":["Julita","Maryna","Leopold"],"07-31":["Emilian","Ignacy","Adam"],
+"08-01":["Alfons","Rudolf","Nadzieja","Nadia"],"08-02":["Gustaw","Karina","Euzebiusz"],"08-03":["Lidia","Nikodem","Szczepan"],"08-04":["Alfred","Dominik"],"08-05":["Stanisława","Jonasz"],"08-06":["January","Wincenty","Oktawian"],"08-07":["Dorota","Kajetan","Donat"],"08-08":["Cyprian","Dominik","Emilian"],"08-09":["Roman","Romuald","Klara"],"08-10":["Bogdan","Wawrzyniec","Borys"],"08-11":["Włodzimierz","Zuzanna","Klara","Luiza"],"08-12":["Klara","Lech","Julian"],"08-13":["Diana","Kasjan","Maksym"],"08-14":["Maksymilian","Rajmund","Alan"],"08-15":["Maria","Miriam"],"08-16":["Joachim","Roch"],"08-17":["Anita","Jacek","Julianna","Klara"],"08-18":["Bogusława","Ilona","Eryka"],"08-19":["Bolesław","Emilia","Juliusz"],"08-20":["Bernard","Samuel","Sabina"],"08-21":["Franciszek","Joanna","Kazimiera","Wiktoria"],"08-22":["Cezary","Zygfryd"],"08-23":["Filip","Klaudiusz","Róża"],"08-24":["Anita","Bartosz","Bartłomiej"],"08-25":["Ludwik","Luiza","Patrycja"],"08-26":["Konstanty","Sandra","Ireneusz"],"08-27":["Adrianna","Amadeusz","Teodor"],"08-28":["Aleksy","Augustyn","Patrycja","Vanessa"],"08-29":["Jan","Sabina","Beata"],"08-30":["Miron","Benon","Feliks"],"08-31":["Rajmund","Bogdan","Józef"],
+"09-01":["August","Bronisław","Idzi"],"09-02":["Julian","Stefan","Izabela","Stefania"],"09-03":["Izabela","Joachim","Szymon"],"09-04":["Bonifacy","Ida","Roch"],"09-05":["Dorota","Wawrzyniec","Teodor"],"09-06":["Beata","Eugeniusz","Maksym"],"09-07":["Regina","Ryszard","Marek"],"09-08":["Adrianna","Radosław","Alan"],"09-09":["Sergiusz","Aldona"],"09-10":["Aldona","Mikołaj","Łukasz"],"09-11":["Dagna","Feliks","Jacek"],"09-12":["Maria","Amadeusz","Maja"],"09-13":["Aleksander","Eugenia","Filip"],"09-14":["Bernard","Cyprian","Roksana"],"09-15":["Nikodem","Roland","Emil"],"09-16":["Edyta","Kornel","Korneliusz"],"09-17":["Franciszek","Hildegarda","Justyna"],"09-18":["Ryszarda","Stefania","Tytus"],"09-19":["Konstancja","Teodor","Wilhelmina"],"09-20":["Barbara","Faustyna","Wincenty"],"09-21":["Bernardyna","Mateusz","Daria"],"09-22":["Daria","Joachim","Tomasz"],"09-23":["Elżbieta","Zachariasz","Pola"],"09-24":["Gerard","Herman","Seweryn"],"09-25":["Aurelia","Wincenty","Władysława"],"09-26":["Damian","Euzebiusz","Kosma"],"09-27":["Kosma","Wincenty","Szymon"],"09-28":["Marek","Wacław","Wacława"],"09-29":["Michalina","Michał","Rafał"],"09-30":["Felicja","Hieronim","Franciszek"],
+"10-01":["Danuta","Igor","Remigiusz","Teresa"],"10-02":["Dionizy","Teofil","Sandra"],"10-03":["Gerard","Romana","Dionizy"],"10-04":["Edwin","Franciszek","Rozalia"],"10-05":["Igor","Faustyna"],"10-06":["Artur","Brunon","Bruno"],"10-07":["August","Sabina","Sergiusz"],"10-08":["Brygida","Pelagia","Sergiusz"],"10-09":["Arnold","Bogdan","Ludwik"],"10-10":["Franciszek","Paulina"],"10-11":["Aldona","Marianna","Emil"],"10-12":["Edwin","Witold","Karol"],"10-13":["Edward","Teofil","Teofila"],"10-14":["Alan","Bernard","Gaja"],"10-15":["Brunon","Teresa","Aurelia"],"10-16":["Aurelia","Iga","Jadwiga"],"10-17":["Małgorzata","Wiktor","Daria"],"10-18":["Julian","Łukasz"],"10-19":["Ferdynand","Ziemowit","Gabriel"],"10-20":["Irena","Iwo","Iwona"],"10-21":["Celina","Hilary","Urszula"],"10-22":["Filip","Donat","Salomea"],"10-23":["Gracjan","Seweryn","Seweryna"],"10-24":["Antoni","Marcin","Rafał"],"10-25":["Daria","Kryspin","Walentyna"],"10-26":["Leonarda","Łucjan","Lucjan"],"10-27":["Iwo","Manfred","Sabina"],"10-28":["Szymon","Tadeusz","Judyta"],"10-29":["Ida","Teodor","Wioleta","Wioletta"],"10-30":["Edmund","Klaudiusz","Przemysław"],"10-31":["Alfons","Narcyz","August"],
+"11-01":["Jędrzej","Nikola","Seweryn","Arleta"],"11-02":["Tobiasz","Bogdan"],"11-03":["Bogumił","Hubert","Sylwia"],"11-04":["Dżesika","Karol","Olgierd"],"11-05":["Blandyna","Sławomir"],"11-06":["Feliks","Leonard","Leon"],"11-07":["Longina","Ernest","Rudolf"],"11-08":["Seweryn","Wiktor","Elżbieta"],"11-09":["Genowefa","Teodor","Teodora"],"11-10":["Leon","Natalia","Lena"],"11-11":["Anastazja","Marcin","Teodor"],"11-12":["Renata","Witold","Emilia","Emilian"],"11-13":["Mikołaj","Stanisław","Benedykt"],"11-14":["Kosma","Laura","Wawrzyniec"],"11-15":["Albert","Amelia","Łucja"],"11-16":["Edmund","Gertruda","Lucja"],"11-17":["Grzegorz","Salomea","Waleria"],"11-18":["Roman","Klaudyna"],"11-19":["Salomea","Matylda","Teodor"],"11-20":["Anatol","Edmund","Feliks"],"11-21":["Albert","Janusz","Konrad"],"11-22":["Cecylia","Jonatan"],"11-23":["Adela","Klemens"],"11-24":["Ema","Franciszek","Gerard","Wincenty"],"11-25":["Katarzyna","Klemens","Alan","Maria"],"11-26":["Konrad","Leonard"],"11-27":["Walerian","Ksenia","Franciszek"],"11-28":["Berta","Lesław","Zdzisław"],"11-29":["Błażej","Fryderyk","Walter"],"11-30":["Andrzej","Justyna","Konstanty"],
+"12-01":["Eligiusz","Natalia"],"12-02":["Balbina","Paulina","Blanka","Bianka"],"12-03":["Franciszek","Kasjan","Ksawery"],"12-04":["Barbara","Krystian"],"12-05":["Kryspin","Sabina","Filip"],"12-06":["Emilian","Mikołaj"],"12-07":["Józefa","Agata"],"12-08":["Maria","Wirginia"],"12-09":["Leokadia","Wiesław","Aneta"],"12-10":["Julia","Daniel","Brajan"],"12-11":["Daniel","Waldemar","Artur"],"12-12":["Róża","Aleksandra","Dagmara"],"12-13":["Otylia","Łucja","Lucja"],"12-14":["Alfred","Izydor","Noemi"],"12-15":["Walerian","Nina","Celina"],"12-16":["Adelajda","Albina","Zdzisław"],"12-17":["Florian","Jolanta","Olimpia"],"12-18":["Bogusław","Laura","Gracjan"],"12-19":["Dariusz","Eleonora","Gabriela"],"12-20":["Bogumiła","Dagmara","Dominik"],"12-21":["Balbin","Festus","Honorat","Tomasz"],"12-22":["Franciszka","Zenon","Honorata"],"12-23":["Anatol","Sławomira","Wiktoria","Victoria"],"12-24":["Adam","Adela","Ewa"],"12-25":["Eugenia","Anastazja"],"12-26":["Dionizy","Szczepan"],"12-27":["Cezary","Jan","Maksym"],"12-28":["Antoni","Teofila","Kasper"],"12-29":["Dawid","Jonatan"],"12-30":["Dionizy","Eugeniusz","Seweryn"],"12-31":["Melania","Sylwester","Sylwestra"]
+};
+function normalizeImieName(s){
+  return (s||"").toString().trim().toLowerCase()
+    .replace(/ą/g,"a").replace(/ć/g,"c").replace(/ę/g,"e").replace(/ł/g,"l")
+    .replace(/ń/g,"n").replace(/ó/g,"o").replace(/ś/g,"s").replace(/ź/g,"z").replace(/ż/g,"z");
+}
+var IMIENINY_INDEX = null;
+function buildImieninyIndex(){
+  if(IMIENINY_INDEX) return IMIENINY_INDEX;
+  IMIENINY_INDEX = {};
+  Object.keys(IMIENINY_DATA).forEach(function(md){
+    IMIENINY_DATA[md].forEach(function(nm){
+      var key = normalizeImieName(nm);
+      if(!IMIENINY_INDEX[key]) IMIENINY_INDEX[key] = [];
+      if(IMIENINY_INDEX[key].indexOf(md)===-1) IMIENINY_INDEX[key].push(md);
+    });
+  });
+  return IMIENINY_INDEX;
+}
+function imieninyForName(fullName){
+  var idx = buildImieninyIndex();
+  var first = (fullName||"").toString().trim().split(/\s+/)[0] || "";
+  var key = normalizeImieName(first);
+  return idx[key] || null;
+}
+function imieninyPeopleByDay(){
+  var idx = buildImieninyIndex();
+  var byDay = {};
+  var unassigned = [];
+  (state.birthdays||[]).forEach(function(b){
+    var dates = imieninyForName(b.name);
+    if(!dates || !dates.length){ unassigned.push(b); return; }
+    dates.forEach(function(md){
+      if(!byDay[md]) byDay[md] = [];
+      byDay[md].push(b);
+    });
+  });
+  return {byDay:byDay, unassigned:unassigned};
+}
+function renderImieniny(el){
+  var data = imieninyPeopleByDay();
+  var t = new Date();
+  var todayMD = String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">'+
+    '<h3 style="margin:0">Kalendarz imienin</h3>'+
+    '<div style="color:var(--muted); font-size:12px">Wyliczane automatycznie na podstawie imion wpisanych w Urodzinach</div>'+
+    '</div>';
+
+  var todays = data.byDay[todayMD] || [];
+  if(todays.length){
+    html += '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">'+
+      '<h3 style="margin:0 0 8px">🎉 Dziś imieniny</h3>'+
+      todays.map(function(b){ return '<div class="idea-item">'+escapeHtml(b.name)+(b.relation?' <span style="color:var(--muted-light)">— '+escapeHtml(b.relation)+'</span>':'')+'</div>'; }).join("")+
+      '</div>';
+  }
+
+  for(var m=0; m<12; m++){
+    var dim = daysInMonth(2026, m+1);
+    var monthHtml = "";
+    var any = false;
+    for(var d=1; d<=dim; d++){
+      var md = String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+      var people = data.byDay[md];
+      if(people && people.length){
+        any = true;
+        monthHtml += '<div class="idea-item"><b>'+String(d).padStart(2,"0")+'</b> — '+
+          people.map(function(b){ return escapeHtml(b.name)+(b.relation?' ('+escapeHtml(b.relation)+')':''); }).join(", ")+
+          '</div>';
+      }
+    }
+    if(any){ html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 8px">'+monthName(m)+'</h3>'+monthHtml+'</div>'; }
+  }
+
+  if(data.unassigned.length){
+    html += '<div class="card"><h3 style="margin:0 0 8px">Bez przypisanych imienin</h3>'+
+      '<div class="empty" style="margin-bottom:8px">Nie udało się dopasować imienia do kalendarza imienin — sprawdź, czy w polu "Imię i nazwisko" w Urodzinach wpisane jest prawdziwe imię (np. zamiast "Mama" wpisz jej faktyczne imię).</div>'+
+      data.unassigned.map(function(b){ return '<div class="idea-item">'+escapeHtml(b.name)+(b.relation?' <span style="color:var(--muted-light)">— '+escapeHtml(b.relation)+'</span>':'')+'</div>'; }).join("")+
+      '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
 /* ================= Urodziny ================= */
 function birthdayMD(b){
   var dt = new Date(b.date+"T00:00:00");
@@ -6018,7 +6112,22 @@ window.onGCalTokenReady = function(){
   scheduleFinanceBackupPush();
   crmFlushPendingT4ASync();
 };
+var kalSubtab = "kalendarz";
+function setKalSub(v){ kalSubtab = v; renderAll(); }
 function renderKalendarz(el){
+  var html = '<div class="tabsw">'+
+    '<button class="'+(kalSubtab==="kalendarz"?"active":"")+'" onclick="setKalSub(\'kalendarz\')">Kalendarz</button>'+
+    '<button class="'+(kalSubtab==="urodziny"?"active":"")+'" onclick="setKalSub(\'urodziny\')">Urodziny</button>'+
+    '<button class="'+(kalSubtab==="imieniny"?"active":"")+'" onclick="setKalSub(\'imieniny\')">Imieniny</button>'+
+    '</div>';
+  el.innerHTML = html;
+  var sub = document.createElement("div");
+  el.appendChild(sub);
+  if(kalSubtab==="urodziny"){ setTopActions(""); renderUrodziny(sub); }
+  else if(kalSubtab==="imieniny"){ setTopActions(""); renderImieniny(sub); }
+  else { renderKalendarzGrid(sub); }
+}
+function renderKalendarzGrid(el){
   var now = new Date();
   if(calMonth===undefined){ calMonth = now.getMonth(); calYear = now.getFullYear(); }
   setTopActions('<button class="btn" onclick="promptAddEvent()">+ Wydarzenie</button>');
