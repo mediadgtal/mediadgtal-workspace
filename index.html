@@ -13636,30 +13636,59 @@ function doSignOut(){ signOut(auth); }
 window.reconnectGCal = doSignIn;
 
 var unsubscribeSnapshot = null;
+var unsubscribeCrmSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
+var crmPushTimer = null;
+var pendingCrmPush = false;
+
+// crmContacts rośnie bez ograniczeń (setki/tysiące firm) i sam potrafi zbliżyć się
+// do limitu 1 dokumentu Firestore (1 MiB) — trzymamy go w osobnym dokumencie
+// (workspace_crm/damian), żeby jego rozmiar nigdy nie blokował zapisu reszty stanu
+// (zadania, posty, nawyki itd.), i odwrotnie.
+function mainStateForPush(){
+  var copy = Object.assign({}, window.state);
+  delete copy.crmContacts;
+  return copy;
+}
 
 function scheduleFirestorePush(){
   pendingPush = true;
   setSyncStatus("Zapisywanie…");
   if(pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(flushPush, 500);
+  scheduleCrmFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return;
   if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
   pendingPush = false;
   var docRef = doc(db, "workspace", "damian");
-  setDoc(docRef, window.state).then(function(){
+  setDoc(docRef, mainStateForPush()).then(function(){
     setSyncStatus("Zsynchronizowano");
-  }).catch(function(){
+  }).catch(function(err){
+    console.error("Firestore push (workspace/damian) nie powiódł się:", err);
     setSyncStatus("Offline (tylko lokalnie)");
   });
 }
+function scheduleCrmFirestorePush(){
+  pendingCrmPush = true;
+  if(crmPushTimer) clearTimeout(crmPushTimer);
+  crmPushTimer = setTimeout(flushCrmFirestorePush, 500);
+}
+function flushCrmFirestorePush(){
+  if(!pendingCrmPush) return;
+  if(crmPushTimer){ clearTimeout(crmPushTimer); crmPushTimer = null; }
+  pendingCrmPush = false;
+  var crmDocRef = doc(db, "workspace_crm", "damian");
+  setDoc(crmDocRef, { crmContacts: window.state.crmContacts||[], _updatedAt: window.state._updatedAt||Date.now() }).catch(function(err){
+    console.error("Firestore push (workspace_crm/damian) nie powiódł się:", err);
+  });
+}
 document.addEventListener("visibilitychange", function(){
-  if(document.visibilityState === "hidden") flushPush();
+  if(document.visibilityState === "hidden"){ flushPush(); flushCrmFirestorePush(); }
 });
-window.addEventListener("pagehide", flushPush);
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -13678,19 +13707,37 @@ function startSync(){
         scheduleFirestorePush();
         return;
       }
+      var keepCrm = window.state.crmContacts;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
+      window.state.crmContacts = keepCrm||[];
       originalSave();
       window.renderAll();
       setSyncStatus("Zsynchronizowano");
     } else {
-      setDoc(docRef, window.state).then(function(){
+      setDoc(docRef, mainStateForPush()).then(function(){
         setSyncStatus("Zsynchronizowano");
       });
     }
-  }, function(){
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace/damian) error:", err);
     setSyncStatus("Offline (tylko lokalnie)");
+  });
+
+  var crmDocRef = doc(db, "workspace_crm", "damian");
+  unsubscribeCrmSnapshot = onSnapshot(crmDocRef, function(snap){
+    if(snap.exists()){
+      var remote = snap.data();
+      if((remote._updatedAt||0) < (window.state._updatedAt||0)) return;
+      window.state.crmContacts = remote.crmContacts||[];
+      originalSave();
+      if(window.renderAll) window.renderAll();
+    } else if(window.state.crmContacts && window.state.crmContacts.length){
+      setDoc(crmDocRef, { crmContacts: window.state.crmContacts, _updatedAt: window.state._updatedAt||Date.now() });
+    }
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace_crm/damian) error:", err);
   });
 }
 
