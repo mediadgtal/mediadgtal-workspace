@@ -585,6 +585,7 @@ var CEO_SLEEPING = true;
 var NAV_GROUPS = ["Główne","Social Media","Narzędzia","System","Gra"];
 var TABS = [
   {id:"dashboard", label:"Pulpit", group:"Główne"},
+  {id:"droga", label:"Droga", group:"Główne"},
   {id:"zadania", label:"Zadania", group:"Główne"},
   {id:"kalendarz", label:"Kalendarz", group:"Główne"},
   {id:"finanse", label:"Finanse", group:"Główne"},
@@ -602,6 +603,7 @@ var TABS = [
 ];
 var TAB_ICON_SVG = {
   dashboard: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>',
+  droga: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>',
   ceo: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21l1.5-7L2 9l7-.5L12 2l3 6.5 7 .5-3.5 5L20 21l-8-4-8 4z"/></svg>',
   statystyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
   posty: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
@@ -628,6 +630,347 @@ var SOCIAL_PLATFORM_LABEL = {facebook:"Facebook", instagram:"Instagram", tiktok:
 var SOCIAL_PLATFORM_COLOR = {facebook:"#1877F2", instagram:"#C13584", tiktok:"#000000", youtube:"#FF0000", fbig:"#a58fe0"};
 var CATEGORIES = ["MediaDGtal","tool4arts","Rozwoj","Admin"];
 var CATEGORY_LABEL = {MediaDGtal:"MediaDGtal", tool4arts:"tool4arts", Rozwoj:"Rozwój", Admin:"Admin"};
+
+/* ================= DROGA — plan strategiczny, cele, rytuały (2026-07-22) =================
+   Zbudowane na bazie /Users/mediadgtal/Downloads/plan_mediadgtal.md, wg wskazówek Damiana:
+   osobna zakładka (nie zakładka CEO), lekka grywalizacja (tylko streak/quest dzienny, bez
+   pełnego systemu XP/skilli/lootu jak w CEO), treści statyczne w kodzie, mutowalny tylko
+   stan odhaczeń/notatek w state.droga. Front 1 (retencja) to priorytet startowy wg Damiana. */
+var DROGA_ZASADY = [
+  "Przez najbliższe 90 dni jedyny KPI to cashflow. Nie followersi, nie wizja, nie skala tool4arts. Cel sprintu: 9000 zł zrealizowanego przychodu w miesiącu 3.",
+  "Retencja przed akwizycją. Najpierw zalep dziury (przedłużenia, umowy 6-mies z auto-renew, rytuał raportu), potem dolewaj wody (nowi).",
+  "Sprzedaż mierzysz inputem, nie outputem. Wysłanie 10 wiadomości = wygrana. 90% odmów to statystyka, nie porażka.",
+  "tool4arts = łom do drzwi. Marketing = upsell. Sekwencja, nie sklejka — nigdy oba w tym samym tygodniu do tego samego kontaktu.",
+  "100k to lina ratunkowa, nie przychód. Kolejność: (1) spłać kartę 2600 w dniu wpływu, (2) zbuduj bufor 30-40k i NIE RUSZAJ, (3) reszta = kapitał na wzrost + rezerwa na nagrody.",
+  "100k nie zwalnia Cię ze sprzedaży. Plan działa tak, jakby tej kasy nie było w cashflow.",
+  "Marka osobista ma sprzedawać, nie karmić próżność. Mierz zapytania z IG, nie liczbę obserwujących.",
+  "Idea ≠ decyzja. Wrzucanie pomysłów do notatnika jest OK. Dokładanie nowego kierunku do egzekucji — tylko gdy poprzedni moduł już działa.",
+  "Potrzeba ≠ zachcianka. Windfall ≠ pozwolenie na stały koszt. Potrzeby rozwiązujesz najtańszym rozwiązaniem. Zachcianki zamieniasz w loot odblokowywany celami."
+];
+var DROGA_NIE_ROBIMY = [
+  "Cel „1000 followersów” jako samodzielny target",
+  "Produkty cyfrowe / platforma edukacyjna",
+  "Koncept AI-automation (rozwój wiedzy OK, budowa produktu — nie teraz)",
+  "Gry mobilne",
+  "Tucson N-Line i większe zakupy (loot na milestone, nie teraz)",
+  "Spółka z Martą / mobilna szkoła — na razie tylko rozmowy, zero commitmentu"
+];
+var DROGA_ALOKACJA_100K = [
+  "Spłata karty kredytowej: 2600 zł (w dniu wpływu, koniec dyskusji)",
+  "Bufor płynny (oszczędnościowy): 30-40k — tlen, NIE RUSZAĆ, nie inwestować tego",
+  "Rozwój firmy: 10-15k (reklama własna, mentor, programy) — wydawane STOPNIOWO z wynikiem",
+  "Rezerwa na loot z modułu nagród (gitara, sprzęt, wyjazd z synem) — uwalniana milestone'ami",
+  "Reszta: NIE ruszać do czasu stabilizacji; potem długoterminowe inwestycje"
+];
+var DROGA_REGULA_MIESIECZNA = [
+  "Warunek startu: bufor zbudowany ORAZ firma pokryła koszty z własnego przychodu 3 miesiące z rzędu. Do tego czasu każda nadwyżka → bufor.",
+  "1000 zł → inwestycje długoterminowe (S&P 500, IKE — horyzont 10+ lat)",
+  "500 zł → bufor bezpieczny / wkład własny na dom (oszczędnościowe, obligacje skarbowe — horyzont 2-3 lata)",
+  "Docelowo: min. 50% nadwyżki długoterminowo. Po 40stce proporcje mogą się przesunąć w stronę podróży."
+];
+
+var DROGA_WIZJA_BIZNES = [
+  {okres:"Rok 1 · do lipca 2027", tytul:"Firma zamiast freelancingu", punkty:[
+    "Stabilny, powtarzalny przychód 13-15k zł/msc (marketing ~7k + zajęcia ~1,5k + tool4arts w rozruchu).",
+    "Model przebudowany: umowy 6-miesięczne z automatycznym przedłużeniem, retencja jako silnik.",
+    "100k rozliczone zgodnie z zasadą #5: karta spłacona, bufor 6-mies zbudowany, dług Estilo w spisanej spłacie.",
+    "tool4arts: cel ambitny ~100 klientów łącznie z Tomkiem (Twój udział ~50 płacących = ~10k/msc prowizji).",
+    "Pierwsza osoba w zespole — dopiero gdy masz 13k+ stabilnie przez 3 miesiące z rzędu.",
+    "Marka: content generuje realne zapytania (mierzone), nie okrągłą liczbę followersów."
+  ]},
+  {okres:"Rok 5 · 2031", tytul:"Mała agencja + druga noga", punkty:[
+    "MediaDGtal jako mała agencja z zespołem 2-3 osób. Ty mniej w wykonawstwie, więcej w strategii i marce.",
+    "tool4arts jako rosnące, być może przeważające źródło dochodu.",
+    "Druga noga skalowalna: platforma edukacyjna / produkty cyfrowe — dopiero gdy agencja stoi sama.",
+    "Marka osobista: rozpoznawalny w branży, inbound zaczyna dominować nad outbound.",
+    "AI-automation: tylko jeśli istnieje zwalidowany, wąski prototyp pod MediaDGtal (pełne IP u Ciebie)."
+  ]},
+  {okres:"Rok 10 · 2036", tytul:"Egurrola marketingu tanecznego", punkty:[
+    "Pierwsza osoba, o której myśli branża — szkoła, festiwal, turniej, bootcamp, konferencja.",
+    "Ekosystem: agencja + tool4arts + edukacja + potencjalnie eventy/konferencje.",
+    "Marka na tyle silna, że pozyskiwanie klientów przestało być problemem — jako wynik 10 lat konsekwencji.",
+    "Gry mobilne: hobby/marzenie trzymane osobno, chyba że okażą się osobnym biznesem."
+  ]}
+];
+var DROGA_WIZJA_OSOBISTA = [
+  {okres:"Do końca 2026", tytul:"najważniejsze — fundament pod resztę", punkty:[
+    "Niezawodne auto (rozsądny leasing, NIE Tucson N-Line — ten jest lootem)",
+    "30 płacących klientów tool4arts od stycznia",
+    "Wyjazd samolotem z synem (pierwszy lot) — wyciągnięty do przodu, nie gate'owany dużym milestone'em",
+    "Gitara elektryczna + osprzęt (~5k) — regeneracja psychiczna, traktowana jako infrastruktura",
+    "Pierwsze rozmowy z Martą W. o spółce (eventy + mobilna szkoła)",
+    "Zdrowie: badania zrobione, zęby wyleczone, sylwetka w robocie"
+  ]},
+  {okres:"Za rok", tytul:"", punkty:[
+    "Wyjście ze stresu firmy = stabilność finansowa każdego miesiąca",
+    "tool4arts jako podstawowy dochód (~10k/msc), marketing 5-10 klientów traktowanych indywidualnie",
+    "Rozwój w AI/automatyzacji → kompleksowa usługa (marketing + AI w jednym ręku) = FOSA",
+    "Pierwsze wydarzenie z Martą za sobą",
+    "Zdrowie: wymarzona sylwetka, dobre wyniki",
+    "(Zmienna: możliwa zmiana miejsca zamieszkania — koszty -1500 zł. Utrzymuj elastyczność.)"
+  ]},
+  {okres:"Za 2-3 lata", tytul:"", punkty:[
+    "Budowa wkładu własnego + zdolności kredytowej pod bliźniaka (~1-1,2 mln, zakup w wieku 35-37 lat)",
+    "Wkład trzymaj w BEZPIECZNYCH instrumentach (oszczędnościowe, obligacje skarbowe, lokaty), NIE w S&P 500"
+  ]},
+  {okres:"Za 5 lat", tytul:"", punkty:[
+    "Bliźniak z garażem, ogrodem, siłownią, biurem i gaming roomem — zamieszkany",
+    "Rodzina: żona, dziecko (przed 40stką)",
+    "Zespół 2-3 osoby, stabilne procesy; tool4arts 30-50k/msc, rynek europejski",
+    "Współwłasność w min. 10 szkołach, mobilna szkoła w kilku miastach, eventy z Martą co miesiąc, nowy biznes z Tomkiem",
+    "FOKUS: to jest 8 przedsięwzięć. Realnie dowieziesz 3, jeśli masz dyscyplinę. Wybieraj, nie skacz."
+  ]},
+  {okres:"Za 10 lat", tytul:"", punkty:[
+    "Wszystko na tyle stabilne, że możesz podróżować i doświadczać, nie zarządzać pożarami",
+    "~10 mln w inwestycjach (emerytura zabezpieczona)",
+    "Marzenie: supersportowe auto (Ferrari/Porsche) — albo wynajem na weekend zamiast posiadania"
+  ]}
+];
+
+var DROGA_FRONT_LABEL = {1:"Front 1 — Retencja klientów", 2:"Front 2 — System sprzedaży", 3:"Front 3 — Dług Estilo"};
+var DROGA_FRONTY = [
+  {id:"f1-jump", front:1, text:"Jump — przygotuj ofertę przedłużenia na 6 mies z auto-renew PRZED końcem sierpnia"},
+  {id:"f1-venus", front:1, text:"VENUS — przygotuj ofertę min. 1000 zł/msc (social media organicznie + strategia contentu)"},
+  {id:"f1-polektyw", front:1, text:"PolekTYw — przygotuj przedłużenie na 1500 zł/msc oparte na wynikach"},
+  {id:"f1-institute", front:1, text:"Institute — przygotuj „ofertę nie do odrzucenia” na wrzesień (3. miesiąc + kontynuacja)"},
+  {id:"f1-lotos", front:1, text:"Lotos — poukładaj im procesy i zaangażowanie, przygotuj ofertę od września"},
+  {id:"f1-standard", front:1, text:"Wprowadź standard: każda nowa/odnawiana umowa = 6 miesięcy z auto-przedłużeniem"},
+  {id:"f2-batch50", front:2, text:"Zbatchuj pierwszą listę 50 najcieplejszych kontaktów z CRM (~1000)"},
+  {id:"f2-gra", front:2, text:"Wdróż grę sprzedażową w panelu (quest 10 wiadomości/dzień, streak) — patrz karta questa niżej"},
+  {id:"f2-rytual", front:2, text:"Odpal codzienny rytuał prospectingu (patrz Rytuały)"},
+  {id:"f2-followup", front:2, text:"Wdróż sekwencję follow-up dzień 3 / 7 / 14 do każdego kontaktu (patrz Skrypty)"},
+  {id:"f3-rozmowa", front:3, text:"Przeprowadź z Izabelą szczerą rozmowę: rozdziel bieżącą usługę (1100 zł, zostaje) od długu (9100 zł)"},
+  {id:"f3-rata", front:3, text:"Ustal ratę 300 zł/msc dopłacaną do faktury, start wrzesień 2026"},
+  {id:"f3-uznanie", front:3, text:"Spisz uznanie długu na papierze i podpiszcie"},
+  {id:"f3-prawnik", front:3, text:"Skonsultuj z księgową/prawnikiem kwestię przedawnienia (uznanie długu przerywa bieg)"}
+];
+var DROGA_UZNANIE_DLUGU = "UZNANIE DŁUGU I POROZUMIENIE O SPŁACIE\nZawarte dnia [data] pomiędzy [Ty — dane firmy] a [Izabela — dane / Estilo].\n1. Dłużnik (Estilo) uznaje, że na dzień zawarcia porozumienia posiada wobec Wierzyciela wymagalny dług w wysokości 9100 zł z tytułu [podstawa: wcześniejsze faktury / usługi].\n2. Strony ustalają spłatę w ratach po 300 zł/msc, płatnych łącznie z bieżącą fakturą za usługi, począwszy od września 2026, do całkowitej spłaty.\n3. Kwota bieżącej usługi (1100 zł/msc) oraz rata długu są rozliczane odrębnie i nie wpływają na siebie.\n4. Strony dokonają przeglądu wysokości raty po 6 miesiącach; rata może zostać podwyższona za obopólną zgodą.\n5. W razie zwłoki przekraczającej [np. 30 dni] Wierzyciel może postawić całość pozostałego długu w stan natychmiastowej wymagalności.\n[podpisy obu stron]\n\n(Szkielet do weryfikacji przez prawnika/księgową — nie zastępuje porady prawnej.)";
+
+var DROGA_BRAMKA = [
+  {id:"br-klienci", text:"Wszyscy niepewni klienci rozstrzygnięci (przedłużeni na 6-mies albo świadomie zastąpieni)"},
+  {id:"br-dlug", text:"Dług Estilo spisany na papierze"}
+];
+
+var DROGA_RYTUAL_TYGODNIOWY = [
+  {id:"ty-batch50", text:"Zbatchuj 50 kontaktów do outreachu na ten tydzień (zaczynaj od najcieplejszych)"},
+  {id:"ty-content", text:"Zbatchuj content na cały tydzień w jednej sesji"},
+  {id:"ty-followup", text:"Zaplanuj follow-upy przypadające na ten tydzień (dzień 3/7/14)"},
+  {id:"ty-konsultacje", text:"Cotygodniowe konsultacje z aktywnymi klientami"},
+  {id:"ty-radar", text:"Radar retencji: przejrzyj klientów pod kątem zbliżających się końców umów"},
+  {id:"ty-rozmowa", text:"Min. 1 rozmowa sprzedażowa w tym tygodniu"},
+  {id:"ty-pipeline", text:"Przegląd pipeline: kto odpowiedział, kogo pushnąć dalej"}
+];
+var DROGA_RYTUAL_MIESIECZNY = [
+  {id:"ms-raport", text:"Wygeneruj raport wyników dla KAŻDEGO aktywnego klienta"},
+  {id:"ms-koncowe", text:"Sprawdź, które umowy kończą się w ciągu 60 dni → przepakuj ofertę PROAKTYWNIE"},
+  {id:"ms-cashflow", text:"Przegląd cashflow vs cel 9000 zł"},
+  {id:"ms-estilo", text:"Estilo: sprawdź, czy harmonogram spłaty długu jest realizowany"},
+  {id:"ms-t4a", text:"tool4arts: policz nowych podpiętych w tym miesiącu"},
+  {id:"ms-pipeline", text:"Przegląd pipeline: ile wiadomości, ile odpowiedzi, ile rozmów, ile zamknięć"},
+  {id:"ms-decyzja", text:"Jedna decyzja: co w tym miesiącu wyciąć, bo nie służy celowi 90-dniowemu"}
+];
+var DROGA_RYTUAL_DZIENNY = [
+  {id:"dz-followup", text:"Odpowiedz na follow-upy zaplanowane na dziś (dzień 3/7/14)"},
+  {id:"dz-obsluga", text:"Bieżąca obsługa klientów + reklamy (~1h)"},
+  {id:"dz-content", text:"1 jednostka contentu z tygodniowego batcha (publikacja, nie tworzenie od zera)"}
+];
+
+var DROGA_NAGRODY = [
+  {id:"nag-gitara", text:"Gitara elektryczna + osprzęt (~5k)", warunek:"Po zamknięciu sprintu Q3 — 9000 zł zrealizowanego przychodu w miesiącu 3"},
+  {id:"nag-lot", text:"Wyjazd samolotem z synem", warunek:"Powiązany z tym samym milestonem Q3, zrealizowany jeszcze w 2026"},
+  {id:"nag-ipad", text:"iPad (~4k)", warunek:"Po osiągnięciu 15 płacących klientów tool4arts"},
+  {id:"nag-watch", text:"Apple Watch / Oura Ring / czytnik", warunek:"Po 3 miesiącach z rzędu z przychodem ≥ 8000 zł"},
+  {id:"nag-sportowe", text:"Weekend z wynajętym autem sportowym", warunek:"Po pierwszym miesiącu 13k+ przychodu"},
+  {id:"nag-tucson", text:"Tucson PHEV N-Line (leasing)", warunek:"Gdy tool4arts daje stabilne 8k+/msc przez 3 miesiące z rzędu"}
+];
+
+var DROGA_SKRYPTY = [
+  {id:"sk-t4a", tytul:"Otwarcie tool4arts (łom do drzwi)", tresc:"Hej! Widzę, że prowadzisz [nazwa studia] — świetna robota z [konkret: grafik zajęć / vibe / event, coś realnego z ich profilu]. Sam jestem instruktorem tańca od 12 lat, więc wiem, jak upierdliwe potrafi być ogarnianie zapisów i płatności. Współpracuję z tool4arts — systemem do rejestracji i opłacania zajęć zrobionym pod studia takie jak Twoje. Jest darmowy tier (widget z grafikiem + wizytówka w katalogu), zero zobowiązań. Chcesz, wrzucę Ci link, zobaczysz sama czy się przyda?"},
+  {id:"sk-mkt", tytul:"Otwarcie marketingowe (do ciepłych / z relacją)", tresc:"Cześć! Prowadzę MediaDGtal — pomagam studiom pole dance i tańca pozyskiwać klientki przez Instagram, i uczę, jak robić to organicznie, nie tylko przez reklamy. Instruktor tańca, mistrz Polski, więc gadam Waszym językiem, nie z kosmosu. Rzucę Ci szybki pomysł na Twój profil, jakbyś chciała zobaczyć jak to wygląda w praktyce?"},
+  {id:"sk-d3", tytul:"Follow-up dzień 3 (brak odpowiedzi)", tresc:"Hej, wrzucam się jeszcze raz na wierzch, bo wiem jak DM-y potrafią zniknąć. Dać znać czy w ogóle temat Cię interesuje?"},
+  {id:"sk-d7", tytul:"Follow-up dzień 7", tresc:"Cześć! Nie chcę być namolny — jak to nie moment, spoko. Zostawiam się z tyłu głowy, odezwij się jak będzie potrzeba [temat: system / marketing]."},
+  {id:"sk-d14", tytul:"Follow-up dzień 14 (ostatni, miękkie zamknięcie)", tresc:"Ostatni raz zaczepiam :) Jakby coś się zmieniło albo chciała pogadać o [temat] — wal śmiało w każdej chwili. Trzymam kciuki za [nazwa studia]!"}
+];
+
+function drogaDefaultState(){
+  return {
+    kotwicaCel: 9000,
+    fronty: {},
+    bramka: {},
+    rytualTydzien: {},
+    rytualMiesiac: {},
+    rytualDzien: {},
+    tydzienResetKey: null,
+    miesiacResetKey: null,
+    dzienResetKey: null,
+    quest: {done:false, streak:0, lastDoneDate:null, totalDni:0},
+    nagrody: {},
+    subtab: "sprint"
+  };
+}
+function drogaEnsureResets(){
+  var d = state.droga;
+  var wk = currentWeekDates()[0];
+  if(d.tydzienResetKey !== wk){ d.rytualTydzien = {}; d.tydzienResetKey = wk; }
+  var mk = todayStr().slice(0,7);
+  if(d.miesiacResetKey !== mk){ d.rytualMiesiac = {}; d.miesiacResetKey = mk; }
+  var dk = todayStr();
+  if(d.dzienResetKey !== dk){
+    d.rytualDzien = {};
+    d.dzienResetKey = dk;
+    if(d.quest.lastDoneDate){
+      var y = new Date(Date.now()-86400000);
+      var yStr = y.getFullYear()+"-"+String(y.getMonth()+1).padStart(2,"0")+"-"+String(y.getDate()).padStart(2,"0");
+      if(d.quest.lastDoneDate !== yStr) d.quest.streak = 0;
+    }
+    d.quest.done = false;
+  }
+}
+function drogaSetSubtab(v){ state.droga.subtab = v; save(); renderAll(); }
+function drogaToggleFront(id){ var f = state.droga.fronty[id] || (state.droga.fronty[id]={done:false}); f.done = !f.done; save(); renderAll(); }
+function drogaToggleBramka(id){ state.droga.bramka[id] = !state.droga.bramka[id]; save(); renderAll(); }
+function drogaToggleTydzien(id){ drogaEnsureResets(); state.droga.rytualTydzien[id] = !state.droga.rytualTydzien[id]; save(); renderAll(); }
+function drogaToggleMiesiac(id){ drogaEnsureResets(); state.droga.rytualMiesiac[id] = !state.droga.rytualMiesiac[id]; save(); renderAll(); }
+function drogaToggleDzien(id){ drogaEnsureResets(); state.droga.rytualDzien[id] = !state.droga.rytualDzien[id]; save(); renderAll(); }
+function drogaToggleNagroda(id){ state.droga.nagrody[id] = !state.droga.nagrody[id]; save(); renderAll(); }
+function drogaSetKotwica(v){ state.droga.kotwicaCel = +v || 0; save(); }
+function drogaToggleQuest(){
+  drogaEnsureResets();
+  var q = state.droga.quest, today = todayStr();
+  q.done = !q.done;
+  if(q.done){
+    q.totalDni = (q.totalDni||0)+1;
+    var y = new Date(Date.now()-86400000);
+    var yStr = y.getFullYear()+"-"+String(y.getMonth()+1).padStart(2,"0")+"-"+String(y.getDate()).padStart(2,"0");
+    q.streak = (q.lastDoneDate===yStr ? (q.streak||0)+1 : 1);
+    q.lastDoneDate = today;
+  } else {
+    q.totalDni = Math.max(0,(q.totalDni||0)-1);
+    q.streak = Math.max(0,(q.streak||0)-1);
+    q.lastDoneDate = null;
+  }
+  save(); renderAll();
+}
+function drogaCopyScript(id){
+  var s = DROGA_SKRYPTY.filter(function(x){ return x.id===id; })[0];
+  if(!s) return;
+  navigator.clipboard && navigator.clipboard.writeText(s.tresc).then(function(){
+    var el = document.getElementById("dsk-"+id);
+    if(el){ var old = el.textContent; el.textContent = "Skopiowano ✓"; setTimeout(function(){ el.textContent = old; }, 1500); }
+  });
+}
+function drogaChecklistHtml(items, stateMap, toggleFnName){
+  var html = "";
+  items.forEach(function(it){
+    var done = !!stateMap[it.id];
+    html += '<div class="taskitem'+(done?" done":"")+'"><input type="checkbox"'+(done?" checked":"")+' onchange="'+toggleFnName+'(\''+it.id+'\')"><span class="dot"></span><span class="ttitle">'+escapeHtml(it.text)+'</span></div>';
+  });
+  return html;
+}
+function renderDroga(el){
+  drogaEnsureResets();
+  setTopActions("");
+  var d = state.droga;
+  var sub = d.subtab || "sprint";
+
+  var html = '<div class="tabsw">'+
+    ['sprint','wizja','rytualy','nagrody','zasady','skrypty'].map(function(s){
+      var labels = {sprint:"Sprint Q3", wizja:"Wizja", rytualy:"Rytuały", nagrody:"Nagrody", zasady:"Zasady", skrypty:"Skrypty"};
+      return '<button class="'+(sub===s?"active":"")+'" onclick="drogaSetSubtab(\''+s+'\')">'+labels[s]+'</button>';
+    }).join('')+
+    '</div>';
+
+  if(sub==="sprint"){
+    var ym = todayStr().slice(0,7);
+    var live = (typeof financeMonthSummary==="function") ? financeMonthSummary(ym).byCategory.przychody||0 : 0;
+    var pct = d.kotwicaCel ? Math.min(100, Math.round(live/d.kotwicaCel*100)) : 0;
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<h3 style="margin-top:0">🎯 Kotwica sprintu Q3</h3>'+
+      '<p style="color:var(--muted-light); margin-bottom:12px">9000 zł zrealizowanego przychodu w miesiącu 3 sprintu. Poniżej podgląd bieżącego miesiąca kalendarzowego jako kontekst postępu, nie dosłowny „miesiąc 3”.</p>'+
+      '<div class="ceo-xpbar" style="max-width:none"><div class="ceo-xpbar-fill" style="width:'+pct+'%"></div></div>'+
+      '<p style="margin-top:8px; font-size:13px; color:var(--muted-light)">Ten miesiąc: <strong style="color:#fff">'+Math.round(live)+' zł</strong> / cel '+
+      '<input type="number" value="'+d.kotwicaCel+'" onchange="drogaSetKotwica(this.value)" style="width:80px; background:var(--sidebar-bg); border:1px solid var(--border); color:#fff; border-radius:6px; padding:2px 6px"> zł</p>'+
+      '</div>';
+
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<h3 style="margin-top:0">🎯 Quest dzienny — 10 wiadomości</h3>'+
+      '<div class="taskitem'+(d.quest.done?" done":"")+'"><input type="checkbox"'+(d.quest.done?" checked":"")+' onchange="drogaToggleQuest()"><span class="dot"></span><span class="ttitle">Wysłałem dziś min. 10 wiadomości prospectingowych</span></div>'+
+      '<p style="margin-top:10px; font-size:13px; color:var(--muted-light)">🔥 Streak: <strong style="color:var(--accent)">'+(d.quest.streak||0)+' dni</strong> · Łącznie zaliczonych dni: '+(d.quest.totalDni||0)+'</p>'+
+      '</div>';
+
+    [1,2,3].forEach(function(fn){
+      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">'+DROGA_FRONT_LABEL[fn]+'</h3>';
+      html += drogaChecklistHtml(DROGA_FRONTY.filter(function(f){ return f.front===fn; }), d.fronty, "drogaToggleFront");
+      html += '</div>';
+    });
+
+    html += '<div class="card"><h3 style="margin-top:0">🚪 Bramka końca kwartału</h3>';
+    html += drogaChecklistHtml(DROGA_BRAMKA, d.bramka, "drogaToggleBramka");
+    html += '<div class="taskitem"><span class="dot"></span><span class="ttitle">Przychód miesiąca 3 osiągnął 9000 zł — obecnie: '+Math.round(live)+' zł ('+pct+'%)</span></div>';
+    html += '<div class="taskitem"><span class="dot"></span><span class="ttitle">Codzienny streak sprzedażowy min. 20 dni w miesiącu — obecnie: '+(d.quest.streak||0)+' dni</span></div>';
+    html += '</div>';
+  }
+
+  if(sub==="wizja"){
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">🏢 Biznes</h3>';
+    DROGA_WIZJA_BIZNES.forEach(function(v){
+      html += '<div style="margin-bottom:18px"><div style="font-weight:700; color:var(--accent)">'+v.okres+'</div>'+
+        (v.tytul?'<div style="font-size:13px; color:var(--muted-light); margin-bottom:6px">"'+escapeHtml(v.tytul)+'"</div>':'')+
+        '<ul style="margin:4px 0 0 18px; padding:0; font-size:13.5px; color:var(--text)">'+v.punkty.map(function(p){ return '<li style="margin-bottom:4px">'+escapeHtml(p)+'</li>'; }).join('')+'</ul></div>';
+    });
+    html += '</div>';
+    html += '<div class="card"><h3 style="margin-top:0">🎯 Osobiste</h3>';
+    DROGA_WIZJA_OSOBISTA.forEach(function(v){
+      html += '<div style="margin-bottom:18px"><div style="font-weight:700; color:var(--accent)">'+v.okres+'</div>'+
+        (v.tytul?'<div style="font-size:13px; color:var(--muted-light); margin-bottom:6px">'+escapeHtml(v.tytul)+'</div>':'')+
+        '<ul style="margin:4px 0 0 18px; padding:0; font-size:13.5px; color:var(--text)">'+v.punkty.map(function(p){ return '<li style="margin-bottom:4px">'+escapeHtml(p)+'</li>'; }).join('')+'</ul></div>';
+    });
+    html += '</div>';
+  }
+
+  if(sub==="rytualy"){
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">📅 Dzienny — resetuje się co dzień</h3>'+
+      drogaChecklistHtml(DROGA_RYTUAL_DZIENNY, d.rytualDzien, "drogaToggleDzien")+'</div>';
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">🗓️ Tygodniowy — resetuje się w poniedziałek</h3>'+
+      drogaChecklistHtml(DROGA_RYTUAL_TYGODNIOWY, d.rytualTydzien, "drogaToggleTydzien")+'</div>';
+    html += '<div class="card"><h3 style="margin-top:0">📆 Miesięczny — resetuje się 1. dnia miesiąca</h3>'+
+      drogaChecklistHtml(DROGA_RYTUAL_MIESIECZNY, d.rytualMiesiac, "drogaToggleMiesiac")+'</div>';
+  }
+
+  if(sub==="nagrody"){
+    html += '<div class="card"><h3 style="margin-top:0">🎁 Loot odblokowywany milestone\'ami</h3>'+
+      '<p style="color:var(--muted-light); margin-bottom:14px">Kolejność = priorytet. Odhaczasz ręcznie, gdy warunek jest realnie spełniony.</p>';
+    DROGA_NAGRODY.forEach(function(n){
+      var done = !!d.nagrody[n.id];
+      html += '<div class="taskitem'+(done?" done":"")+'"><input type="checkbox"'+(done?" checked":"")+' onchange="drogaToggleNagroda(\''+n.id+'\')"><span class="dot"></span><span class="ttitle">'+escapeHtml(n.text)+'<br><span style="font-size:12px; color:var(--muted-light)">'+escapeHtml(n.warunek)+'</span></span></div>';
+    });
+    html += '</div>';
+  }
+
+  if(sub==="zasady"){
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">⚖️ Fundament — zasady, które rządzą wszystkim</h3>'+
+      '<ol style="margin:0; padding-left:18px; font-size:13.5px; color:var(--text)">'+DROGA_ZASADY.map(function(z){ return '<li style="margin-bottom:8px">'+escapeHtml(z)+'</li>'; }).join('')+'</ol></div>';
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">🚫 Czego świadomie nie robimy w tym kwartale</h3>'+
+      '<ul style="margin:0; padding-left:18px; font-size:13.5px; color:var(--text)">'+DROGA_NIE_ROBIMY.map(function(z){ return '<li style="margin-bottom:6px">'+escapeHtml(z)+'</li>'; }).join('')+'</ul></div>';
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">💰 Alokacja jednorazowych 100k</h3>'+
+      '<ol style="margin:0; padding-left:18px; font-size:13.5px; color:var(--text)">'+DROGA_ALOKACJA_100K.map(function(z){ return '<li style="margin-bottom:6px">'+escapeHtml(z)+'</li>'; }).join('')+'</ol></div>';
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">📈 Reguła miesięczna nadwyżki</h3>'+
+      '<ul style="margin:0; padding-left:18px; font-size:13.5px; color:var(--text)">'+DROGA_REGULA_MIESIECZNA.map(function(z){ return '<li style="margin-bottom:6px">'+escapeHtml(z)+'</li>'; }).join('')+'</ul></div>';
+    html += '<div class="card"><h3 style="margin-top:0">📄 Szkielet uznania długu Estilo</h3>'+
+      '<pre style="white-space:pre-wrap; font-family:inherit; font-size:12.5px; color:var(--muted-light); background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:12px">'+escapeHtml(DROGA_UZNANIE_DLUGU)+'</pre></div>';
+  }
+
+  if(sub==="skrypty"){
+    DROGA_SKRYPTY.forEach(function(s){
+      html += '<div class="card" style="margin-bottom:14px"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">'+
+        '<h3 style="margin:0">'+escapeHtml(s.tytul)+'</h3>'+
+        '<button class="btn secondary small" id="dsk-'+s.id+'" onclick="drogaCopyScript(\''+s.id+'\')">Kopiuj</button></div>'+
+        '<p style="margin:0; font-size:13.5px; color:var(--text); white-space:pre-wrap">'+escapeHtml(s.tresc)+'</p></div>';
+    });
+  }
+
+  el.innerHTML = html;
+}
 
 /* ================= CEO — skille/questy/config ================= */
 var CEO_SKILL_DEFS = {
@@ -1313,6 +1656,11 @@ function migrateState(s){
     });
     s.financeJuly2026Refreshed = true;
   }
+  if(!s.droga) s.droga = drogaDefaultState();
+  else{
+    var dd = drogaDefaultState();
+    Object.keys(dd).forEach(function(k){ if(s.droga[k]===undefined) s.droga[k] = dd[k]; });
+  }
   return s;
 }
 window.migrateState = migrateState;
@@ -1774,6 +2122,8 @@ function defaultState(){
   s.ceo.skillActive = {};
   Object.keys(CEO_SKILL_DEFS).forEach(function(k){ s.ceo.skillActive[k] = true; });
   s.ceo.rewards.forEach(function(r){ if(r.costPln==null) r.costPln = 0; if(r.brand===undefined) r.brand = null; });
+
+  s.droga = drogaDefaultState();
 
   s.hasla = [];
   syncHaslaFromContentCalendar(s);
@@ -2237,6 +2587,7 @@ function setTopActions(html){ document.getElementById("topActions").innerHTML = 
 
 var RENDERERS = {
   dashboard: renderDashboard,
+  droga: renderDroga,
   statystyki: renderStatystyki,
   posty: renderPosty,
   instagram: function(el){ renderSocial(el,"instagram"); },
@@ -2252,7 +2603,7 @@ var RENDERERS = {
   ceo: renderCEO,
   audyt: renderAudyt
 };
-var TITLES = {dashboard:"Pulpit", statystyki:"Statystyki", posty:"Posty",
+var TITLES = {dashboard:"Pulpit", droga:"Droga", statystyki:"Statystyki", posty:"Posty",
   instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
 
 function renderAll(){
