@@ -829,7 +829,7 @@ function drogaEnsureResets(){
   }
 }
 function drogaSetSubtab(v){ state.droga.subtab = v; save(); renderAll(); }
-function drogaToggleFront(id){ var f = state.droga.fronty[id] || (state.droga.fronty[id]={done:false}); f.done = !f.done; save(); renderAll(); }
+function drogaToggleFront(id){ state.droga.fronty[id] = !state.droga.fronty[id]; save(); renderAll(); }
 function drogaToggleBramka(id){ state.droga.bramka[id] = !state.droga.bramka[id]; save(); renderAll(); }
 function drogaToggleTydzien(id){
   drogaEnsureResets();
@@ -1698,6 +1698,12 @@ function migrateState(s){
     if(s.droga.quest){
       if(s.droga.quest.tydzienWiadomosci===undefined) s.droga.quest.tydzienWiadomosci = 0;
       if(s.droga.quest.miesiacWiadomosci===undefined) s.droga.quest.miesiacWiadomosci = 0;
+    }
+    if(s.droga.fronty){
+      Object.keys(s.droga.fronty).forEach(function(k){
+        var v = s.droga.fronty[k];
+        if(v && typeof v==="object") s.droga.fronty[k] = !!v.done;
+      });
     }
   }
   if(!s.ceoSleepingQuestsPurged){
