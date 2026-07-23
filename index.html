@@ -803,7 +803,7 @@ function drogaDefaultState(){
     tydzienResetKey: null,
     miesiacResetKey: null,
     dzienResetKey: null,
-    quest: {done:false, streak:0, lastDoneDate:null, totalDni:0},
+    quest: {done:false, streak:0, lastDoneDate:null, totalDni:0, tydzienWiadomosci:0, miesiacWiadomosci:0},
     nagrody: {},
     subtab: "sprint"
   };
@@ -811,9 +811,9 @@ function drogaDefaultState(){
 function drogaEnsureResets(){
   var d = state.droga;
   var wk = currentWeekDates()[0];
-  if(d.tydzienResetKey !== wk){ d.rytualTydzien = {}; d.tydzienResetKey = wk; }
+  if(d.tydzienResetKey !== wk){ d.rytualTydzien = {}; d.tydzienResetKey = wk; d.quest.tydzienWiadomosci = 0; }
   var mk = todayStr().slice(0,7);
-  if(d.miesiacResetKey !== mk){ d.rytualMiesiac = {}; d.miesiacResetKey = mk; }
+  if(d.miesiacResetKey !== mk){ d.rytualMiesiac = {}; d.miesiacResetKey = mk; d.quest.miesiacWiadomosci = 0; }
   var dk = todayStr();
   if(d.dzienResetKey !== dk){
     d.rytualDzien = {};
@@ -840,12 +840,16 @@ function drogaToggleQuest(){
   q.done = !q.done;
   if(q.done){
     q.totalDni = (q.totalDni||0)+1;
+    q.tydzienWiadomosci = (q.tydzienWiadomosci||0)+10;
+    q.miesiacWiadomosci = (q.miesiacWiadomosci||0)+10;
     var y = new Date(Date.now()-86400000);
     var yStr = y.getFullYear()+"-"+String(y.getMonth()+1).padStart(2,"0")+"-"+String(y.getDate()).padStart(2,"0");
     q.streak = (q.lastDoneDate===yStr ? (q.streak||0)+1 : 1);
     q.lastDoneDate = today;
   } else {
     q.totalDni = Math.max(0,(q.totalDni||0)-1);
+    q.tydzienWiadomosci = Math.max(0,(q.tydzienWiadomosci||0)-10);
+    q.miesiacWiadomosci = Math.max(0,(q.miesiacWiadomosci||0)-10);
     q.streak = Math.max(0,(q.streak||0)-1);
     q.lastDoneDate = null;
   }
@@ -896,6 +900,8 @@ function renderDroga(el){
       '<h3 style="margin-top:0">🎯 Quest dzienny — 10 wiadomości</h3>'+
       '<div class="taskitem'+(d.quest.done?" done":"")+'"><input type="checkbox"'+(d.quest.done?" checked":"")+' onchange="drogaToggleQuest()"><span class="dot"></span><span class="ttitle">Wysłałem dziś min. 10 wiadomości prospectingowych</span></div>'+
       '<p style="margin-top:10px; font-size:13px; color:var(--muted-light)">🔥 Streak: <strong style="color:var(--accent)">'+(d.quest.streak||0)+' dni</strong> · Łącznie zaliczonych dni: '+(d.quest.totalDni||0)+'</p>'+
+      '<div style="margin-top:12px"><div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted-light)"><span>Słupek postępu miesięcznego (10 × 20 dni roboczych)</span><span>'+(d.quest.miesiacWiadomosci||0)+' / 200</span></div>'+
+      '<div class="ceo-xpbar" style="max-width:none; margin-top:4px"><div class="ceo-xpbar-fill" style="width:'+Math.min(100, Math.round((d.quest.miesiacWiadomosci||0)/200*100))+'%"></div></div></div>'+
       '</div>';
 
     [1,2,3].forEach(function(fn){
@@ -938,6 +944,14 @@ function renderDroga(el){
   }
 
   if(sub==="nagrody"){
+    var tyRozmowaOk = !!d.rytualTydzien['ty-rozmowa'];
+    var tyWiad = d.quest.tydzienWiadomosci||0;
+    var tyOk = tyRozmowaOk && tyWiad>=50;
+    html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">🔁 Nagrody rytmiczne — regeneracja, nie loot</h3>'+
+      '<p style="color:var(--muted-light); margin-bottom:12px">Należą Ci się za utrzymanie dyscypliny, nie za jednorazowy milestone.</p>'+
+      '<div class="taskitem'+(d.quest.done?" done":"")+'"><span class="dot"></span><span class="ttitle">Codziennie: gry / gitara (po odblokowaniu) po zamknięciu dziennego questa — '+(d.quest.done?'✅ dzisiejszy quest zamknięty, odbierz':'jeszcze nie dziś')+'</span></div>'+
+      '<div class="taskitem'+(tyOk?" done":"")+'"><span class="dot"></span><span class="ttitle">Co tydzień: niedzielny obiad z partnerką w restauracji — za '+tyWiad+'/50 wiadomości + rozmowa sprzedażowa ('+(tyRozmowaOk?'✅':'—')+') — '+(tyOk?'✅ cel spełniony, zasłużony obiad!':'jeszcze nie spełniony')+'</span></div>'+
+      '</div>';
     html += '<div class="card"><h3 style="margin-top:0">🎁 Loot odblokowywany milestone\'ami</h3>'+
       '<p style="color:var(--muted-light); margin-bottom:14px">Kolejność = priorytet. Odhaczasz ręcznie, gdy warunek jest realnie spełniony.</p>';
     DROGA_NAGRODY.forEach(function(n){
@@ -1660,6 +1674,10 @@ function migrateState(s){
   else{
     var dd = drogaDefaultState();
     Object.keys(dd).forEach(function(k){ if(s.droga[k]===undefined) s.droga[k] = dd[k]; });
+    if(s.droga.quest){
+      if(s.droga.quest.tydzienWiadomosci===undefined) s.droga.quest.tydzienWiadomosci = 0;
+      if(s.droga.quest.miesiacWiadomosci===undefined) s.droga.quest.miesiacWiadomosci = 0;
+    }
   }
   return s;
 }
