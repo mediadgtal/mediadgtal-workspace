@@ -757,7 +757,7 @@ var DROGA_RYTUAL_TYGODNIOWY = [
   {id:"ty-followup", text:"Zaplanuj follow-upy przypadające na ten tydzień (dzień 3/7/14)"},
   {id:"ty-konsultacje", text:"Cotygodniowe konsultacje z aktywnymi klientami"},
   {id:"ty-radar", text:"Radar retencji: przejrzyj klientów pod kątem zbliżających się końców umów"},
-  {id:"ty-rozmowa", text:"Min. 1 rozmowa sprzedażowa w tym tygodniu"},
+  {id:"ty-rozmowa", text:"Min. 1 rozmowa sprzedażowa w tym tygodniu (+200 XP)"},
   {id:"ty-pipeline", text:"Przegląd pipeline: kto odpowiedział, kogo pushnąć dalej"}
 ];
 var DROGA_RYTUAL_MIESIECZNY = [
@@ -805,6 +805,8 @@ function drogaDefaultState(){
     dzienResetKey: null,
     quest: {done:false, streak:0, lastDoneDate:null, totalDni:0, tydzienWiadomosci:0, miesiacWiadomosci:0},
     nagrody: {},
+    xp: 0,
+    umowyPodpisane: 0,
     subtab: "sprint"
   };
 }
@@ -829,19 +831,28 @@ function drogaEnsureResets(){
 function drogaSetSubtab(v){ state.droga.subtab = v; save(); renderAll(); }
 function drogaToggleFront(id){ var f = state.droga.fronty[id] || (state.droga.fronty[id]={done:false}); f.done = !f.done; save(); renderAll(); }
 function drogaToggleBramka(id){ state.droga.bramka[id] = !state.droga.bramka[id]; save(); renderAll(); }
-function drogaToggleTydzien(id){ drogaEnsureResets(); state.droga.rytualTydzien[id] = !state.droga.rytualTydzien[id]; save(); renderAll(); }
+function drogaToggleTydzien(id){
+  drogaEnsureResets();
+  var d = state.droga;
+  d.rytualTydzien[id] = !d.rytualTydzien[id];
+  if(id==="ty-rozmowa") d.xp = Math.max(0, (d.xp||0) + (d.rytualTydzien[id] ? 200 : -200));
+  save(); renderAll();
+}
+function drogaAddUmowa(){ var d=state.droga; d.umowyPodpisane=(d.umowyPodpisane||0)+1; d.xp=(d.xp||0)+500; save(); renderAll(); }
+function drogaRemoveUmowa(){ var d=state.droga; if((d.umowyPodpisane||0)<=0) return; d.umowyPodpisane--; d.xp=Math.max(0,(d.xp||0)-500); save(); renderAll(); }
 function drogaToggleMiesiac(id){ drogaEnsureResets(); state.droga.rytualMiesiac[id] = !state.droga.rytualMiesiac[id]; save(); renderAll(); }
 function drogaToggleDzien(id){ drogaEnsureResets(); state.droga.rytualDzien[id] = !state.droga.rytualDzien[id]; save(); renderAll(); }
 function drogaToggleNagroda(id){ state.droga.nagrody[id] = !state.droga.nagrody[id]; save(); renderAll(); }
 function drogaSetKotwica(v){ state.droga.kotwicaCel = +v || 0; save(); }
 function drogaToggleQuest(){
   drogaEnsureResets();
-  var q = state.droga.quest, today = todayStr();
+  var d = state.droga, q = d.quest, today = todayStr();
   q.done = !q.done;
   if(q.done){
     q.totalDni = (q.totalDni||0)+1;
     q.tydzienWiadomosci = (q.tydzienWiadomosci||0)+10;
     q.miesiacWiadomosci = (q.miesiacWiadomosci||0)+10;
+    d.xp = (d.xp||0)+150;
     var y = new Date(Date.now()-86400000);
     var yStr = y.getFullYear()+"-"+String(y.getMonth()+1).padStart(2,"0")+"-"+String(y.getDate()).padStart(2,"0");
     q.streak = (q.lastDoneDate===yStr ? (q.streak||0)+1 : 1);
@@ -850,6 +861,7 @@ function drogaToggleQuest(){
     q.totalDni = Math.max(0,(q.totalDni||0)-1);
     q.tydzienWiadomosci = Math.max(0,(q.tydzienWiadomosci||0)-10);
     q.miesiacWiadomosci = Math.max(0,(q.miesiacWiadomosci||0)-10);
+    d.xp = Math.max(0,(d.xp||0)-150);
     q.streak = Math.max(0,(q.streak||0)-1);
     q.lastDoneDate = null;
   }
@@ -895,6 +907,15 @@ function renderDroga(el){
       '<p style="margin-top:8px; font-size:13px; color:var(--muted-light)">Ten miesiąc: <strong style="color:#fff">'+Math.round(live)+' zł</strong> / cel '+
       '<input type="number" value="'+d.kotwicaCel+'" onchange="drogaSetKotwica(this.value)" style="width:80px; background:var(--sidebar-bg); border:1px solid var(--border); color:#fff; border-radius:6px; padding:2px 6px"> zł</p>'+
       '</div>';
+
+    html += '<div class="card" style="margin-bottom:16px">'+
+      '<div style="display:flex; justify-content:space-between; align-items:center"><h3 style="margin:0">⭐ XP</h3><span style="font-size:24px; font-weight:800; color:var(--accent)">'+(d.xp||0)+' XP</span></div>'+
+      '<p style="margin-top:8px; font-size:12.5px; color:var(--muted-light)">+10 za wysłaną wiadomość · +50 za wykonany dzienny quest · +200 za rozmowę sprzedażową · +500 za podpisaną umowę</p>'+
+      '<div style="margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap">'+
+      '<span style="font-size:13px; color:var(--muted-light)">Podpisane umowy w tym sprincie: <strong style="color:#fff">'+(d.umowyPodpisane||0)+'</strong></span>'+
+      '<button class="btn secondary small" onclick="drogaRemoveUmowa()">−1</button>'+
+      '<button class="btn secondary small" onclick="drogaAddUmowa()">+1 podpisana umowa (+500 XP)</button>'+
+      '</div></div>';
 
     html += '<div class="card" style="margin-bottom:16px">'+
       '<h3 style="margin-top:0">🎯 Quest dzienny — 10 wiadomości</h3>'+
@@ -1678,6 +1699,10 @@ function migrateState(s){
       if(s.droga.quest.tydzienWiadomosci===undefined) s.droga.quest.tydzienWiadomosci = 0;
       if(s.droga.quest.miesiacWiadomosci===undefined) s.droga.quest.miesiacWiadomosci = 0;
     }
+  }
+  if(!s.ceoSleepingQuestsPurged){
+    s.tasks = (s.tasks||[]).filter(function(t){ return !(t.generated && !t.done); });
+    s.ceoSleepingQuestsPurged = true;
   }
   return s;
 }
@@ -2649,13 +2674,22 @@ function dismissGcalBanner(){ window.__gcalBannerDismissed = true; renderGcalBan
 /* ================= DASHBOARD ================= */
 function renderDashboard(el){
   var todayWd = todayWeekdayIdx();
+  var today = todayStr();
   var todayTasks = state.tasks.filter(function(t){
     if(t.scope!=="dzien" || t.deletedAt) return false;
-    if(t.recurWeekday!=null) return t.recurWeekday===todayWd && !(t.recurCompletions && t.recurCompletions[todayStr()]);
-    return !t.done;
+    if(t.recurWeekday!=null) return t.recurWeekday===todayWd;
+    if(!t.done) return true;
+    return t.completedAt===today;
+  }).sort(function(a,b){
+    var ad = a.recurWeekday!=null ? !!(a.recurCompletions && a.recurCompletions[today]) : !!a.done;
+    var bd = b.recurWeekday!=null ? !!(b.recurCompletions && b.recurCompletions[today]) : !!b.done;
+    return (ad?1:0)-(bd?1:0);
   });
-  var monthTasks = state.tasks.filter(function(t){ return t.scope==="miesiac" && !t.done && !t.deletedAt; });
-  var today = todayStr();
+  var monthTasks = state.tasks.filter(function(t){
+    if(t.scope!=="miesiac" || t.deletedAt) return false;
+    if(!t.done) return true;
+    return (t.completedAt||"").slice(0,7) === today.slice(0,7);
+  }).sort(function(a,b){ return (a.done?1:0)-(b.done?1:0); });
   var weekDates = currentWeekDates();
 
   var gcalConnected = !!(window.__gcalToken && gcalCalendars);
@@ -2679,7 +2713,8 @@ function renderDashboard(el){
   else{
     todayTasks.slice(0,8).forEach(function(t){
       var togFn = t.recurWeekday!=null ? "toggleRecurTaskToday" : "toggleTask";
-      html += '<div class="taskitem"><input type="checkbox" onchange="'+togFn+'(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+(t.recurWeekday!=null?"🔁 ":"")+escapeHtml(t.title)+'</span></div>';
+      var doneNow = t.recurWeekday!=null ? !!(t.recurCompletions && t.recurCompletions[today]) : !!t.done;
+      html += '<div class="taskitem'+(doneNow?" done":"")+'"><input type="checkbox"'+(doneNow?" checked":"")+' onchange="'+togFn+'(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+(t.recurWeekday!=null?"🔁 ":"")+escapeHtml(t.title)+'</span></div>';
     });
   }
   html += '</div>';
@@ -2688,7 +2723,7 @@ function renderDashboard(el){
   if(!monthTasks.length){ html += '<div class="empty">Brak zadań w tym miesiącu.</div>'; }
   else{
     monthTasks.slice(0,8).forEach(function(t){
-      html += '<div class="taskitem"><input type="checkbox" onchange="toggleTask(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+escapeHtml(t.title)+'</span></div>';
+      html += '<div class="taskitem'+(t.done?" done":"")+'"><input type="checkbox"'+(t.done?" checked":"")+' onchange="toggleTask(\''+t.id+'\')"><span class="dot"></span><span class="ttitle">'+escapeHtml(t.title)+'</span></div>';
     });
     if(monthTasks.length>8){ html += '<div class="empty">+ '+(monthTasks.length-8)+' więcej w zakładce Zadania</div>'; }
   }
@@ -12385,7 +12420,7 @@ var CRM_STATUSES = [
   {id:"odrzucili", label:"Odrzucili", color:"#d1636f", bg:"#33222a"},
   {id:"klient", label:"Klient", color:"#63b58a", bg:"#20302a"}
 ];
-var CRM_SYSTEMS = ["Fitssey","Wod Guru","eFitness","Excel","BRAK"];
+var CRM_SYSTEMS = ["Fitssey","Wod Guru","eFitness","ActiveNow","Tool4Arts","Excel","BRAK"];
 var T4A_SHEET_ID = "18LsVb2KC0jtcbY7qNMmApl_7ZoPEVdhQNO_7--0wW8Y";
 var T4A_SHEET_TAB = "Baza";
 var T4A_SHEET_GID = 0;
@@ -13561,7 +13596,7 @@ function renderCrmBaza(){
   sorted.forEach(function(c){
     var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
     html += '<tr data-crm-row-id="'+c.id+'">'+
-      '<td><div style="'+CLAMP2+'" title="'+escapeHtml(c.name||"")+'">'+escapeHtml(c.name||"")+'</div></td>'+
+      '<td><div style="'+CLAMP2+'; cursor:pointer" title="Kliknij, aby edytować: '+escapeHtml(c.name||"")+'" onclick="openCrmModal(\''+c.id+'\')">'+escapeHtml(c.name||"")+'</div></td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.city)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.category)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.system)+'</td>'+
