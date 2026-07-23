@@ -807,6 +807,7 @@ function drogaDefaultState(){
     nagrody: {},
     xp: 0,
     umowyPodpisane: 0,
+    skryptyOverrides: {},
     subtab: "sprint"
   };
 }
@@ -867,13 +868,44 @@ function drogaToggleQuest(){
   }
   save(); renderAll();
 }
+function drogaSkryptText(s){
+  var ov = state.droga.skryptyOverrides;
+  return (ov && ov[s.id]!==undefined) ? ov[s.id] : s.tresc;
+}
 function drogaCopyScript(id){
   var s = DROGA_SKRYPTY.filter(function(x){ return x.id===id; })[0];
   if(!s) return;
-  navigator.clipboard && navigator.clipboard.writeText(s.tresc).then(function(){
+  navigator.clipboard && navigator.clipboard.writeText(drogaSkryptText(s)).then(function(){
     var el = document.getElementById("dsk-"+id);
     if(el){ var old = el.textContent; el.textContent = "Skopiowano ✓"; setTimeout(function(){ el.textContent = old; }, 1500); }
   });
+}
+function openDrogaSkryptModal(id){
+  closeDrogaSkryptModal();
+  var s = DROGA_SKRYPTY.filter(function(x){ return x.id===id; })[0];
+  if(!s) return;
+  var hasOverride = state.droga.skryptyOverrides && state.droga.skryptyOverrides[id]!==undefined;
+  var html = '<div class="modal-overlay" id="drogaSkryptModal" data-close="closeDrogaSkryptModal">'+
+    '<div class="modal-box card">'+
+    '<h3>Edytuj skrypt: '+escapeHtml(s.tytul)+'</h3>'+
+    '<div class="field"><textarea id="dskEditText" rows="9">'+escapeHtml(drogaSkryptText(s))+'</textarea></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (hasOverride ? '<button class="btn secondary small" onclick="drogaResetSkrypt(\''+id+'\')">Przywróć domyślny</button>' : '')+
+    '<button class="btn secondary small" onclick="closeDrogaSkryptModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveDrogaSkryptModal(\''+id+'\')">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeDrogaSkryptModal(){ var m = document.getElementById("drogaSkryptModal"); if(m) m.remove(); }
+function saveDrogaSkryptModal(id){
+  var val = document.getElementById("dskEditText").value;
+  if(!state.droga.skryptyOverrides) state.droga.skryptyOverrides = {};
+  state.droga.skryptyOverrides[id] = val;
+  closeDrogaSkryptModal(); save(); renderAll();
+}
+function drogaResetSkrypt(id){
+  if(state.droga.skryptyOverrides) delete state.droga.skryptyOverrides[id];
+  closeDrogaSkryptModal(); save(); renderAll();
 }
 function drogaChecklistHtml(items, stateMap, toggleFnName){
   var html = "";
@@ -997,10 +1029,12 @@ function renderDroga(el){
 
   if(sub==="skrypty"){
     DROGA_SKRYPTY.forEach(function(s){
-      html += '<div class="card" style="margin-bottom:14px"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">'+
-        '<h3 style="margin:0">'+escapeHtml(s.tytul)+'</h3>'+
-        '<button class="btn secondary small" id="dsk-'+s.id+'" onclick="drogaCopyScript(\''+s.id+'\')">Kopiuj</button></div>'+
-        '<p style="margin:0; font-size:13.5px; color:var(--text); white-space:pre-wrap">'+escapeHtml(s.tresc)+'</p></div>';
+      var isEdited = state.droga.skryptyOverrides && state.droga.skryptyOverrides[s.id]!==undefined;
+      html += '<div class="card" style="margin-bottom:14px"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px">'+
+        '<h3 style="margin:0">'+escapeHtml(s.tytul)+(isEdited?' <span style="font-size:11px; font-weight:400; color:var(--muted-light)">(zmodyfikowany)</span>':'')+'</h3>'+
+        '<span style="white-space:nowrap; flex:0 0 auto"><button class="btn secondary small" onclick="openDrogaSkryptModal(\''+s.id+'\')">Edytuj</button> '+
+        '<button class="btn secondary small" id="dsk-'+s.id+'" onclick="drogaCopyScript(\''+s.id+'\')">Kopiuj</button></span></div>'+
+        '<p style="margin:0; font-size:13.5px; color:var(--text); white-space:pre-wrap">'+escapeHtml(drogaSkryptText(s))+'</p></div>';
     });
   }
 
