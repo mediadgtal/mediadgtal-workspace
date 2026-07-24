@@ -1400,6 +1400,7 @@ function migrateState(s){
   if(!s.brands || !s.brands.length) s.brands = ["MediaDGtal","tool4arts"];
   if(!s.agentRequests) s.agentRequests = [];
   if(!s.crmContacts) s.crmContacts = [];
+  if(!s.t4aClients) s.t4aClients = [];
   if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
   if(!s.geoCache) s.geoCache = {};
   if(!s.clientMapPins) s.clientMapPins = [];
@@ -1790,6 +1791,30 @@ function mkClient(nazwa, lokalizacja, faktura, statusKlienta, wynagrodzenie, bud
   return {id:uid("cli"), nazwa:nazwa, lokalizacja:lokalizacja, faktura:faktura, statusKlienta:statusKlienta,
     wynagrodzenie:wynagrodzenie, budzetRekl:budzetRekl, iloscWsp:iloscWsp, okresDni:okresDni, etapWsp:etapWsp,
     startKampanii:startKampanii, koniecKampanii:koniecKampanii, cel:cel, ocenaWsp:ocenaWsp, notatki:notatki};
+}
+var T4A_CLIENT_FIELDS = [
+  {key:"nazwaStudia", label:"Nazwa studia", type:"text"},
+  {key:"osoba", label:"Imię i nazwisko", type:"text"},
+  {key:"lokalizacja", label:"Lokalizacja", type:"text"},
+  {key:"wynagrodzenie", label:"Wynagrodzenie", type:"number"},
+  {key:"startUmowy", label:"Start umowy", type:"date"},
+  {key:"koniecUmowy", label:"Koniec umowy", type:"date"},
+  {key:"notatki", label:"Notatki", type:"text"}
+];
+function t4aContractColor(r){
+  if(!r.koniecUmowy) return null;
+  var end = new Date(r.koniecUmowy+"T00:00:00");
+  if(isNaN(end)) return null;
+  var today = new Date(todayStr()+"T00:00:00");
+  if(today > end) return "var(--muted)";
+  var warn = new Date(end.getTime());
+  warn.setMonth(warn.getMonth()-3);
+  if(today >= warn) return "var(--danger)";
+  return null;
+}
+function mkT4AClient(nazwaStudia, osoba, lokalizacja, wynagrodzenie, startUmowy, koniecUmowy, notatki, contactId){
+  return {id:uid("t4acli"), contactId:contactId||null, nazwaStudia:nazwaStudia, osoba:osoba, lokalizacja:lokalizacja,
+    wynagrodzenie:wynagrodzenie, startUmowy:startUmowy, koniecUmowy:koniecUmowy, notatki:notatki};
 }
 function prevMonthKey(ym){
   var p = ym.split("-"), y=+p[0], m=+p[1]-1;
@@ -2229,6 +2254,7 @@ function defaultState(){
     "2026-01":8000,"2026-02":9000,"2026-03":10000,"2026-04":15000,"2026-05":13000,"2026-06":17000,
     "2026-07":20000,"2026-08":22000,"2026-09":25000,"2026-10":25000,"2026-11":19000,"2026-12":17000
   };
+  s.t4aClients = [];
   s.clientsMonthly = {
     "2026-01": [
       mkClient("Szkoła tańca Estilo","Wrocław","Opłacona","Kontynuacja",1000,1000,22,30,"Raport","2026-01-25","2026-02-24","Brak",5,"Pierwszy taniec"),
@@ -7585,6 +7611,23 @@ function undoKlienci(){
   save(); renderAllKeepScroll("klienciScrollBox");
 }
 
+var t4aCliUndoStack = [];
+function pushT4ACliUndo(a){ t4aCliUndoStack.push(a); if(t4aCliUndoStack.length>50) t4aCliUndoStack.shift(); }
+function undoT4ACli(){
+  var a = t4aCliUndoStack.pop();
+  if(!a) return;
+  if(a.type==="add"){
+    state.t4aClients = (state.t4aClients||[]).filter(function(x){return x.id!==a.rowId;});
+  } else if(a.type==="delete"){
+    if(!state.t4aClients) state.t4aClients=[];
+    state.t4aClients.splice(a.index, 0, a.row);
+  } else if(a.type==="editRow"){
+    var r = (state.t4aClients||[]).filter(function(x){return x.id===a.rowId;})[0];
+    if(r){ T4A_CLIENT_FIELDS.forEach(function(f){ r[f.key] = a.prev[f.key]; }); r.contactId = a.prev.contactId; }
+  }
+  save(); renderAllKeepScroll("t4aCliScrollBox");
+}
+
 /* ================= OBSŁUGA KLIENTÓW ================= */
 var CLIENT_OPS_FREQ_LABEL = {once:"Jednorazowe", weekly:"Co tydzień", monthly:"Co miesiąc"};
 var CLIENT_OPS_STORAGE_ENABLED = false; // ustaw na true, gdy Damian zdecyduje: Blaze albo przejscie na Firestore-jako-storage
@@ -11949,8 +11992,9 @@ function renderKlienci(el){
   if(!klienciTab) klienciTab = realCurYm;
   var yr = String(klienciYear);
 
-  var topBtns = '<button class="btn secondary" onclick="undoKlienci()">↺ Cofnij</button>';
-  if(klienciTab!=="TOTAL" && klienciTab!=="MAPA") topBtns += ' <button class="btn" onclick="openClientRowModal(klienciTab, null)">+ Klient</button>';
+  var topBtns = '<button class="btn secondary" onclick="'+(klienciTab==="T4A"?"undoT4ACli()":"undoKlienci()")+'">↺ Cofnij</button>';
+  if(klienciTab!=="TOTAL" && klienciTab!=="MAPA" && klienciTab!=="T4A") topBtns += ' <button class="btn" onclick="openClientRowModal(klienciTab, null)">+ Klient</button>';
+  if(klienciTab==="T4A") topBtns += ' <button class="btn" onclick="openT4ACliModal(null)">+ Klient Tool4Arts</button>';
   setTopActions(topBtns);
 
   var html = '';
@@ -11982,17 +12026,204 @@ function renderKlienci(el){
   }
   html += '<span class="chip'+(klienciTab==="TOTAL"?" active":"")+'" onclick="setKlienciTab(\'TOTAL\')" style="font-weight:700; border-color:var(--accent)">TOTAL</span>';
   html += '<span class="chip'+(klienciTab==="MAPA"?" active":"")+'" onclick="setKlienciTab(\'MAPA\')" style="font-weight:700; border-color:var(--accent)">🗺 Mapa</span>';
+  html += '<span class="chip'+(klienciTab==="T4A"?" active":"")+'" onclick="setKlienciTab(\'T4A\')" style="font-weight:700; border-color:var(--accent)">💼 Tool4Arts</span>';
   html += '</div>';
 
-  html += (klienciTab==="TOTAL") ? renderKlienciTotal(yr) : (klienciTab==="MAPA" ? renderClientMapSection() : renderKlienciMonth(klienciTab));
+  html += (klienciTab==="TOTAL") ? renderKlienciTotal(yr) : (klienciTab==="MAPA" ? renderClientMapSection() : (klienciTab==="T4A" ? renderKlienciT4A() : renderKlienciMonth(klienciTab)));
   el.innerHTML = html;
   attachPinchZoom("klienciScrollBox");
+  attachPinchZoom("t4aCliScrollBox");
 }
 function setKlienciTab(v){ klienciTab = v; renderAll(); }
 function changeKlienciYear(delta){
   klienciYear = (klienciYear||new Date().getFullYear()) + delta;
-  if(klienciTab && klienciTab!=="TOTAL" && klienciTab!=="MAPA"){ klienciTab = klienciYear+"-"+klienciTab.split("-")[1]; }
+  if(klienciTab && klienciTab!=="TOTAL" && klienciTab!=="MAPA" && klienciTab!=="T4A"){ klienciTab = klienciYear+"-"+klienciTab.split("-")[1]; }
   renderAll();
+}
+
+/* ---- Klienci Tool4Arts — jedna zbiorcza lista (bez podziału na miesiące), zintegrowana z Bazą kontaktów ---- */
+var t4aCliSortCol = "koniecUmowy";
+var t4aCliSortDir = "asc";
+var t4aCliNameFilter = "";
+var t4aCliLocFilter = "";
+var t4aCliMonthFilter = ""; // "" = wszystkie, "01".."12" = miesiąc startu umowy (dowolny rok)
+function t4aCliSetSort(col){
+  if(t4aCliSortCol===col){ t4aCliSortDir = (t4aCliSortDir==="asc") ? "desc" : "asc"; }
+  else { t4aCliSortCol = col; t4aCliSortDir = "asc"; }
+  renderAll();
+}
+function t4aCliSetNameFilter(v){ t4aCliNameFilter = v; renderAllKeepFocus("t4aCliNameFilterInput"); }
+function t4aCliSetLocFilter(v){ t4aCliLocFilter = v; renderAllKeepFocus("t4aCliLocFilterInput"); }
+function t4aCliSetMonthFilter(v){ t4aCliMonthFilter = v; renderAll(); }
+function t4aCliMatchesFilter(value, filterText){
+  if(!filterText) return true;
+  var f = filterText.trim().toLowerCase();
+  if(!f) return true;
+  return (value||"").toString().toLowerCase().indexOf(f) !== -1;
+}
+function t4aCliSortValue(r, col){
+  if(col==="wynagrodzenie") return +r.wynagrodzenie || 0;
+  if(col==="startUmowy" || col==="koniecUmowy") return r[col] || "";
+  return (r[col]||"").toString().toLowerCase();
+}
+function t4aCliCellDisplay(r, f){
+  var val = r[f.key];
+  if(f.key==="wynagrodzenie") return fmtPln(val);
+  if(f.type==="date"){
+    if(!val) return '<span style="color:var(--muted)">—</span>';
+    var color = (f.key==="koniecUmowy") ? t4aContractColor(r) : null;
+    return '<span title="'+(f.key==="koniecUmowy"?"Czerwony = umowa kończy się w ciągu 3 miesięcy, warto pogadać o przedłużeniu":"")+'" style="'+(color?'color:'+color+'; font-weight:700':'')+'">'+fmtDate(val)+'</span>';
+  }
+  if(!val) return '<span style="color:var(--muted)">—</span>';
+  return '<span title="'+escapeHtml(val)+'">'+escapeHtml(val)+'</span>';
+}
+function renderKlienciT4A(){
+  var allRows = state.t4aClients || [];
+  var filtered = allRows.filter(function(r){
+    if(!t4aCliMatchesFilter(r.nazwaStudia, t4aCliNameFilter)) return false;
+    if(!t4aCliMatchesFilter(r.lokalizacja, t4aCliLocFilter)) return false;
+    if(t4aCliMonthFilter){
+      var startMonth = r.startUmowy ? r.startUmowy.split("-")[1] : "";
+      if(startMonth !== t4aCliMonthFilter) return false;
+    }
+    return true;
+  });
+  var sorted = filtered.slice().sort(function(a,b){
+    var va = t4aCliSortValue(a, t4aCliSortCol), vb = t4aCliSortValue(b, t4aCliSortCol);
+    var cmp;
+    if(typeof va === "number" && typeof vb === "number") cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb), "pl", {sensitivity:"base"});
+    return t4aCliSortDir==="asc" ? cmp : -cmp;
+  });
+
+  var html = '<div class="row" style="margin-bottom:14px; gap:10px; flex-wrap:wrap">';
+  html += '<div style="position:relative"><input type="text" id="t4aCliNameFilterInput" value="'+escapeHtml(t4aCliNameFilter)+'" placeholder="Nazwa: wpisz aby szukać…" oninput="t4aCliSetNameFilter(this.value)" style="width:190px"></div>';
+  html += '<div style="position:relative"><input type="text" id="t4aCliLocFilterInput" value="'+escapeHtml(t4aCliLocFilter)+'" placeholder="Lokalizacja: wpisz aby szukać…" oninput="t4aCliSetLocFilter(this.value)" style="width:190px"></div>';
+  var monthOpts = '<option value="">Miesiąc startu: wszystkie</option>';
+  for(var mm=1; mm<=12; mm++){
+    var mv = String(mm).padStart(2,"0");
+    monthOpts += '<option value="'+mv+'"'+(t4aCliMonthFilter===mv?" selected":"")+'>'+monthName(mm-1)+'</option>';
+  }
+  html += '<select onchange="t4aCliSetMonthFilter(this.value)" style="min-width:190px">'+monthOpts+'</select>';
+  html += '</div>';
+
+  html += '<div class="card"><div id="t4aCliScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid"><thead><tr><th>Lp.</th>';
+  T4A_CLIENT_FIELDS.forEach(function(f, fi){
+    var arrow = t4aCliSortCol===f.key ? (t4aCliSortDir==="asc" ? " ▲" : " ▼") : "";
+    var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg); cursor:pointer; user-select:none"' : ' style="cursor:pointer; user-select:none"';
+    html += '<th'+stickyStyle+' onclick="t4aCliSetSort(\''+f.key+'\')">'+f.label+arrow+'</th>';
+  });
+  html += '<th></th></tr></thead><tbody>';
+  if(!sorted.length){ html += '<tr><td colspan="'+(T4A_CLIENT_FIELDS.length+2)+'" style="color:var(--muted)">'+(allRows.length?'Brak klientów pasujących do filtrów.':'Brak klientów Tool4Arts. Dodaj przyciskiem "+ Klient Tool4Arts".')+'</td></tr>'; }
+  sorted.forEach(function(r, idx){
+    html += '<tr data-t4acli-row-id="'+r.id+'"><td>'+(idx+1)+'.</td>';
+    T4A_CLIENT_FIELDS.forEach(function(f, fi){
+      var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg)"' : '';
+      html += '<td'+stickyStyle+'>'+t4aCliCellDisplay(r, f)+'</td>';
+    });
+    html += '<td style="white-space:nowrap"><button class="linklike" onclick="openT4ACliModal(\''+r.id+'\')">Edytuj</button></td></tr>';
+  });
+  html += '</tbody></table></div></div>';
+
+  var sumWyn = sorted.reduce(function(s,r){return s+(+r.wynagrodzenie||0);},0);
+  html += '<div class="card" style="margin-top:16px"><h3>Podsumowanie</h3><table>'+
+    '<tr><td>Liczba klientów (wg filtrów)</td><td style="text-align:right; font-weight:700">'+sorted.length+'</td></tr>'+
+    '<tr><td>Suma wynagrodzeń / mc</td><td style="text-align:right; font-weight:700; color:var(--accent)">'+fmtPln(sumWyn)+'</td></tr>'+
+    '</table></div>';
+  return html;
+}
+var __t4aCliModalCtx = null;
+var __t4aCliPickMap = {};
+function closeT4ACliModal(){
+  var m = document.getElementById("t4aCliModal");
+  if(m) m.remove();
+  __t4aCliModalCtx = null;
+}
+function t4aCliFieldInputHtml(f, val){
+  var id = "t4acli_"+f.key;
+  if(f.type==="number") return '<input type="number" id="'+id+'" value="'+(val||0)+'">';
+  if(f.type==="date") return '<input type="date" id="'+id+'" value="'+escapeHtml(val||"")+'">';
+  return '<input type="text" id="'+id+'" value="'+escapeHtml(val||"")+'">';
+}
+function t4aCliOnPick(val){
+  var c = __t4aCliPickMap[val];
+  if(!c) return;
+  var elName = document.getElementById("t4acli_nazwaStudia"); if(elName) elName.value = c.name||"";
+  var elLoc = document.getElementById("t4acli_lokalizacja"); if(elLoc) elLoc.value = c.city||"";
+  var elOsoba = document.getElementById("t4acli_osoba"); if(elOsoba) elOsoba.value = c.contactPerson||"";
+  var elCid = document.getElementById("t4a_contactId"); if(elCid) elCid.value = c.id||"";
+}
+function openT4ACliModal(rowId){
+  closeT4ACliModal();
+  var existing = rowId ? (state.t4aClients||[]).filter(function(x){ return x.id===rowId; })[0] : null;
+  var isEdit = !!existing;
+  __t4aCliModalCtx = {rowId: rowId};
+  __t4aCliPickMap = {};
+  var pickOpts = (state.crmContacts||[]).filter(function(c){ return c.name && !c.deletedAt; }).map(function(c){
+    var label = c.name + (c.city ? " — "+c.city : "");
+    __t4aCliPickMap[label] = c;
+    return label;
+  });
+  var linkedContact = existing && existing.contactId ? (state.crmContacts||[]).filter(function(c){ return c.id===existing.contactId; })[0] : null;
+  var html = '<div class="modal-overlay" id="t4aCliModal" data-close="closeT4ACliModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj klienta Tool4Arts":"Nowy klient Tool4Arts")+'</h3>'+
+    '<div class="field"><label>Wybierz z Bazy kontaktów (uzupełni nazwę, lokalizację i osobę kontaktową)</label>'+
+    '<input type="text" id="t4a_pick" list="t4aCliPickList" placeholder="Zacznij pisać nazwę studia…" oninput="t4aCliOnPick(this.value)" value="'+escapeHtml(linkedContact ? (linkedContact.name+(linkedContact.city?" — "+linkedContact.city:"")) : "")+'">'+
+    '<datalist id="t4aCliPickList">'+pickOpts.map(function(o){ return '<option value="'+escapeHtml(o)+'">'; }).join("")+'</datalist>'+
+    '<input type="hidden" id="t4a_contactId" value="'+escapeHtml((existing&&existing.contactId)||"")+'">'+
+    '</div>';
+  T4A_CLIENT_FIELDS.forEach(function(f){
+    var val = existing ? existing[f.key] : (f.type==="number" ? 0 : "");
+    html += '<div class="field"><label>'+f.label+'</label>'+t4aCliFieldInputHtml(f, val)+'</div>';
+  });
+  html += '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteT4ACliModal()">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeT4ACliModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveT4ACliModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function saveT4ACliModal(){
+  var ctx = __t4aCliModalCtx;
+  if(!ctx) return;
+  var nameEl = document.getElementById("t4acli_nazwaStudia");
+  if(!nameEl) return;
+  var vals = {};
+  T4A_CLIENT_FIELDS.forEach(function(f){
+    var el = document.getElementById("t4acli_"+f.key);
+    if(!el) return;
+    vals[f.key] = (f.type==="number") ? (+el.value||0) : el.value.trim();
+  });
+  if(!vals.nazwaStudia) return;
+  var cidEl = document.getElementById("t4a_contactId");
+  var contactId = cidEl ? (cidEl.value || null) : null;
+  if(!state.t4aClients) state.t4aClients = [];
+  if(ctx.rowId){
+    var r = state.t4aClients.filter(function(x){ return x.id===ctx.rowId; })[0];
+    if(r){
+      pushT4ACliUndo({type:"editRow", rowId:r.id, prev:Object.assign({}, r)});
+      T4A_CLIENT_FIELDS.forEach(function(f){ r[f.key] = vals[f.key]; });
+      r.contactId = contactId;
+    }
+  } else {
+    var row = mkT4AClient(vals.nazwaStudia, vals.osoba, vals.lokalizacja, vals.wynagrodzenie, vals.startUmowy, vals.koniecUmowy, vals.notatki, contactId);
+    state.t4aClients.push(row);
+    pushT4ACliUndo({type:"add", rowId:row.id});
+  }
+  closeT4ACliModal();
+  save(); renderAll();
+}
+function deleteT4ACliModal(){
+  var ctx = __t4aCliModalCtx;
+  if(!ctx || !ctx.rowId) return;
+  closeT4ACliModal();
+  var rows = state.t4aClients||[];
+  var idx = rows.findIndex(function(x){ return x.id===ctx.rowId; });
+  if(idx<0) return;
+  pushT4ACliUndo({type:"delete", index:idx, row: Object.assign({}, rows[idx])});
+  rows.splice(idx,1);
+  save(); renderAll();
 }
 
 function renderClientFieldInput(ym, r, f){
