@@ -1878,7 +1878,7 @@ function t4aEmailCell(email){
   return '<a href="mailto:'+escapeHtml(email)+'" title="Napisz do: '+escapeHtml(email)+'" style="color:var(--muted-light)">'+escapeHtml(email)+'</a>';
 }
 function mkT4AClient(vals, contactId){
-  var row = {id:uid("t4acli"), contactId: contactId||null};
+  var row = {id:uid("t4acli"), contactId: contactId||null, sheetRow:null, sheetDirty:false};
   T4A_CLIENT_FIELDS.forEach(function(f){ row[f.key] = vals[f.key]; });
   return row;
 }
@@ -6790,6 +6790,7 @@ window.onGCalTokenReady = function(){
   ensureFinanceBackupSheet();
   scheduleFinanceBackupPush();
   crmFlushPendingT4ASync();
+  t4aCliFlushPendingSync();
 };
 var kalSubtab = "kalendarz";
 function setKalSub(v){ kalSubtab = v; renderAll(); }
@@ -11777,7 +11778,7 @@ function normalizeName(s){
     .replace(/ń/g,"n").replace(/ó/g,"o").replace(/ś/g,"s").replace(/ź/g,"z").replace(/ż/g,"z")
     .replace(/\s+/g," ");
 }
-function registerClientMapPin(name, city, category, source, targetState){
+function registerClientMapPin(name, city, category, source, targetState, mode){
   var ts = targetState || state;
   name = (name||"").toString().trim();
   if(!name) return null;
@@ -11787,9 +11788,11 @@ function registerClientMapPin(name, city, category, source, targetState){
   if(existing){
     if(!existing.city && city) existing.city = (city||"").trim();
     if(!existing.category && category) existing.category = category;
+    if(mode && !existing.mode) existing.mode = mode;
     return existing;
   }
   var pin = {id:uid("cmp"), name:name, city:(city||"").trim(), category:category||"", source:source||"app"};
+  if(mode) pin.mode = mode;
   ts.clientMapPins.push(pin);
   return pin;
 }
@@ -12146,7 +12149,9 @@ function t4aCliCellDisplay(r, f){
   if(!val) return '<span style="color:var(--muted)">—</span>';
   return '<span title="'+escapeHtml(val)+'">'+escapeHtml(val)+'</span>';
 }
+var t4aCliLastFlush = 0;
 function renderKlienciT4A(){
+  if(window.__gcalToken && Date.now()-t4aCliLastFlush>45000){ t4aCliLastFlush = Date.now(); t4aCliFlushPendingSync(); }
   var allRows = state.t4aClients || [];
   var filtered = allRows.filter(function(r){
     if(!t4aCliMatchesFilter(r.nazwaStudia, t4aCliNameFilter)) return false;
@@ -12190,7 +12195,11 @@ function renderKlienciT4A(){
       var stickyStyle = fi===0 ? ' style="position:sticky; left:0; background:var(--bg)"' : '';
       html += '<td'+stickyStyle+'>'+t4aCliCellDisplay(r, f)+'</td>';
     });
-    html += '<td style="white-space:nowrap"><button class="linklike" onclick="openT4ACliModal(\''+r.id+'\')">Edytuj</button></td></tr>';
+    var syncNote = '';
+    if(!window.__gcalToken && r.sheetDirty) syncNote = ' <span title="Nie połączono z Google — zapisze się w arkuszu po połączeniu" style="color:var(--muted)">☁️</span>';
+    else if(t4aCliSyncStatus[r.id]==="syncing") syncNote = ' <span title="Synchronizuję z arkuszem…" style="color:var(--muted)">…</span>';
+    else if(t4aCliSyncStatus[r.id]==="error") syncNote = ' <span title="Błąd synchronizacji z arkuszem Google" style="color:var(--danger)">⚠️</span>';
+    html += '<td style="white-space:nowrap"><button class="linklike" onclick="openT4ACliModal(\''+r.id+'\')">Edytuj</button>'+syncNote+'</td></tr>';
   });
   html += '</tbody></table></div></div>';
 
@@ -12211,12 +12220,22 @@ function closeT4ACliModal(){
 function t4aCliFieldInputHtml(f, val){
   var id = "t4acli_"+f.key;
   if(f.type==="number") return '<input type="number" id="'+id+'" value="'+(val||0)+'">';
-  if(f.type==="date") return '<input type="date" id="'+id+'" value="'+escapeHtml(val||"")+'">';
+  if(f.type==="date"){
+    var extra = f.key==="startUmowy" ? ' onchange="t4aCliAutoFillEndDate(this.value)"' : '';
+    return '<input type="date" id="'+id+'" value="'+escapeHtml(val||"")+'"'+extra+'>';
+  }
   if(f.type==="select"){
     var opts = (f.options||[]).map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(val===o?" selected":"")+'>'+(o||"—")+'</option>'; }).join("");
     return '<select id="'+id+'">'+opts+'</select>';
   }
   return '<input type="text" id="'+id+'" value="'+escapeHtml(val||"")+'">';
+}
+function t4aCliAutoFillEndDate(startVal){
+  var endEl = document.getElementById("t4acli_koniecUmowy");
+  if(!endEl || !startVal || endEl.value) return; // nie nadpisuj już ustawionej/ręcznie zmienionej daty
+  var d = new Date(startVal+"T00:00:00");
+  d.setFullYear(d.getFullYear()+1);
+  endEl.value = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
 function t4aCliOnPick(val){
   var c = __t4aCliPickMap[val];
@@ -12275,20 +12294,36 @@ function saveT4ACliModal(){
   var cidEl = document.getElementById("t4a_contactId");
   var contactId = cidEl ? (cidEl.value || null) : null;
   if(!state.t4aClients) state.t4aClients = [];
+  var savedRow;
   if(ctx.rowId){
     var r = state.t4aClients.filter(function(x){ return x.id===ctx.rowId; })[0];
     if(r){
       pushT4ACliUndo({type:"editRow", rowId:r.id, prev:Object.assign({}, r)});
       T4A_CLIENT_FIELDS.forEach(function(f){ r[f.key] = vals[f.key]; });
       r.contactId = contactId;
+      savedRow = r;
     }
   } else {
     var row = mkT4AClient(vals, contactId);
     state.t4aClients.push(row);
     pushT4ACliUndo({type:"add", rowId:row.id});
+    savedRow = row;
+  }
+  /* Klient Tool4Arts = realny sygnał "to jest klient" — odzwierciedlamy go na mapie i w checkliście
+     CRM (jeśli powiązany z kontaktem z Bazy), żeby oba miejsca w apce się zgadzały, zamiast
+     prowadzić dwa niezależne źródła prawdy. */
+  if(contactId){
+    var linked = (state.crmContacts||[]).filter(function(c){ return c.id===contactId; })[0];
+    if(linked){
+      var t = crmGetT4A(linked);
+      if(!t.client){ t.client = true; linked.t4aDirty = true; ceoAwardClientWonT4a(linked.name); crmSyncT4ARow(linked); }
+    }
+  } else if(vals.nazwaStudia){
+    registerClientMapPin(vals.nazwaStudia, vals.lokalizacja, vals.rodzaj, "app", null, "tool4arts");
   }
   closeT4ACliModal();
   save(); renderAll();
+  if(savedRow) t4aCliMarkDirtyAndSync(savedRow);
 }
 function deleteT4ACliModal(){
   var ctx = __t4aCliModalCtx;
@@ -12771,6 +12806,7 @@ var CRM_SYSTEMS = ["Fitssey","Wod Guru","eFitness","ActiveNow","Tool4Arts","Exce
 var T4A_SHEET_ID = "18LsVb2KC0jtcbY7qNMmApl_7ZoPEVdhQNO_7--0wW8Y";
 var T4A_SHEET_TAB = "Baza";
 var T4A_SHEET_GID = 0;
+var T4ACLI_SHEET_TAB = "klienci";
 function crmFormatT4ARow(rowNum){
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
   var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
@@ -13006,6 +13042,77 @@ function crmPullT4AStatuses(){
       });
       if(changed){ save(); renderAll(); }
     }).catch(function(){});
+}
+/* ---- Synchronizacja Klienci→Tool4Arts z zakładką "klienci" tego samego arkusza (jednokierunkowo, app→arkusz) ---- */
+var t4aCliSyncStatus = {};
+var t4aCliCreating = {};
+function t4aCliSheetRowValues(r){
+  function hyperlink(url){ return url ? '=HYPERLINK("'+url.replace(/"/g,'""')+'";"Link")' : ""; }
+  var privUrl = /^https?:\/\//i.test((r.priv||"").trim()) ? r.priv.trim() : "";
+  return [
+    r.nazwaStudia||"", r.osoba||"", r.rodzaj||"", r.lokalizacja||"", r.email||"",
+    hyperlink(crmUrl(r.ig,"ig")), hyperlink(crmUrl(r.fb,"fb")), hyperlink(crmUrl(r.website,"website")), hyperlink(privUrl),
+    r.phone||"", r.startUmowy||"", r.koniecUmowy||"", (+r.wynagrodzenie||0), r.plan||"", r.kod||"", r.notatki||""
+  ];
+}
+function t4aCliMarkDirtyAndSync(r){
+  r.sheetDirty = true;
+  save();
+  t4aCliSyncRow(r);
+}
+function t4aCliSyncRow(r){
+  if(!window.__gcalToken) return;
+  if(!r.sheetRow){
+    if(t4aCliCreating[r.id]) return;
+    t4aCliCreating[r.id] = true;
+    t4aCliFindOrCreateRow(r);
+    return;
+  }
+  t4aCliPushRow(r);
+}
+function t4aCliFindOrCreateRow(r){
+  t4aCliSyncStatus[r.id] = "syncing";
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
+  fetch(base+"/values/"+encodeURIComponent(T4ACLI_SHEET_TAB+"!A2:A")+"?valueRenderOption=FORMULA", {headers:headers})
+    .then(function(resp){
+      if(resp.status===401){ window.__gcalToken=null; throw new Error("401"); }
+      if(!resp.ok) throw new Error("http"+resp.status);
+      return resp.json();
+    }).then(function(data){
+      var target = (r.nazwaStudia||"").trim().toLowerCase();
+      var names = (data.values||[]).map(function(row){ return (row[0]||"").toString().trim().toLowerCase(); });
+      var idx = target ? names.indexOf(target) : -1;
+      var targetRow;
+      if(idx===-1){
+        var blankIdx = -1;
+        for(var i=0;i<names.length;i++){ if(!names[i]){ blankIdx = i; break; } }
+        targetRow = blankIdx>-1 ? blankIdx+2 : names.length+2;
+      } else {
+        targetRow = idx+2;
+      }
+      r.sheetRow = targetRow;
+      t4aCliCreating[r.id] = false;
+      save();
+      t4aCliPushRow(r);
+    }).catch(function(){ t4aCliCreating[r.id]=false; t4aCliSyncStatus[r.id]="error"; renderAll(); });
+}
+function t4aCliPushRow(r){
+  t4aCliSyncStatus[r.id] = "syncing";
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
+  fetch(base+"/values/"+encodeURIComponent(T4ACLI_SHEET_TAB+"!A"+r.sheetRow+":P"+r.sheetRow)+"?valueInputOption=USER_ENTERED", {
+    method:"PUT", headers:headers, body: JSON.stringify({values:[t4aCliSheetRowValues(r)]})
+  }).then(function(resp){
+    if(resp.status===401){ window.__gcalToken=null; throw new Error("401"); }
+    if(!resp.ok) throw new Error("http"+resp.status);
+    r.sheetDirty = false; save();
+    t4aCliSyncStatus[r.id] = "ok"; renderAll();
+  }).catch(function(){ t4aCliSyncStatus[r.id]="error"; renderAll(); });
+}
+function t4aCliFlushPendingSync(){
+  if(!window.__gcalToken) return;
+  (state.t4aClients||[]).filter(function(r){ return r.sheetDirty; }).forEach(function(r){ t4aCliSyncRow(r); });
 }
 function crmRefreshT4ABlock(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
