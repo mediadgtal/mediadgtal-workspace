@@ -13065,6 +13065,15 @@ function openCrmNoteModal(id){
   var ta = document.getElementById("cnText");
   if(ta) ta.focus();
 }
+function crmInlineSaveNote(id, value){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  var v = value.trim();
+  if(v === (c.notes||"")) return;
+  pushCrmUndo({type:"edit", id:c.id, prev:{name:c.name, city:c.city, ig:c.ig, fb:c.fb, website:c.website, email:c.email, phone:c.phone, notes:c.notes, category:c.category, system:c.system}});
+  c.notes = v;
+  save(); renderAll();
+}
 function saveCrmNoteModal(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
@@ -13518,7 +13527,8 @@ var CRM_TABLE_COLS = [
   {key:"phone", label:"Telefon"},
   {key:"status", label:"Status — marketing"},
   {key:"statusT4A", label:"Status — tool4arts"},
-  {key:"lastContact", label:"Ostatni kontakt"}
+  {key:"lastContact", label:"Ostatni kontakt"},
+  {key:"notes", label:"Notatki"}
 ];
 function crmSetSort(col){
   if(crmSortCol===col){ crmSortDir = (crmSortDir==="asc") ? "desc" : "asc"; }
@@ -13613,8 +13623,8 @@ function renderCrmBaza(){
   var CLAMP2 = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word; line-height:1.3";
   html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1080px">'+
     '<colgroup><col style="width:18%"><col style="width:7%"><col style="width:7%"><col style="width:6%">'+
-    '<col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:7%">'+
-    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:4%"></colgroup>'+
+    '<col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:7%">'+
+    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:4%"></colgroup>'+
     '<thead><tr>';
   CRM_TABLE_COLS.forEach(function(col){
     var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
@@ -13648,6 +13658,7 @@ function renderCrmBaza(){
       '<td style="'+TRUNC+'">'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td style="'+TRUNC+'">'+(crmT4ALabel(c)?crmT4ATag(c):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td style="'+TRUNC+'">'+(c.lastContact?fmtDate(c.lastContact):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td><input type="text" value="'+escapeHtml(c.notes||"")+'" placeholder="—" title="Notatka (widoczna tylko tutaj, w tabeli)" onchange="crmInlineSaveNote(\''+c.id+'\', this.value)" style="width:100%; min-width:0; background:transparent; border:1px solid var(--border); border-radius:6px; padding:3px 6px; font-size:12px; color:inherit"></td>'+
       '<td><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button></td>'+
       '</tr>';
   });
