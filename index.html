@@ -1848,7 +1848,7 @@ var T4A_CLIENT_FIELDS = [
   {key:"startUmowy", label:"Start współpracy", type:"date", disp:"date"},
   {key:"koniecUmowy", label:"Koniec współpracy", type:"date", disp:"date"},
   {key:"wynagrodzenie", label:"Wartość", type:"number", disp:"money"},
-  {key:"plan", label:"Plan", type:"text", disp:"plain"},
+  {key:"plan", label:"Plan", type:"select", options:["","FREE","STARTER","PRO","VIP"], disp:"plain"},
   {key:"kod", label:"Kod", type:"text", disp:"plain"},
   {key:"notatki", label:"Notatki", type:"text", disp:"plain"}
 ];
@@ -12212,6 +12212,10 @@ function t4aCliFieldInputHtml(f, val){
   var id = "t4acli_"+f.key;
   if(f.type==="number") return '<input type="number" id="'+id+'" value="'+(val||0)+'">';
   if(f.type==="date") return '<input type="date" id="'+id+'" value="'+escapeHtml(val||"")+'">';
+  if(f.type==="select"){
+    var opts = (f.options||[]).map(function(o){ return '<option value="'+escapeHtml(o)+'"'+(val===o?" selected":"")+'>'+(o||"—")+'</option>'; }).join("");
+    return '<select id="'+id+'">'+opts+'</select>';
+  }
   return '<input type="text" id="'+id+'" value="'+escapeHtml(val||"")+'">';
 }
 function t4aCliOnPick(val){
