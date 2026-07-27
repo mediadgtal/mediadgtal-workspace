@@ -13149,7 +13149,7 @@ function crmPullT4AStatuses(){
   if(!linked.length) return;
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
   var headers = {Authorization:"Bearer "+window.__gcalToken};
-  var params = linked.map(function(c){ return "ranges="+encodeURIComponent(T4A_SHEET_TAB+"!K"+c.t4aSheetRow+":O"+c.t4aSheetRow); }).join("&");
+  var params = linked.map(function(c){ return "ranges="+encodeURIComponent(T4A_SHEET_TAB+"!K"+c.t4aSheetRow+":R"+c.t4aSheetRow); }).join("&");
   fetch(base+"/values:batchGet?"+params, {headers:headers})
     .then(function(r){
       if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
@@ -13162,13 +13162,74 @@ function crmPullT4AStatuses(){
         var row = (vr.values && vr.values[0]) || [];
         var t = crmGetT4A(c);
         var next = {sent:crmT4ABoolify(row[0]), offer:crmT4ABoolify(row[1]), decision:crmT4ABoolify(row[2]), listed:crmT4ABoolify(row[3]), client:crmT4ABoolify(row[4])};
+        var nextSentDate = (row[5]||"").toString().trim();
+        var nextNotes = (row[7]||"").toString().trim();
         if(next.sent!==t.sent || next.offer!==t.offer || next.decision!==t.decision || next.listed!==t.listed || next.client!==t.client){
           t.sent=next.sent; t.offer=next.offer; t.decision=next.decision; t.listed=next.listed; t.client=next.client;
           changed = true;
         }
+        if(nextSentDate && !t.sentDate){ t.sentDate = nextSentDate; changed = true; }
+        if(nextNotes && !t.notes){ t.notes = nextNotes; changed = true; }
       });
       if(changed){ save(); renderAll(); }
     }).catch(function(){});
+}
+/* 2026-07-27 — uzgodnienie RĘCZNE z całym arkuszem Tomka (Damian zgłosił brakujące
+   odhaczenia z 24.07 które pamięta, że robił). Różni się od crmPullT4AStatuses powyżej:
+   (a) czyta CAŁY arkusz na raz zamiast tylko już-powiązanych wierszy, więc dociąga też
+   kontakty, którym lokalnie zgubiło się c.t4aSheetRow (np. po nadpisaniu stanu przez
+   nieaktualną kartę przeglądarki — patrz [[feedback_close_other_tabs_before_bulk_writes]]),
+   dopasowując je po znormalizowanej nazwie+mieście; (b) nigdy nie cofa lokalnej wartości
+   TRUE na FALSE — tylko uzupełnia braki, żeby nie zgubić czegoś, co jest tylko lokalnie
+   jeszcze niewypchnięte. Uruchamiane wyłącznie na żądanie (przycisk), nie automatycznie,
+   żeby nie ciągnąć całego arkusza co 45s. */
+var crmT4AReconcileStatus = "idle";
+var crmT4AReconcileResult = null;
+function crmReconcileT4AFromSheet(){
+  if(!window.__gcalToken){ alert('Połącz się z Google (przycisk "Połącz z Google" u góry), żeby sprawdzić arkusz Tomka.'); return; }
+  crmT4AReconcileStatus = "loading";
+  crmT4AReconcileResult = null;
+  renderAll();
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
+  fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A2:R")+"?valueRenderOption=UNFORMATTED_VALUE", {headers:headers})
+    .then(function(r){
+      if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
+      if(!r.ok) throw new Error("http"+r.status);
+      return r.json();
+    }).then(function(data){
+      var rows = data.values||[];
+      var active = crmActiveContacts();
+      var restored = 0, linkedNow = 0;
+      rows.forEach(function(row, i){
+        var rowNum = i+2;
+        var name = (row[0]||"").toString().trim();
+        if(!name) return;
+        var c = active.filter(function(x){ return x.t4aSheetRow===rowNum; })[0];
+        if(!c){
+          var city = (row[3]||"").toString().trim();
+          var normName = normalizeName(name);
+          c = active.filter(function(x){ return !x.t4aSheetRow && normalizeName(x.name)===normName && (!city || (x.city||"").trim()===city); })[0];
+          if(c){ c.t4aSheetRow = rowNum; linkedNow++; }
+        }
+        if(!c) return;
+        var t = crmGetT4A(c);
+        var sSent=crmT4ABoolify(row[10]), sOffer=crmT4ABoolify(row[11]), sDecision=crmT4ABoolify(row[12]), sListed=crmT4ABoolify(row[13]), sClient=crmT4ABoolify(row[14]);
+        var sSentDate=(row[15]||"").toString().trim(), sNotes=(row[17]||"").toString().trim();
+        var changed = false;
+        if(sSent && !t.sent){ t.sent=true; changed=true; }
+        if(sOffer && !t.offer){ t.offer=true; changed=true; }
+        if(sDecision && !t.decision){ t.decision=true; changed=true; }
+        if(sListed && !t.listed){ t.listed=true; changed=true; }
+        if(sClient && !t.client){ t.client=true; changed=true; }
+        if(sSentDate && !t.sentDate){ t.sentDate=sSentDate; changed=true; }
+        if(sNotes && !t.notes){ t.notes=sNotes; changed=true; }
+        if(changed) restored++;
+      });
+      crmT4AReconcileStatus = "done";
+      crmT4AReconcileResult = {rows:rows.length, restored:restored, linkedNow:linkedNow};
+      save(); renderAll();
+    }).catch(function(){ crmT4AReconcileStatus="error"; renderAll(); });
 }
 /* ---- Synchronizacja Klienci→Tool4Arts z zakładką "klienci" tego samego arkusza (jednokierunkowo, app→arkusz) ---- */
 var t4aCliSyncStatus = {};
@@ -13938,6 +13999,13 @@ function renderCRM(el){
         ' — <a href="'+state.crmBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
     }
   }
+
+  html += '<div class="stub-note" style="margin-bottom:16px">'+
+    '<button class="btn secondary small" onclick="crmReconcileT4AFromSheet()"'+(crmT4AReconcileStatus==="loading"?" disabled":"")+'>🔄 '+(crmT4AReconcileStatus==="loading"?"Sprawdzam arkusz Tomka…":"Sprawdź arkusz Tomka i uzupełnij brakujące zaznaczenia")+'</button>'+
+    '<div style="font-size:11.5px; color:var(--muted); margin-top:6px">Dociąga wstecznie z arkusza Tomka zaznaczenia tool4arts (Wysłano/Oferta/Decyzja/Lista/Klient + data + notatki), których brakuje lokalnie — także dla kontaktów, którym zgubiło się powiązanie z wierszem. Nigdy nie cofa zaznaczeń, tylko uzupełnia braki.</div>'+
+    (crmT4AReconcileStatus==="done" && crmT4AReconcileResult ? '<div style="font-size:12.5px; color:#8fce8f; margin-top:6px">✓ Sprawdzono '+crmT4AReconcileResult.rows+' wierszy arkusza — przywrócono/uzupełniono '+crmT4AReconcileResult.restored+' kontaktów'+(crmT4AReconcileResult.linkedNow?', w tym '+crmT4AReconcileResult.linkedNow+' na nowo powiązanych z wierszem':'')+'.</div>' : '')+
+    (crmT4AReconcileStatus==="error" ? '<div style="font-size:12.5px; color:var(--danger); margin-top:6px">Błąd połączenia z arkuszem — spróbuj ponownie.</div>' : '')+
+    '</div>';
 
   var active = crmActiveContacts();
   var total = active.length;
