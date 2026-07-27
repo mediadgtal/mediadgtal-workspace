@@ -13929,9 +13929,49 @@ var crmT4AFilter = "";
 var crmCityFilter = "";
 var crmStatusFilter = "";
 var crmNameFilter = "";
+
+var CRM_CITY_VOIVODESHIP = {};
+(function(){
+  var groups = {
+    "dolnośląskie": ["Bielany Wrocławskie","Bielawa","Bolesławiec","Brzeg Dolny","Dzierżoniów","Głogów","Jawor","Jelenia Góra","Kłodzko","Legnica","Lubań","Lubin","Nowa Ruda","Oleśnica","Oława","Siechenice","Strzelin","Środa Śląska","Świdnica","Swidnica","świdnica","Trzebnica","Wałbrzych","Witoszów Górny","Wołów","Wrocław","Ząbkowice Śląskie","Ząbkowice śląskie","Złotoryja","Żerniki Wrocławskie"],
+    "kujawsko-pomorskie": ["Aleksandrów Kujawski","Brodnica","Bydgoszcz","Chełmno","Chełmża","Golub-Dobrzyń","Grudziądz","Inowrocław","Nakło nad Notecią","Rypin","Świecie","Toruń","Wąbrzeźno","Włocławek","Żnin"],
+    "lubelskie": ["Biała Podlaska","Chełm","Hrubieszów","Janów Lubelski","Kraśnik","Lubartów","Lublin","Międzyrzec Podlaski","Puławy","Radzyń Podlaski","Swidnik","Świdnik","Tomaszów Lubelski","Łuków","Zamość"],
+    "lubuskie": ["Gorzów Wielkopolski","Gorzów Wlkp.","Gubin","Kostrzyn nad Odrą","Krosno Odrzańskie","Lubsko","Międzyrzecz","Nowa Sól","Skwierzna","Skwierzyna","Słubice","Sulechów","Szprotawa","Świebodzin","Zielona Góra","Żagań","Żary"],
+    "łódzkie": ["Aleksandrów Łódzki","Bełchatów","Brzeziny","Dąbrówka-Ług","Koluszki","Konstantynów Łódzki","Kutno","Ozorków","Pabianice","Piotrków Trybunalski","Radomsko","Rawa Mazowiecka","Sieradz","Skierniewice","Tomaszów Mazowiecki","Wieluń","Zduńska Wola","Zgierz","Łowicz","Łódź","Łęczyca"],
+    "małopolskie": ["Bochnia","Brzesko","Chrzanów","Dobczyce","Gorlice","Kęty","Kraków","Krzeszowice","Limanowa","Mogilany","Mszana Dolna","Myslenice","Myślenice","Niepołomice","Nowojowa Góra","Nowy Sącz","Nowy Targ","Olkusz","Oświęcim","Rabka-Zdrój","Tarnów","Tomaszkowice","Wadowice","Wieliczka","Węgrzyce","Zakopane","Zakopanem"],
+    "mazowieckie": ["Ciechanów","Grodzisk Mazowiecki","Jabłonna","Józefosław","Józefów","Konstancin-Jeziorna","Kozienice","Legionowo","Marki","Mazowieckie","Mińsk Mazowiecki","Mława","Nowy Dwór Mazowiecki","Ostrołęka","Otwock","Piaseczno","Płock","Pruszków","Półtusk","Radom","Siedlce","Warszawa","Wołomin","Wyszków","Zielonka","Żyrardów"],
+    "opolskie": ["Brzeg","Głubczyce","Izbicko","Kędzierzyn-Koźle","Kluczbork","Kosorowice","Krapkowice","Namysłów","Nysa","Olesno","Opole","Prudnik","Strzelce Opolskie"],
+    "podkarpackie": ["Boguchwała","Brzozów","Dębica","Głogów Małopolski","Iwonicz-Zdrój","Jarosław","Jasło","Kolbuszowa","Krosno","Leżajsk","Lubaczów","Lesko","Łańcut","Mielec","Nisko","Przecław","Przemyśl","Przeworsk","Radymno","Ropczyce","Rzeszów","Sanok","Sokołów Małopolski","Stalowa Wola","Tarnobrzeg","Tyczyn","Ustrzyki Dolne"],
+    "podlaskie": ["Augustów","Bielsk Podlaski","Hajnówka","Kolno","Mońki","Siemiatycze","Sokółka","Suwałki","Łomża","Białystok"],
+    "pomorskie": ["Brusy","Chojnice","Gdańsk","Gdynia","Gościcino","Kartuzy","Kosakowo","Kościerzyna","Kowale","Kwidzyn","Lębork","Malbork","Prabuty","Pruszcz Gdański","Puck","Rumia","Słupsk","Sopot","Starogard Gdański","Sztum","Tczew","Trójmiasto","Wejherowo","Władysławowo","Żukowo"],
+    "śląskie": ["Bielsko-Biała","Bielsko-biała","Bieruń i Chełm Śląski","Bytom","Będzin","Chorzów","Cieszyn","Czechowice-Dziedzice","Częstochowa","Dąbrowa Górnicza","Gliwice","Jastrzębie-Zdrój","Jaworzno","Katowice","Kłobuck","Knurów","Lędziny","Mikołów","Mysłowice","Pawłowice","Piekary Śląskie","Racibórz","Radzionków","Ruda Śląska","Ruda śląska","Rybnik","Siemianowice Śląskie","Siewierz","Sosnowiec","Świętochłowice","Tarnowskie Góry","Tychy","Wodzisław Śląski","Zabrze","Zaborze","Zawiercie","Żory"],
+    "świętokrzyskie": ["Busko-Zdrój","Jędrzejów","Kazimierza Wielka","Kielce","Końskie","Opatów","Ostrowiec Świętokrzyski","Pińczów","Sandomierz","Skarżysko-Kamienna","Staszów","Starachowice","Włoszczowa"],
+    "warmińsko-mazurskie": ["Bartoszyce","Braniewo","Działdowo","Elbląg","Ełk","Giżycko","Iława","Kętrzyn","Lidzbark Warmiński","Morąg","Mrągowo","Nidzica","Olecko","Olsztyn","Ostróda","Pisz","Reszel","Ruciane-Nida","Szczytno","Węgorzewo"],
+    "wielkopolskie": ["Chodzież","Czerwonak","Dopiewo","Gniezno","Gostyń","Grodzisk Wielkopolski","Jarocin","Kalisz","Kalisz i Jarocin","Komorniki","Konin","Kostrzyn","Kościan","Koło","Kórnik","Krotoszyn","Kępno","Leszno","Luboń","Murowana Goślina","Mosina","Nowy Tomyśl","Oborniki","Odolanów","Opalenica","Ostrów Wielkopolski","Ostrów Wlkp.","Ostrzeszów","Piła","Pleszew","Poznań","Przeźmierowo","Puszczykowo","Pępowo","Rawicz","Rokietnica","Sieraków","Suchy Las","Swarzędz","Swarzędź","Szamotuły","Śmigiel","Śrem","Środa Wielkopolska","Środa Wlkp.","Tarnowo Podgórne","Turek","Wolsztyn","Września","Wągrowiec","Zalasewo","Złotów"],
+    "zachodniopomorskie": ["Białogard","Choszczno","Goleniów","Gryfice","Kamień Pomorski","Kołobrzeg","Koszalin","Mierzyn","Myślibórz","Police","Stargard","Szczecin","Szczecinek","Świdwin","Świnoujście","Trzebiatów","Wałcz","Wolin","Złocieniec"]
+  };
+  Object.keys(groups).forEach(function(v){
+    groups[v].forEach(function(city){ CRM_CITY_VOIVODESHIP[city.toLowerCase()] = v; });
+  });
+})();
+function crmFoldPl(s){
+  return s.replace(/ą/g,"a").replace(/ć/g,"c").replace(/ę/g,"e").replace(/ł/g,"l").replace(/ń/g,"n").replace(/ó/g,"o").replace(/ś/g,"s").replace(/ź/g,"z").replace(/ż/g,"z");
+}
+var CRM_CITY_VOIVODESHIP_FOLDED = {};
+Object.keys(CRM_CITY_VOIVODESHIP).forEach(function(k){
+  var f = crmFoldPl(k);
+  if(!CRM_CITY_VOIVODESHIP_FOLDED[f]) CRM_CITY_VOIVODESHIP_FOLDED[f] = CRM_CITY_VOIVODESHIP[k];
+});
+function crmVoivodeship(c){
+  var city = (c.city||"").trim().toLowerCase().replace(/\s*\(online\)\s*$/,"");
+  if(!city) return "";
+  return CRM_CITY_VOIVODESHIP[city] || CRM_CITY_VOIVODESHIP_FOLDED[crmFoldPl(city)] || "";
+}
+
 var CRM_TABLE_COLS = [
   {key:"name", label:"Nazwa"},
   {key:"city", label:"Miasto"},
+  {key:"wojewodztwo", label:"Województwo"},
   {key:"category", label:"Kategoria"},
   {key:"system", label:"System"},
   {key:"ig", label:"IG"},
@@ -13967,6 +14007,7 @@ function crmFieldMatchesFilter(value, filterText){
   return (value||"").toString().toLowerCase().indexOf(f) !== -1;
 }
 function crmSortValue(c, col){
+  if(col==="wojewodztwo") return crmVoivodeship(c);
   if(col==="status"){
     var s = CRM_STATUSES.filter(function(x){ return x.id===c.status; })[0];
     return s ? s.label.toLowerCase() : "";
@@ -14035,10 +14076,10 @@ function renderCrmBaza(){
 
   var TRUNC = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap";
   var CLAMP2 = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word; line-height:1.3";
-  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1080px">'+
-    '<colgroup><col style="width:18%"><col style="width:7%"><col style="width:7%"><col style="width:6%">'+
+  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1170px">'+
+    '<colgroup><col style="width:14%"><col style="width:6%"><col style="width:7%"><col style="width:6%"><col style="width:5%">'+
     '<col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:7%">'+
-    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:4%"></colgroup>'+
+    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:6%"><col style="width:4%"></colgroup>'+
     '<thead><tr>';
   CRM_TABLE_COLS.forEach(function(col){
     var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
@@ -14062,6 +14103,7 @@ function renderCrmBaza(){
     html += '<tr data-crm-row-id="'+c.id+'">'+
       '<td><div style="'+CLAMP2+'; cursor:pointer" title="Kliknij, aby edytować: '+escapeHtml(c.name||"")+'" onclick="openCrmModal(\''+c.id+'\')">'+escapeHtml(c.name||"")+'</div></td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.city)+'</td>'+
+      '<td style="'+TRUNC+'">'+crmCell(crmVoivodeship(c))+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.category)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.system)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(igUrl)+'</td>'+
