@@ -803,7 +803,7 @@ function drogaDefaultState(){
     tydzienResetKey: null,
     miesiacResetKey: null,
     dzienResetKey: null,
-    quest: {done:false, streak:0, lastDoneDate:null, totalDni:0, tydzienWiadomosci:0, miesiacWiadomosci:0, wolneDni:[]},
+    quest: {done:false, streak:0, lastDoneDate:null, totalDni:0, tydzienWiadomosci:0, miesiacWiadomosci:0, wolneDni:[], doneDates:[]},
     nagrody: {},
     xp: 0,
     umowyPodpisane: 0,
@@ -830,8 +830,8 @@ function drogaLastWorkDayBefore(dateStr){
   }
   return null;
 }
-function drogaToggleDzienWolny(){
-  var d = state.droga, dk = todayStr();
+function drogaToggleDzienWolny(dateStr){
+  var d = state.droga, dk = dateStr || todayStr();
   if(!d.quest.wolneDni) d.quest.wolneDni = [];
   var idx = d.quest.wolneDni.indexOf(dk);
   if(idx===-1) d.quest.wolneDni.push(dk); else d.quest.wolneDni.splice(idx,1);
@@ -840,19 +840,54 @@ function drogaToggleDzienWolny(){
 function drogaEnsureResets(){
   var d = state.droga;
   var wk = currentWeekDates()[0];
-  if(d.tydzienResetKey !== wk){ d.rytualTydzien = {}; d.tydzienResetKey = wk; d.quest.tydzienWiadomosci = 0; }
+  if(d.tydzienResetKey !== wk){ d.rytualTydzien = {}; d.tydzienResetKey = wk; }
   var mk = todayStr().slice(0,7);
-  if(d.miesiacResetKey !== mk){ d.rytualMiesiac = {}; d.miesiacResetKey = mk; d.quest.miesiacWiadomosci = 0; }
+  if(d.miesiacResetKey !== mk){ d.rytualMiesiac = {}; d.miesiacResetKey = mk; }
   var dk = todayStr();
   if(d.dzienResetKey !== dk){
     d.rytualDzien = {};
     d.dzienResetKey = dk;
-    if(d.quest.lastDoneDate && drogaIsWorkDay(dk)){
-      var lastRequired = drogaLastWorkDayBefore(dk);
-      if(lastRequired && d.quest.lastDoneDate < lastRequired) d.quest.streak = 0;
-    }
-    d.quest.done = false;
   }
+}
+/* 2026-07-27 — streak/liczniki questa liczone ZAWSZE świeżo z pełnego logu dat (doneDates),
+   nigdy nie zerowane destrukcyjnie na sztywno w stanie. Dzięki temu retroaktywne odznaczenie
+   pominiętego dnia (drogaToggleQuestDate na dowolną datę wstecz) samo "naprawia" streak przy
+   następnym renderze — bez tego pominięty weekend/dzień bez wejścia na platformę kasował streak
+   bezpowrotnie, co Damian zgłosił 2026-07-27. */
+function drogaQuestDoneOn(dateStr){
+  return (state.droga.quest.doneDates||[]).indexOf(dateStr) !== -1;
+}
+function drogaQuestDoneToday(){ return drogaQuestDoneOn(todayStr()); }
+function drogaComputeStreak(){
+  var q = state.droga.quest;
+  var doneSet = {}; (q.doneDates||[]).forEach(function(x){ doneSet[x]=true; });
+  var wolneSet = {}; (q.wolneDni||[]).forEach(function(x){ wolneSet[x]=true; });
+  function covered(dateStr){ return !!doneSet[dateStr] || !!wolneSet[dateStr]; }
+  var today = todayStr();
+  var streak = 0, cursor;
+  if(drogaIsWorkDay(today) && covered(today)){ streak++; cursor = drogaLastWorkDayBefore(today); }
+  else { cursor = drogaLastWorkDayBefore(today); }
+  while(cursor && covered(cursor)){ streak++; cursor = drogaLastWorkDayBefore(cursor); }
+  return streak;
+}
+function drogaComputeTotalDni(){ return (state.droga.quest.doneDates||[]).length; }
+function drogaComputeMiesiacWiadomosci(){
+  var ym = todayStr().slice(0,7);
+  return (state.droga.quest.doneDates||[]).filter(function(x){ return x.slice(0,7)===ym; }).length * 10;
+}
+function drogaComputeTydzienWiadomosci(){
+  var set = {}; currentWeekDates().forEach(function(x){ set[x]=true; });
+  return (state.droga.quest.doneDates||[]).filter(function(x){ return set[x]; }).length * 10;
+}
+// Ostatnie n dni roboczych (najnowszy pierwszy, dziś włącznie) — do listy "zaznacz wstecz".
+function drogaRecentWorkdays(n){
+  var out = [];
+  var cursor = drogaIsWorkDay(todayStr()) ? todayStr() : drogaLastWorkDayBefore(todayStr());
+  while(cursor && out.length<n){
+    out.push(cursor);
+    cursor = drogaLastWorkDayBefore(cursor);
+  }
+  return out;
 }
 function drogaSetSubtab(v){ state.droga.subtab = v; save(); renderAll(); }
 function drogaToggleFront(id){ state.droga.fronty[id] = !state.droga.fronty[id]; save(); renderAll(); }
@@ -870,28 +905,24 @@ function drogaToggleMiesiac(id){ drogaEnsureResets(); state.droga.rytualMiesiac[
 function drogaToggleDzien(id){ drogaEnsureResets(); state.droga.rytualDzien[id] = !state.droga.rytualDzien[id]; save(); renderAll(); }
 function drogaToggleNagroda(id){ state.droga.nagrody[id] = !state.droga.nagrody[id]; save(); renderAll(); }
 function drogaSetKotwica(v){ state.droga.kotwicaCel = +v || 0; save(); }
-function drogaToggleQuest(){
+function drogaToggleQuestDate(dateStr){
   drogaEnsureResets();
-  var d = state.droga, q = d.quest, today = todayStr();
-  q.done = !q.done;
-  if(q.done){
-    q.totalDni = (q.totalDni||0)+1;
-    q.tydzienWiadomosci = (q.tydzienWiadomosci||0)+10;
-    q.miesiacWiadomosci = (q.miesiacWiadomosci||0)+10;
+  var d = state.droga, q = d.quest;
+  if(!q.doneDates) q.doneDates = [];
+  var idx = q.doneDates.indexOf(dateStr);
+  if(idx===-1){
+    q.doneDates.push(dateStr);
+    q.doneDates.sort();
+    q.lastDoneDate = q.doneDates[q.doneDates.length-1];
     d.xp = (d.xp||0)+150;
-    var lastRequired = drogaLastWorkDayBefore(today);
-    q.streak = (q.lastDoneDate && lastRequired && q.lastDoneDate >= lastRequired ? (q.streak||0)+1 : 1);
-    q.lastDoneDate = today;
   } else {
-    q.totalDni = Math.max(0,(q.totalDni||0)-1);
-    q.tydzienWiadomosci = Math.max(0,(q.tydzienWiadomosci||0)-10);
-    q.miesiacWiadomosci = Math.max(0,(q.miesiacWiadomosci||0)-10);
+    q.doneDates.splice(idx,1);
+    q.lastDoneDate = q.doneDates.length ? q.doneDates[q.doneDates.length-1] : null;
     d.xp = Math.max(0,(d.xp||0)-150);
-    q.streak = Math.max(0,(q.streak||0)-1);
-    q.lastDoneDate = null;
   }
   save(); renderAll();
 }
+function drogaToggleQuest(){ drogaToggleQuestDate(todayStr()); }
 function drogaSkryptText(s){
   var ov = state.droga.skryptyOverrides;
   return (ov && ov[s.id]!==undefined) ? ov[s.id] : s.tresc;
@@ -987,13 +1018,28 @@ function renderDroga(el){
           (markedOff ? ' <button class="linklike" onclick="drogaToggleDzienWolny()">Cofnij oznaczenie</button>' : '')+
           '</div>';
       }
-      html += '<div class="taskitem'+(d.quest.done?" done":"")+'"><input type="checkbox"'+(d.quest.done?" checked":"")+' onchange="drogaToggleQuest()"><span class="dot"></span><span class="ttitle">Wysłałem dziś min. 10 wiadomości prospectingowych</span></div>';
+      var doneToday = drogaQuestDoneToday();
+      html += '<div class="taskitem'+(doneToday?" done":"")+'"><input type="checkbox"'+(doneToday?" checked":"")+' onchange="drogaToggleQuest()"><span class="dot"></span><span class="ttitle">Wysłałem dziś min. 10 wiadomości prospectingowych</span></div>';
       if(isWorkDay){
         html += '<div style="margin-top:6px"><button class="linklike" onclick="drogaToggleDzienWolny()">Dziś nie liczę (dzień wolny/skrócony) — nie przerywaj streaka</button></div>';
       }
-      html += '<p style="margin-top:10px; font-size:13px; color:var(--muted-light)">🔥 Streak: <strong style="color:var(--accent)">'+(d.quest.streak||0)+' dni roboczych</strong> · Łącznie zaliczonych dni: '+(d.quest.totalDni||0)+'</p>'+
-        '<div style="margin-top:12px"><div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted-light)"><span>Słupek postępu miesięcznego (10 × 20 dni roboczych)</span><span>'+(d.quest.miesiacWiadomosci||0)+' / 200</span></div>'+
-        '<div class="ceo-xpbar" style="max-width:none; margin-top:4px"><div class="ceo-xpbar-fill" style="width:'+Math.min(100, Math.round((d.quest.miesiacWiadomosci||0)/200*100))+'%"></div></div></div>'+
+      html += '<p style="margin-top:10px; font-size:13px; color:var(--muted-light)">🔥 Streak: <strong style="color:var(--accent)">'+drogaComputeStreak()+' dni roboczych</strong> · Łącznie zaliczonych dni: '+drogaComputeTotalDni()+'</p>'+
+        '<div style="margin-top:12px"><div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted-light)"><span>Słupek postępu miesięcznego (10 × 20 dni roboczych)</span><span>'+drogaComputeMiesiacWiadomosci()+' / 200</span></div>'+
+        '<div class="ceo-xpbar" style="max-width:none; margin-top:4px"><div class="ceo-xpbar-fill" style="width:'+Math.min(100, Math.round(drogaComputeMiesiacWiadomosci()/200*100))+'%"></div></div></div>'+
+        '<details style="margin-top:12px">'+
+        '<summary style="cursor:pointer; font-size:12.5px; color:var(--muted-light)">Zaznacz wstecz (np. po weekendzie albo dniu bez wejścia na platformę)</summary>'+
+        '<div style="margin-top:8px; display:flex; flex-direction:column; gap:4px">'+
+        drogaRecentWorkdays(14).map(function(dstr){
+          var isToday = dstr===dk;
+          var done = drogaQuestDoneOn(dstr);
+          var wolne = wolneDni.indexOf(dstr)!==-1;
+          var dLabel = new Date(dstr+"T00:00:00").toLocaleDateString("pl-PL",{weekday:"short", day:"numeric", month:"numeric"});
+          return '<div style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted-light)">'+
+            '<label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1"><input type="checkbox"'+(done?" checked":"")+(wolne?" disabled":"")+' onchange="drogaToggleQuestDate(\''+dstr+'\')">'+dLabel+(isToday?' <span style="color:var(--accent)">(dziś)</span>':'')+'</label>'+
+            '<button class="linklike" style="font-size:11.5px'+(wolne?"; color:#8fce8f":"")+'" onclick="drogaToggleDzienWolny(\''+dstr+'\')">'+(wolne?"🏖️ wolne (cofnij)":"oznacz wolne")+'</button>'+
+            '</div>';
+        }).join("")+
+        '</div></details>'+
         '</div>';
     })();
 
@@ -1006,7 +1052,7 @@ function renderDroga(el){
     html += '<div class="card"><h3 style="margin-top:0">🚪 Bramka końca kwartału</h3>';
     html += drogaChecklistHtml(DROGA_BRAMKA, d.bramka, "drogaToggleBramka");
     html += '<div class="taskitem"><span class="dot"></span><span class="ttitle">Przychód miesiąca 3 osiągnął 9000 zł — obecnie: '+Math.round(live)+' zł ('+pct+'%)</span></div>';
-    html += '<div class="taskitem"><span class="dot"></span><span class="ttitle">Codzienny streak sprzedażowy min. 20 dni w miesiącu — obecnie: '+(d.quest.streak||0)+' dni</span></div>';
+    html += '<div class="taskitem"><span class="dot"></span><span class="ttitle">Codzienny streak sprzedażowy min. 20 dni w miesiącu — obecnie: '+drogaComputeStreak()+' dni</span></div>';
     html += '</div>';
   }
 
@@ -1038,11 +1084,11 @@ function renderDroga(el){
 
   if(sub==="nagrody"){
     var tyRozmowaOk = !!d.rytualTydzien['ty-rozmowa'];
-    var tyWiad = d.quest.tydzienWiadomosci||0;
+    var tyWiad = drogaComputeTydzienWiadomosci();
     var tyOk = tyRozmowaOk && tyWiad>=50;
     html += '<div class="card" style="margin-bottom:16px"><h3 style="margin-top:0">🔁 Nagrody rytmiczne — regeneracja, nie loot</h3>'+
       '<p style="color:var(--muted-light); margin-bottom:12px">Należą Ci się za utrzymanie dyscypliny, nie za jednorazowy milestone.</p>'+
-      '<div class="taskitem'+(d.quest.done?" done":"")+'"><span class="dot"></span><span class="ttitle">Codziennie: gry / gitara (po odblokowaniu) po zamknięciu dziennego questa — '+(d.quest.done?'✅ dzisiejszy quest zamknięty, odbierz':'jeszcze nie dziś')+'</span></div>'+
+      '<div class="taskitem'+(drogaQuestDoneToday()?" done":"")+'"><span class="dot"></span><span class="ttitle">Codziennie: gry / gitara (po odblokowaniu) po zamknięciu dziennego questa — '+(drogaQuestDoneToday()?'✅ dzisiejszy quest zamknięty, odbierz':'jeszcze nie dziś')+'</span></div>'+
       '<div class="taskitem'+(tyOk?" done":"")+'"><span class="dot"></span><span class="ttitle">Co tydzień: niedzielny obiad z partnerką w restauracji — za '+tyWiad+'/50 wiadomości + rozmowa sprzedażowa ('+(tyRozmowaOk?'✅':'—')+') — '+(tyOk?'✅ cel spełniony, zasłużony obiad!':'jeszcze nie spełniony')+'</span></div>'+
       '</div>';
     html += '<div class="card"><h3 style="margin-top:0">🎁 Loot odblokowywany milestone\'ami</h3>'+
@@ -1774,6 +1820,19 @@ function migrateState(s){
       if(s.droga.quest.tydzienWiadomosci===undefined) s.droga.quest.tydzienWiadomosci = 0;
       if(s.droga.quest.miesiacWiadomosci===undefined) s.droga.quest.miesiacWiadomosci = 0;
       if(!s.droga.quest.wolneDni) s.droga.quest.wolneDni = [];
+      if(!s.droga.quest.doneDates){
+        // 2026-07-27 — migracja na log dat (doneDates), żeby streak dało się naprawiać
+        // wstecznie zamiast być kruchym licznikiem zerowanym przy pierwszym pominiętym dniu.
+        // Odtwarzamy tyle wstecz, ile wynosił dotychczasowy streak, żeby po aktualizacji
+        // nic nie "skoczyło" Damianowi na oczach.
+        s.droga.quest.doneDates = [];
+        var backDate = s.droga.quest.lastDoneDate;
+        var backN = s.droga.quest.streak || 0;
+        for(var bi=0; bi<backN && backDate; bi++){
+          s.droga.quest.doneDates.push(backDate);
+          backDate = drogaLastWorkDayBefore(backDate);
+        }
+      }
     }
     if(s.droga.fronty){
       Object.keys(s.droga.fronty).forEach(function(k){
