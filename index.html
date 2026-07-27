@@ -71,10 +71,14 @@
   }
   #topbar .eyebrow{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:4px}
   #topbar h1{font-size:24px; margin:0; font-weight:700; color:#fff}
-  /* przyklejony do góry, żeby np. "Nie jesteś połączony z Google" było widać nawet
-     przewinięte gdzieś nisko w długiej liście (Baza kontaktów) — zgłoszone 2026-07-27 */
-  #gcalBanner{position:sticky; top:0; z-index:50}
   #content{padding:0 30px 60px; flex:1; max-width:100%}
+  /* Znaczek stanu Google widoczny NIEZALEŻNIE od przewinięcia strony — zgłoszone 2026-07-27:
+     całą stroną (sidebar+topbar+#gcalBanner) jest jednym długim dokumentem (body ma
+     overflow-x:hidden, co przez kwirk CSS wymusza też overflow-y:auto i psuje
+     position:sticky na #gcalBanner), więc zwykły baner znika ze strony gdy jesteś nisko
+     w długiej liście (np. Baza kontaktów). position:fixed nie ma tego problemu. */
+  #gcalFixedBadge{position:fixed; bottom:18px; right:18px; z-index:500}
+  #gcalFixedBadge:empty{display:none}
 
   #menuToggle{
     display:none; align-items:center; justify-content:center; width:34px; height:34px; flex:0 0 34px;
@@ -572,6 +576,7 @@
   </div>
   <div id="gcalBanner"></div>
   <div id="content"></div>
+  <div id="gcalFixedBadge"></div>
 </div>
 
 <script>
@@ -2854,14 +2859,27 @@ function renderAll(){
 }
 function renderGcalBanner(){
   var el = document.getElementById("gcalBanner");
-  if(!el) return;
-  if(window.__gcalToken || window.__gcalBannerDismissed){ el.innerHTML = ""; return; }
-  el.innerHTML = '<div style="background:rgba(207,155,74,.12); border-bottom:1px solid rgba(207,155,74,.35); color:var(--accent); font-size:12.5px; padding:9px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">'+
-    '<span>🔗 Nie jesteś połączony z Google w tej sesji — Kalendarz, kopie zapasowe i synchronizacja z arkuszem tool4arts (Baza kontaktów) są wyłączone.</span>'+
-    '<span style="display:flex; gap:14px; align-items:center; white-space:nowrap">'+
-    '<button class="btn small" onclick="window.reconnectGCal()">Połącz z Google</button>'+
-    '<button class="linklike" style="color:var(--accent); font-size:14px" onclick="dismissGcalBanner()" title="Ukryj do końca tej sesji">✕</button>'+
-    '</span></div>';
+  var badge = document.getElementById("gcalFixedBadge");
+  var disconnected = !window.__gcalToken && !window.__gcalBannerDismissed;
+  if(el){
+    if(!disconnected){ el.innerHTML = ""; }
+    else {
+      el.innerHTML = '<div style="background:rgba(207,155,74,.12); border-bottom:1px solid rgba(207,155,74,.35); color:var(--accent); font-size:12.5px; padding:9px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">'+
+        '<span>🔗 Nie jesteś połączony z Google w tej sesji — Kalendarz, kopie zapasowe i synchronizacja z arkuszem tool4arts (Baza kontaktów) są wyłączone.</span>'+
+        '<span style="display:flex; gap:14px; align-items:center; white-space:nowrap">'+
+        '<button class="btn small" onclick="window.reconnectGCal()">Połącz z Google</button>'+
+        '<button class="linklike" style="color:var(--accent); font-size:14px" onclick="dismissGcalBanner()" title="Ukryj do końca tej sesji">✕</button>'+
+        '</span></div>';
+    }
+  }
+  // Stały znaczek (position:fixed, przetrwa przewinięcie strony) — patrz komentarz przy #gcalFixedBadge w CSS.
+  if(badge){
+    if(!disconnected){ badge.innerHTML = ""; }
+    else {
+      badge.innerHTML = '<button onclick="window.reconnectGCal()" style="display:flex; align-items:center; gap:8px; background:#2a2115; border:1px solid rgba(207,155,74,.5); color:var(--accent); font-size:12.5px; padding:9px 14px; border-radius:20px; box-shadow:var(--shadow); cursor:pointer">'+
+        '🔗 Rozłączono z Google — połącz</button>';
+    }
+  }
 }
 function dismissGcalBanner(){ window.__gcalBannerDismissed = true; renderGcalBanner(); }
 
