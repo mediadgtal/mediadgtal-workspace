@@ -11954,7 +11954,7 @@ function crmJumpToContact(contactId){
   closeClientPinModal();
   crmSubview = "baza";
   crmNameFilter = c.name;
-  crmCategoryFilter = "all"; crmSystemFilter=""; crmT4AFilter=""; crmCityFilter=""; crmStatusFilter=""; crmWojewodztwoFilter="";
+  crmCategoryFilter = "all"; crmSystemFilter=""; crmT4AFilter=""; crmCityFilter=""; crmStatusFilter=""; crmWojewodztwoFilter=""; crmT4AFollowFilter="";
   currentTab = "crm";
   renderAll();
   setTimeout(function(){
@@ -12802,6 +12802,74 @@ var CRM_STATUSES = [
   {id:"odrzucili", label:"Odrzucili", color:"#d1636f", bg:"#33222a"},
   {id:"klient", label:"Klient", color:"#63b58a", bg:"#20302a"}
 ];
+
+/* 2026-07-27 — osobny, prywatny (nie zsynchronizowany z arkuszem Tomka) tor tagowania
+   dla własnego cyklu follow-upów Damiana przy sprzedaży tool4arts: pierwsza wiadomość →
+   (ta sama doba: "nie teraz" → follow30 za 30 dni) albo (cisza 7 dni → wysyła follow-up,
+   przypomnienie w Priorytetach). Po 30 dniach: brak odpowiedzi albo niezainteresowany. */
+var CRM_T4A_FOLLOW_STAGES = [
+  {id:"follow30", label:"Follow 30 dni", color:"#7fa9c9", bg:"#1c2732"},
+  {id:"w_rozmowie", label:"W rozmowie", color:"#cf9b4a", bg:"#342c1f"},
+  {id:"brak_odpowiedzi", label:"Brak odpowiedzi", color:"#c5bec3", bg:"#2a2830"},
+  {id:"niezainteresowany", label:"Niezainteresowany", color:"#d1636f", bg:"#33222a"},
+  {id:"klient", label:"Klient", color:"#63b58a", bg:"#20302a"}
+];
+function crmT4AFollowStageDef(id){
+  return CRM_T4A_FOLLOW_STAGES.filter(function(s){ return s.id===id; })[0];
+}
+function crmT4AFollowTag(c){
+  var s = crmT4AFollowStageDef(c.t4a2Stage);
+  if(s) return '<span class="tag" style="background:'+s.bg+'; color:'+s.color+'">'+s.label+'</span>';
+  if(c.t4a2SentAt) return '<span class="tag" style="background:#2a2830; color:var(--muted)">Wysłano, czeka</span>';
+  return "";
+}
+function crmT4AFollowLabel(c){
+  var s = crmT4AFollowStageDef(c.t4a2Stage);
+  if(s) return s.label;
+  if(c.t4a2SentAt) return "Wysłano, czeka";
+  return "";
+}
+function crmAddDays(dateStr, n){
+  var d = new Date(dateStr+"T00:00:00");
+  d.setDate(d.getDate()+n);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function crmT4AFollowDueDate(c){
+  if(c.t4a2Stage==="follow30") return c.t4a2DueDate||"";
+  if(!c.t4a2Stage && c.t4a2SentAt) return crmAddDays(c.t4a2SentAt, 7);
+  return "";
+}
+// 0 = termin dziś, >0 = tyle dni po terminie (pokazywane na czerwono jako "-N"), null = brak terminu
+function crmT4AFollowOverdueDays(c){
+  var due = crmT4AFollowDueDate(c);
+  if(!due) return null;
+  var d = new Date(due+"T00:00:00");
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+function crmT4AFollowDueContacts(){
+  return crmActiveContacts().filter(function(c){
+    if(c.t4a2Stage==="klient" || c.t4a2Stage==="niezainteresowany" || c.t4a2Stage==="brak_odpowiedzi") return false;
+    var days = crmT4AFollowOverdueDays(c);
+    return days!==null && days>=0;
+  }).sort(function(a,b){ return crmT4AFollowOverdueDays(b) - crmT4AFollowOverdueDays(a); });
+}
+function crmT4ASendFollowToday(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.t4a2SentAt = todayStr();
+  c.t4a2Stage = "";
+  c.t4a2DueDate = "";
+  save(); renderAll();
+  crmRefreshT4AFollowBlock(id);
+}
+function crmSetT4AFollowStage(id, stageId){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.t4a2Stage = stageId;
+  c.t4a2DueDate = (stageId==="follow30") ? crmAddDays(todayStr(), 30) : "";
+  save(); renderAll();
+  crmRefreshT4AFollowBlock(id);
+}
 var CRM_SYSTEMS = ["Fitssey","Wod Guru","eFitness","ActiveNow","Tool4Arts","Excel","BRAK"];
 var T4A_SHEET_ID = "18LsVb2KC0jtcbY7qNMmApl_7ZoPEVdhQNO_7--0wW8Y";
 var T4A_SHEET_TAB = "Baza";
@@ -13161,6 +13229,43 @@ function crmSetT4ANotes(id, val){
   save();
   crmSyncT4ARow(c);
 }
+function crmRefreshT4AFollowBlock(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  var el = document.getElementById("t4aFollowBlock_"+id);
+  if(el) el.outerHTML = crmT4AFollowModalHtml(c);
+}
+function crmT4AFollowModalHtml(c){
+  var tag = crmT4AFollowTag(c) || '<span style="color:var(--muted)">— jeszcze nie wysłano —</span>';
+  var due = crmT4AFollowDueDate(c);
+  var overdue = crmT4AFollowOverdueDays(c);
+  var dueLine = "";
+  if(due){
+    if(overdue>0) dueLine = '<div style="font-size:11.5px; color:var(--danger); margin-top:4px">Termin: '+fmtDate(due)+' — <b>spóźnione o '+overdue+' dni</b></div>';
+    else if(overdue===0) dueLine = '<div style="font-size:11.5px; color:var(--accent); margin-top:4px">Termin: dziś ('+fmtDate(due)+')</div>';
+    else dueLine = '<div style="font-size:11.5px; color:var(--muted); margin-top:4px">Termin kolejnego follow-upu: '+fmtDate(due)+'</div>';
+  }
+  function outcomeBtn(stageId, label){
+    var active = c.t4a2Stage===stageId;
+    return '<button type="button" class="btn secondary small" style="'+(active?'border-color:var(--accent); color:var(--accent)':'')+'" onclick="crmSetT4AFollowStage(\''+c.id+'\',\''+stageId+'\')">'+label+'</button>';
+  }
+  return '<div class="field" id="t4aFollowBlock_'+c.id+'"><label>Follow-up tool4arts (Twój cykl — tylko do Twojego wglądu, nie synchronizowane z arkuszem Tomka)</label>'+
+    '<div style="background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px">'+
+    '<div>'+tag+'</div>'+
+    (c.t4a2SentAt ? '<div style="font-size:11.5px; color:var(--muted); margin-top:4px">Ostatnia wiadomość: '+fmtDate(c.t4a2SentAt)+'</div>' : '')+
+    dueLine+
+    '<div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap">'+
+    '<button type="button" class="btn small" onclick="crmT4ASendFollowToday(\''+c.id+'\')">'+(c.t4a2SentAt?"Wysłano follow-up dziś":"Wysłano 1. wiadomość dziś")+'</button>'+
+    '</div>'+
+    '<div class="row" style="gap:8px; margin-top:8px; flex-wrap:wrap">'+
+    outcomeBtn("follow30","Follow 30 dni")+
+    outcomeBtn("w_rozmowie","W rozmowie")+
+    outcomeBtn("niezainteresowany","Niezainteresowany")+
+    outcomeBtn("klient","Klient")+
+    outcomeBtn("brak_odpowiedzi","Brak odpowiedzi")+
+    '</div>'+
+    '</div></div>';
+}
 function crmT4AChecklistHtml(c){
   var t = crmGetT4A(c);
   var connected = !!window.__gcalToken;
@@ -13381,6 +13486,7 @@ function openCrmModal(id){
       '<button class="btn secondary small" type="button" onclick="document.getElementById(\'cmLastContact\').value=\'\'">✕ Wyczyść</button>'+
     '</div></div>'+
     '<div class="field"><label style="display:flex; align-items:center; gap:8px; cursor:pointer"><input type="checkbox" id="cmHot" style="width:auto" '+(opts.hot?"checked":"")+'> 🔥 Blisko zamknięcia</label></div>'+
+    (isEdit ? crmT4AFollowModalHtml(existing) : '')+
     (isEdit ? crmT4AChecklistHtml(existing) : '')+
     '<div class="field"><label>Instagram (link lub @login)</label><input type="text" id="cmIg" value="'+escapeHtml(opts.ig||"")+'"></div>'+
     '<div class="field"><label>Facebook (link)</label><input type="text" id="cmFb" value="'+escapeHtml(opts.fb||"")+'"></div>'+
@@ -13930,6 +14036,7 @@ var crmCityFilter = "";
 var crmStatusFilter = "";
 var crmNameFilter = "";
 var crmWojewodztwoFilter = "";
+var crmT4AFollowFilter = "";
 
 var CRM_CITY_VOIVODESHIP = {};
 (function(){
@@ -13982,6 +14089,7 @@ var CRM_TABLE_COLS = [
   {key:"phone", label:"Telefon"},
   {key:"status", label:"Status — marketing"},
   {key:"statusT4A", label:"Status — tool4arts"},
+  {key:"t4aFollow", label:"Follow tool4arts"},
   {key:"lastContact", label:"Ostatni kontakt"},
   {key:"notes", label:"Notatki"}
 ];
@@ -13995,6 +14103,7 @@ function crmSetSystemFilter(v){ crmSystemFilter = v; renderAllKeepFocus("crmSyst
 function crmSetT4AFilter(v){ crmT4AFilter = v; renderAllKeepFocus("crmT4AFilterInput"); }
 function crmSetCityFilter(v){ crmCityFilter = v; renderAllKeepFocus("crmCityFilterInput"); }
 function crmSetWojewodztwoFilter(v){ crmWojewodztwoFilter = v; renderAllKeepFocus("crmWojewodztwoFilterInput"); }
+function crmSetT4AFollowFilter(v){ crmT4AFollowFilter = v; renderAllKeepFocus("crmT4AFollowFilterInput"); }
 function crmSetStatusFilter(v){ crmStatusFilter = v; renderAllKeepFocus("crmStatusFilterInput"); }
 function crmSetNameFilter(v){ crmNameFilter = v; renderAllKeepFocus("crmNameFilterInput"); }
 function crmStatusLabel(id){
@@ -14014,6 +14123,7 @@ function crmSortValue(c, col){
     return s ? s.label.toLowerCase() : "";
   }
   if(col==="statusT4A") return crmT4ALabel(c).toLowerCase();
+  if(col==="t4aFollow") return crmT4AFollowLabel(c).toLowerCase();
   if(col==="ig") return crmUrl(c.ig,"ig") ? "tak" : "nie";
   if(col==="fb") return crmUrl(c.fb,"fb") ? "tak" : "nie";
   if(col==="website") return crmUrl(c.website,"website") ? "tak" : "nie";
@@ -14033,6 +14143,7 @@ function renderCrmBaza(){
   var statusFilter = crmStatusFilter||"";
   var nameFilter = crmNameFilter||"";
   var wojFilter = crmWojewodztwoFilter||"";
+  var t4aFollowFilter = crmT4AFollowFilter||"";
   var filtered = activeList.filter(function(c){
     if(catFilter!=="all" && (c.category||"")!==catFilter) return false;
     if(!crmFieldMatchesFilter(c.name, nameFilter)) return false;
@@ -14041,6 +14152,7 @@ function renderCrmBaza(){
     if(!crmFieldMatchesFilter(c.city, cityFilter)) return false;
     if(!crmFieldMatchesFilter(crmStatusLabel(c.status), statusFilter)) return false;
     if(!crmFieldMatchesFilter(crmVoivodeship(c), wojFilter)) return false;
+    if(!crmFieldMatchesFilter(crmT4AFollowLabel(c), t4aFollowFilter)) return false;
     return true;
   });
   var citiesPresent = Array.from(new Set(activeList.map(function(c){ return (c.city||"").trim(); }).filter(Boolean))).sort(function(a,b){ return a.localeCompare(b,"pl"); });
@@ -14075,15 +14187,16 @@ function renderCrmBaza(){
   html += crmFilterInput("crmSystemFilterInput", "System", sysFilter, CRM_SYSTEMS, "crmSetSystemFilter");
   html += crmFilterInput("crmStatusFilterInput", "Status marketing", statusFilter, CRM_STATUSES.map(function(s){return s.label;}), "crmSetStatusFilter");
   html += crmFilterInput("crmT4AFilterInput", "Tool4arts", t4aFilter, T4A_STAGES.map(function(s){return s.label;}), "crmSetT4AFilter");
+  html += crmFilterInput("crmT4AFollowFilterInput", "Follow tool4arts", t4aFollowFilter, CRM_T4A_FOLLOW_STAGES.map(function(s){return s.label;}), "crmSetT4AFollowFilter");
   html += '</div>';
   html += '<div style="font-size:11px; color:var(--muted); margin:-8px 0 14px">Filtry szukają na bieżąco — wpisz dowolny fragment tekstu (np. "brak" pokaże puste pola).</div>';
 
   var TRUNC = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap";
   var CLAMP2 = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word; line-height:1.3";
-  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1080px">'+
-    '<colgroup><col style="width:18%"><col style="width:7%"><col style="width:7%"><col style="width:6%">'+
-    '<col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:7%">'+
-    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:4%"></colgroup>'+
+  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1180px">'+
+    '<colgroup><col style="width:15%"><col style="width:6%"><col style="width:6%"><col style="width:5%">'+
+    '<col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:6%">'+
+    '<col style="width:7%"><col style="width:7%"><col style="width:8%"><col style="width:7%"><col style="width:6%"><col style="width:4%"></colgroup>'+
     '<thead><tr>';
   CRM_TABLE_COLS.forEach(function(col){
     var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
@@ -14116,6 +14229,7 @@ function renderCrmBaza(){
       '<td style="'+TRUNC+'">'+crmCell(c.phone)+'</td>'+
       '<td style="'+TRUNC+'">'+(c.status?crmStatusTag(c.status):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td style="'+TRUNC+'">'+(crmT4ALabel(c)?crmT4ATag(c):'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td style="'+TRUNC+'">'+(crmT4AFollowLabel(c)?crmT4AFollowTag(c):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td style="'+TRUNC+'">'+(c.lastContact?fmtDate(c.lastContact):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td><input type="text" value="'+escapeHtml(c.notes||"")+'" placeholder="—" title="Notatka (widoczna tylko tutaj, w tabeli)" onchange="crmInlineSaveNote(\''+c.id+'\', this.value)" style="width:100%; min-width:0; background:transparent; border:1px solid var(--border); border-radius:6px; padding:3px 6px; font-size:12px; color:inherit"></td>'+
       '<td><button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button></td>'+
@@ -14147,23 +14261,14 @@ function crmDaysSince(c){
   return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 function crmPriorityBuckets(){
-  var buckets = {hot:[], reaktywacja:[], followup:[], nowe:[]};
+  var buckets = {followup:[], nowe:[]};
   crmActiveContacts().forEach(function(c){
     if(c.status==="klient" || c.status==="odrzucili") return;
-    if(c.hot){ buckets.hot.push(c); return; }
     if(!c.status){ buckets.nowe.push(c); return; }
     if(c.status==="w_rozmowie"){ buckets.followup.push(c); return; }
-    if(c.status==="ucichlo" || c.status==="brak_odpowiedzi"){ buckets.reaktywacja.push(c); return; }
   });
   buckets.nowe.sort(function(a,b){ return (a.importedAt||"").localeCompare(b.importedAt||"") || a.name.localeCompare(b.name); });
   buckets.followup.sort(function(a,b){ return crmDaysSince(b) - crmDaysSince(a); });
-  buckets.hot.sort(function(a,b){ return crmDaysSince(b) - crmDaysSince(a); });
-  buckets.reaktywacja.sort(function(a,b){
-    var rank = {ucichlo:0, brak_odpowiedzi:1};
-    var ra = rank[a.status], rb = rank[b.status];
-    if(ra !== rb) return ra - rb;
-    return crmDaysSince(b) - crmDaysSince(a);
-  });
   return buckets;
 }
 var crmDraftNoticeFor = null;
@@ -14188,8 +14293,7 @@ function crmPriorityRow(c){
       (c.category ? ' <span style="color:var(--muted); font-size:11.5px">'+escapeHtml(c.category)+'</span>' : '')+
       '<span style="color:var(--muted); font-size:11.5px; margin-left:8px">Ostatni kontakt: '+daysLabel+'</span></div>'+
       '<div style="white-space:nowrap">'+
-        '<button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button> '+
-        '<button class="linklike" style="font-size:16px; vertical-align:middle" title="Blisko zamknięcia" onclick="crmToggleHot(\''+c.id+'\')">'+(c.hot?'🔥':'🤍')+'</button>'+
+        '<button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button>'+
       '</div>'+
     '</div>'+
     '<div onclick="openCrmNoteModal(\''+c.id+'\')" title="Kliknij, aby edytować notatkę" style="cursor:pointer; width:100%; font-size:12.5px; color:var(--muted-light)">'+
@@ -14205,19 +14309,54 @@ function crmPriorityRow(c){
     (crmDraftNoticeFor===c.id ? '<div class="stub-note" style="margin-top:4px">Generowanie szkiców przez Anthropic API jeszcze nie jest podłączone (do ustalenia klucz API) — na razie napisz wiadomość ręcznie, opierając się na notatce powyżej.</div>' : '')+
   '</div>';
 }
+function crmT4AFollowRow(c){
+  var overdue = crmT4AFollowOverdueDays(c);
+  var dueLabel = (overdue>0) ? '<span style="color:var(--danger); font-weight:700">-'+overdue+'</span>' : '<span style="color:var(--accent); font-weight:700">dziś</span>';
+  var links = "";
+  var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb"), webUrl = crmUrl(c.website,"website");
+  if(igUrl) links += '<a href="'+escapeHtml(igUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">📷</a>';
+  if(fbUrl) links += '<a href="'+escapeHtml(fbUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">👍</a>';
+  if(webUrl) links += '<a href="'+escapeHtml(webUrl)+'" target="_blank" rel="noopener" class="linklike" style="margin-right:10px">🌐</a>';
+  if(c.email) links += '<a href="mailto:'+escapeHtml(c.email)+'" class="linklike" style="margin-right:10px">✉️</a>';
+  if(c.phone) links += '<a href="tel:'+escapeHtml(c.phone.replace(/\s+/g,""))+'" class="linklike">📞</a>';
+  function outcomeBtn(stageId, label){
+    return '<button class="btn secondary small" onclick="crmSetT4AFollowStage(\''+c.id+'\',\''+stageId+'\')">'+label+'</button>';
+  }
+  return '<div class="taskitem" style="align-items:flex-start; flex-direction:column; gap:6px; padding:12px 4px">'+
+    '<div style="display:flex; justify-content:space-between; width:100%; align-items:center">'+
+      '<div><b style="color:#fff">'+escapeHtml(c.name)+'</b> '+dueLabel+
+      (c.category ? ' <span style="color:var(--muted); font-size:11.5px">'+escapeHtml(c.category)+'</span>' : '')+
+      (c.city ? ' <span style="color:var(--muted); font-size:11.5px">'+escapeHtml(c.city)+'</span>' : '')+'</div>'+
+      '<button class="linklike" onclick="openCrmModal(\''+c.id+'\')">Edytuj</button>'+
+    '</div>'+
+    '<div onclick="openCrmNoteModal(\''+c.id+'\')" title="Kliknij, aby edytować notatkę" style="cursor:pointer; width:100%; font-size:12.5px; color:var(--muted-light)">'+
+      (c.notes ? escapeHtml(c.notes.slice(0,140))+(c.notes.length>140?'…':'') : '<span style="color:var(--muted)">brak notatki</span>')+
+    '</div>'+
+    '<div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-top:2px">'+
+      '<div>'+links+'</div>'+
+      '<button class="btn small" onclick="crmT4ASendFollowToday(\''+c.id+'\')">'+(c.t4a2SentAt?"Wysłano follow-up dziś":"Wysłano dziś")+'</button>'+
+    '</div>'+
+    '<div class="row" style="gap:8px; flex-wrap:wrap; margin-top:2px">'+
+      outcomeBtn("follow30","Follow 30 dni")+
+      outcomeBtn("w_rozmowie","W rozmowie")+
+      outcomeBtn("niezainteresowany","Niezainteresowany")+
+      outcomeBtn("klient","Klient")+
+      outcomeBtn("brak_odpowiedzi","Brak odpowiedzi")+
+    '</div>'+
+  '</div>';
+}
 function crmDailyBriefing(){
   var items = [];
+  crmT4AFollowDueContacts().forEach(function(c){
+    var overdue = crmT4AFollowOverdueDays(c);
+    var suffix = overdue>0 ? ' (spóźnione o '+overdue+' dni)' : ' (dziś)';
+    items.push({tier:0, days:overdue, id:c.id, text:'🎯 <b style="color:#fff">'+escapeHtml(c.name)+'</b> — wyślij follow-up tool4arts'+suffix+'.'});
+  });
   crmActiveContacts().forEach(function(c){
     if(c.status==="klient" || c.status==="odrzucili") return;
     var days = crmDaysSince(c);
-    if(c.hot && days>=2){
-      items.push({tier:0, days:days, id:c.id, text:'🔥 <b style="color:#fff">'+escapeHtml(c.name)+'</b> — blisko zamknięcia, cisza od '+days+' dni. Zadzwoń albo napisz do niego dziś.'});
-    } else if(c.status==="w_rozmowie" && days>=4){
-      items.push({tier:1, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — zrób follow-up: rozmowa w toku, cisza od '+days+' dni.'});
-    } else if(c.status==="ucichlo" && days>=10){
-      items.push({tier:2, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — reaktywuj: odpisali, ale ucichło już '+days+' dni temu.'});
-    } else if(c.status==="brak_odpowiedzi" && days>=5){
-      items.push({tier:2, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — ponów kontakt: brak odpowiedzi od '+days+' dni.'});
+    if(c.status==="w_rozmowie" && days>=4){
+      items.push({tier:1, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — zrób follow-up marketingowy: rozmowa w toku, cisza od '+days+' dni.'});
     }
   });
   items.sort(function(a,b){ return (a.tier-b.tier) || (b.days-a.days); });
@@ -14256,13 +14395,16 @@ function renderCrmPriorytety(){
     return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę, albo dodaj kontakt ręcznie przyciskiem "+ Nowy kontakt".</div></div>';
   }
   var b = crmPriorityBuckets();
+  var t4aDue = crmT4AFollowDueContacts();
+  var html = renderCrmBriefing();
+  html += '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">'+
+    '<h3>🎯 Dziś FOLLOW-UP tool4arts ('+t4aDue.length+')</h3>'+
+    (t4aDue.length ? t4aDue.map(crmT4AFollowRow).join("") : '<div class="empty">Brak zaległych follow-upów tool4arts na dziś.</div>')+
+    '</div>';
   var sections = [
-    {label:"🔥 Bliskie zamknięcia", list:b.hot, empty:"Brak kontaktów oznaczonych jako bliskie zamknięcia."},
-    {label:"Reaktywacje", list:b.reaktywacja, empty:"Brak kontaktów do reaktywacji."},
-    {label:"Follow-upy", list:b.followup, empty:"Brak rozmów czekających na follow-up."},
+    {label:"Follow-upy (marketing)", list:b.followup, empty:"Brak rozmów czekających na follow-up."},
     {label:"Nowe kontakty", list:b.nowe, empty:"Brak nowych, nieotagowanych kontaktów."}
   ];
-  var html = renderCrmBriefing();
   sections.forEach(function(s){
     html += '<div class="card" style="margin-bottom:16px">'+
       '<h3>'+s.label+' ('+s.list.length+')</h3>'+
