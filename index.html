@@ -11954,7 +11954,7 @@ function crmJumpToContact(contactId){
   closeClientPinModal();
   crmSubview = "baza";
   crmNameFilter = c.name;
-  crmCategoryFilter = "all"; crmSystemFilter=""; crmT4AFilter=""; crmCityFilter=""; crmStatusFilter="";
+  crmCategoryFilter = "all"; crmSystemFilter=""; crmT4AFilter=""; crmCityFilter=""; crmStatusFilter=""; crmWojewodztwoFilter="";
   currentTab = "crm";
   renderAll();
   setTimeout(function(){
@@ -13929,6 +13929,7 @@ var crmT4AFilter = "";
 var crmCityFilter = "";
 var crmStatusFilter = "";
 var crmNameFilter = "";
+var crmWojewodztwoFilter = "";
 
 var CRM_CITY_VOIVODESHIP = {};
 (function(){
@@ -13968,10 +13969,10 @@ function crmVoivodeship(c){
   return CRM_CITY_VOIVODESHIP[city] || CRM_CITY_VOIVODESHIP_FOLDED[crmFoldPl(city)] || "";
 }
 
+var CRM_WOJEWODZTWA = ["dolnośląskie","kujawsko-pomorskie","lubelskie","lubuskie","łódzkie","małopolskie","mazowieckie","opolskie","podkarpackie","podlaskie","pomorskie","śląskie","świętokrzyskie","warmińsko-mazurskie","wielkopolskie","zachodniopomorskie"];
 var CRM_TABLE_COLS = [
   {key:"name", label:"Nazwa"},
   {key:"city", label:"Miasto"},
-  {key:"wojewodztwo", label:"Województwo"},
   {key:"category", label:"Kategoria"},
   {key:"system", label:"System"},
   {key:"ig", label:"IG"},
@@ -13993,6 +13994,7 @@ function crmSetCategoryFilter(cat){ crmCategoryFilter = cat; renderAll(); }
 function crmSetSystemFilter(v){ crmSystemFilter = v; renderAllKeepFocus("crmSystemFilterInput"); }
 function crmSetT4AFilter(v){ crmT4AFilter = v; renderAllKeepFocus("crmT4AFilterInput"); }
 function crmSetCityFilter(v){ crmCityFilter = v; renderAllKeepFocus("crmCityFilterInput"); }
+function crmSetWojewodztwoFilter(v){ crmWojewodztwoFilter = v; renderAllKeepFocus("crmWojewodztwoFilterInput"); }
 function crmSetStatusFilter(v){ crmStatusFilter = v; renderAllKeepFocus("crmStatusFilterInput"); }
 function crmSetNameFilter(v){ crmNameFilter = v; renderAllKeepFocus("crmNameFilterInput"); }
 function crmStatusLabel(id){
@@ -14007,7 +14009,6 @@ function crmFieldMatchesFilter(value, filterText){
   return (value||"").toString().toLowerCase().indexOf(f) !== -1;
 }
 function crmSortValue(c, col){
-  if(col==="wojewodztwo") return crmVoivodeship(c);
   if(col==="status"){
     var s = CRM_STATUSES.filter(function(x){ return x.id===c.status; })[0];
     return s ? s.label.toLowerCase() : "";
@@ -14031,6 +14032,7 @@ function renderCrmBaza(){
   var cityFilter = crmCityFilter||"";
   var statusFilter = crmStatusFilter||"";
   var nameFilter = crmNameFilter||"";
+  var wojFilter = crmWojewodztwoFilter||"";
   var filtered = activeList.filter(function(c){
     if(catFilter!=="all" && (c.category||"")!==catFilter) return false;
     if(!crmFieldMatchesFilter(c.name, nameFilter)) return false;
@@ -14038,6 +14040,7 @@ function renderCrmBaza(){
     if(!crmFieldMatchesFilter(crmT4ALabel(c), t4aFilter)) return false;
     if(!crmFieldMatchesFilter(c.city, cityFilter)) return false;
     if(!crmFieldMatchesFilter(crmStatusLabel(c.status), statusFilter)) return false;
+    if(!crmFieldMatchesFilter(crmVoivodeship(c), wojFilter)) return false;
     return true;
   });
   var citiesPresent = Array.from(new Set(activeList.map(function(c){ return (c.city||"").trim(); }).filter(Boolean))).sort(function(a,b){ return a.localeCompare(b,"pl"); });
@@ -14068,6 +14071,7 @@ function renderCrmBaza(){
   html += '<div class="row" style="margin-bottom:14px; gap:10px; flex-wrap:wrap">';
   html += crmFilterInput("crmNameFilterInput", "Nazwa", nameFilter, [], "crmSetNameFilter");
   html += crmFilterInput("crmCityFilterInput", "Miasto", cityFilter, citiesPresent, "crmSetCityFilter");
+  html += crmFilterInput("crmWojewodztwoFilterInput", "Województwo", wojFilter, CRM_WOJEWODZTWA, "crmSetWojewodztwoFilter");
   html += crmFilterInput("crmSystemFilterInput", "System", sysFilter, CRM_SYSTEMS, "crmSetSystemFilter");
   html += crmFilterInput("crmStatusFilterInput", "Status marketing", statusFilter, CRM_STATUSES.map(function(s){return s.label;}), "crmSetStatusFilter");
   html += crmFilterInput("crmT4AFilterInput", "Tool4arts", t4aFilter, T4A_STAGES.map(function(s){return s.label;}), "crmSetT4AFilter");
@@ -14076,10 +14080,10 @@ function renderCrmBaza(){
 
   var TRUNC = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap";
   var CLAMP2 = "display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; word-break:break-word; line-height:1.3";
-  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1170px">'+
-    '<colgroup><col style="width:14%"><col style="width:6%"><col style="width:7%"><col style="width:6%"><col style="width:5%">'+
+  html += '<div class="card"><div style="overflow-x:auto"><table style="table-layout:fixed; width:100%; min-width:1080px">'+
+    '<colgroup><col style="width:18%"><col style="width:7%"><col style="width:7%"><col style="width:6%">'+
     '<col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:7%">'+
-    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:6%"><col style="width:4%"></colgroup>'+
+    '<col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:4%"></colgroup>'+
     '<thead><tr>';
   CRM_TABLE_COLS.forEach(function(col){
     var arrow = crmSortCol===col.key ? (crmSortDir==="asc" ? " ▲" : " ▼") : "";
@@ -14103,7 +14107,6 @@ function renderCrmBaza(){
     html += '<tr data-crm-row-id="'+c.id+'">'+
       '<td><div style="'+CLAMP2+'; cursor:pointer" title="Kliknij, aby edytować: '+escapeHtml(c.name||"")+'" onclick="openCrmModal(\''+c.id+'\')">'+escapeHtml(c.name||"")+'</div></td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.city)+'</td>'+
-      '<td style="'+TRUNC+'">'+crmCell(crmVoivodeship(c))+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.category)+'</td>'+
       '<td style="'+TRUNC+'">'+crmCell(c.system)+'</td>'+
       '<td style="'+TRUNC+'">'+crmYesNoCell(igUrl)+'</td>'+
