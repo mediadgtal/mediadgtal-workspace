@@ -6140,7 +6140,10 @@ function renderFinanse(el){
   } else {
     html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
       (financeBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-      ' — <a href="'+state.financeBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+      ' — <a href="'+state.financeBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
+      ' <button class="btn secondary small" style="margin-left:8px" onclick="financeVerify1to1()"'+(financeVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
+      (financeVerifyResult ? ' <span style="color:'+(financeVerifyResult.sheetTotal!==financeVerifyResult.localTotal?"var(--danger)":"#8fce8f")+'">(arkusz: '+financeVerifyResult.sheetTotal+', lokalnie: '+financeVerifyResult.localTotal+')</span>' : '')+
+      '</div>';
   }
 
   html += '<div class="tabsw">';
@@ -6323,6 +6326,30 @@ var financeBackupSyncTimer = null;
 var financeBackupPending = false;
 var financeBackupCreating = false;
 var financeBackupStatus = "idle";
+var financeVerifyStatus = "idle";
+var financeVerifyResult = null;
+// "Sprawdź 1:1" — sumuje wiersze wszystkich zakładek miesięcy w arkuszu i porównuje
+// z liczbą lokalnych financeEntries (wszystkie lata razem). Tylko odczyt, nic nie zmienia.
+function financeVerify1to1(){
+  if(!window.__gcalToken || !state.financeBackupSheetId){ alert('Połącz się z Google, żeby sprawdzić zgodność z arkuszem.'); return; }
+  financeVerifyStatus = "loading"; financeVerifyResult = null; renderAll();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"?fields=sheets.properties", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(meta){
+      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL"; });
+      if(!monthTabs.length){ financeVerifyStatus="done"; financeVerifyResult={sheetTotal:0, localTotal:state.financeEntries.length}; renderAll(); return; }
+      var ranges = monthTabs.map(function(t){ return "ranges="+encodeURIComponent("'"+t+"'!A1:E"); }).join("&");
+      return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchGet?"+ranges, {headers:{Authorization:"Bearer "+window.__gcalToken}})
+        .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+        .then(function(data){
+          var sheetTotal = 0;
+          (data.valueRanges||[]).forEach(function(vr){ sheetTotal += Math.max(0, (vr.values||[]).length-1); });
+          financeVerifyStatus = "done";
+          financeVerifyResult = {sheetTotal: sheetTotal, localTotal: state.financeEntries.length};
+          renderAll();
+        });
+    }).catch(function(){ financeVerifyStatus="error"; renderAll(); });
+}
 function ensureFinanceBackupSheet(){
   if(!window.__gcalToken || state.financeBackupSheetId || financeBackupCreating) return;
   financeBackupCreating = true;
@@ -12454,7 +12481,10 @@ function renderKlienci(el){
   } else {
     html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
       (clientsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-      ' — <a href="'+state.clientsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+      ' — <a href="'+state.clientsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
+      ' <button class="btn secondary small" style="margin-left:8px" onclick="clientsVerify1to1()"'+(clientsVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
+      (clientsVerifyResult ? ' <span style="color:'+(clientsVerifyResult.sheetTotal!==clientsVerifyResult.localTotal?"var(--danger)":"#8fce8f")+'">(arkusz: '+clientsVerifyResult.sheetTotal+', lokalnie: '+clientsVerifyResult.localTotal+')</span>' : '')+
+      '</div>';
   }
 
   html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
@@ -13023,6 +13053,22 @@ var clientsBackupSyncTimer = null;
 var clientsBackupPending = false;
 var clientsBackupCreating = false;
 var clientsBackupStatus = "idle";
+var clientsVerifyStatus = "idle";
+var clientsVerifyResult = null;
+function clientsVerify1to1(){
+  if(!window.__gcalToken || !state.clientsBackupSheetId){ alert('Połącz się z Google, żeby sprawdzić zgodność z arkuszem.'); return; }
+  clientsVerifyStatus = "loading"; clientsVerifyResult = null; renderAll();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientsBackupSheetId+"/values/RAW!A1:P", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(data){
+      var sheetTotal = Math.max(0, (data.values||[]).length-1);
+      var localTotal = 0;
+      Object.values(state.clientsMonthly||{}).forEach(function(arr){ localTotal += (arr||[]).length; });
+      clientsVerifyStatus = "done";
+      clientsVerifyResult = {sheetTotal: sheetTotal, localTotal: localTotal};
+      renderAll();
+    }).catch(function(){ clientsVerifyStatus="error"; renderAll(); });
+}
 
 function ensureClientsBackupSheet(){
   if(!window.__gcalToken || state.clientsBackupSheetId || clientsBackupCreating) return;
@@ -15163,6 +15209,9 @@ import {
 import {
   getStorage, ref, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+import {
+  getFunctions, httpsCallable
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
 
 var firebaseConfig = {
   apiKey: "AIzaSyD7vHSihsO2MYO-mNycfq5Tt6Zxf92ZbGs",
@@ -15178,6 +15227,7 @@ var app = initializeApp(firebaseConfig);
 var auth = getAuth(app);
 var db = getFirestore(app);
 var storage = getStorage(app);
+var functionsInstance = getFunctions(app, "us-central1");
 window.uploadClientScreenshot = function(file, path){
   var r = ref(storage, path);
   return uploadBytes(r, file).then(function(){ return getDownloadURL(r); });
@@ -15186,6 +15236,27 @@ var provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/calendar');
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+
+// 2026-07-28 — Połączenie z Google trwałe bez ręcznego klikania: zamiast czekać, aż
+// token wygaśnie (~1h, brak refresh tokenu po stronie klienta w tym modelu) i pokazywać
+// baner "Rozłączono", serwerowa funkcja refreshGoogleToken (Cloud Functions, Blaze plan,
+// patrz [[project_mediadgtal_workspace_app]]) trzyma zapisany raz token odświeżający
+// Damiana i na żądanie wymienia go na świeży token dostępu — bez żadnego okna logowania.
+// Baner/przycisk "Połącz z Google" zostaje wyłącznie jako awaryjny fallback, gdyby ta
+// funkcja kiedyś zawiodła (np. cofnięty dostęp po stronie Google).
+var refreshGoogleTokenFn = httpsCallable(functionsInstance, "refreshGoogleToken");
+function silentRefreshGcalToken(){
+  return refreshGoogleTokenFn().then(function(res){
+    window.__gcalToken = res.data.accessToken;
+    window.__gcalBannerDismissed = false;
+    if(window.renderGcalBanner) window.renderGcalBanner();
+    if(window.onGCalTokenReady) window.onGCalTokenReady();
+    return res.data.accessToken;
+  }).catch(function(err){
+    console.error("Ciche odświeżenie tokenu Google nie powiodło się:", err);
+  });
+}
+window.silentRefreshGcalToken = silentRefreshGcalToken;
 
 var gate = document.getElementById("authGate");
 var gateTitle = document.getElementById("gateTitle");
@@ -15464,6 +15535,8 @@ onAuthStateChanged(auth, function(user){
   hideGate();
   setSyncStatus("Łączenie…");
   startSync();
+  silentRefreshGcalToken();
+  setInterval(silentRefreshGcalToken, 45*60*1000);
 });
 </script>
 
