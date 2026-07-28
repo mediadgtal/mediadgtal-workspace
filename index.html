@@ -14924,7 +14924,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
-  getFirestore, doc, setDoc, onSnapshot, getDoc
+  getFirestore, doc, setDoc, onSnapshot, getDoc, collection, getDocs, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import {
   getStorage, ref, uploadBytes, getDownloadURL
@@ -15008,14 +15008,74 @@ var pendingPush = false;
 var crmPushTimer = null;
 var pendingCrmPush = false;
 
-// crmContacts rośnie bez ograniczeń (setki/tysiące firm) i sam potrafi zbliżyć się
-// do limitu 1 dokumentu Firestore (1 MiB) — trzymamy go w osobnym dokumencie
-// (workspace_crm/damian), żeby jego rozmiar nigdy nie blokował zapisu reszty stanu
-// (zadania, posty, nawyki itd.), i odwrotnie.
+// crmContacts rośnie bez ograniczeń (setki/tysiące firm) — trzymamy go poza głównym
+// dokumentem, żeby jego rozmiar nigdy nie blokował zapisu reszty stanu (zadania, posty,
+// nawyki itd.), i odwrotnie.
 function mainStateForPush(){
   var copy = Object.assign({}, window.state);
   delete copy.crmContacts;
   return copy;
+}
+
+// 2026-07-28 — GOTCHA POWAŻNY: workspace_crm/damian (jeden dokument z całą tablicą
+// ~3067 kontaktów) przekroczył twardy limit Firestore 1 MiB (był 1 521 786 bajtów) —
+// KAŻDY zapis kontaktów cicho się nie udawał (błąd łapany w .catch(), nigdy nie
+// pokazywany Damianowi), więc wyglądało to jak "dane wracają do starszej wersji",
+// choć w rzeczywistości nowe dane po prostu nigdy nie docierały do chmury. Naprawione
+// właściwie, nie łatą: jeden dokument per kontakt w kolekcji workspace_crm_contacts
+// (dokument o ID = c.id) zamiast jednej wielkiej tablicy w jednym dokumencie — usuwa
+// limit rozmiaru na stałe (nie ma znaczenia do ilu tysięcy kontaktów urośnie baza) i
+// jako efekt uboczny zmniejsza promień rażenia konfliktu przy dwóch jednocześnie
+// otwartych kartach z całego CRM do pojedynczego edytowanego kontaktu.
+var crmContactsCol = collection(db, "workspace_crm_contacts");
+var crmLastPushed = {}; // id -> JSON.stringify ostatniej wersji faktycznie zapisanej w Firestore
+function crmContactDirtyIds(){
+  var ids = [];
+  (window.state.crmContacts||[]).forEach(function(c){
+    if(!c || !c.id) return;
+    var json = JSON.stringify(c);
+    if(crmLastPushed[c.id] !== json) ids.push(c.id);
+  });
+  return ids;
+}
+function crmRemovedIds(){
+  var current = {};
+  (window.state.crmContacts||[]).forEach(function(c){ if(c && c.id) current[c.id] = true; });
+  return Object.keys(crmLastPushed).filter(function(id){ return !current[id]; });
+}
+function crmCommitInChunks(ops){
+  // Limit batcha Firestore to 500 operacji — dzielimy z zapasem po 400.
+  var chunks = [];
+  for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+  var chain = Promise.resolve();
+  chunks.forEach(function(chunk){
+    chain = chain.then(function(){
+      var batch = writeBatch(db);
+      chunk.forEach(function(op){
+        var ref = doc(crmContactsCol, op.id);
+        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+      });
+      return batch.commit();
+    });
+  });
+  return chain;
+}
+// Migracja jednorazowa: jeśli nowa kolekcja jest pusta, a stary dokument
+// workspace_crm/damian ma dane — przepisz je do kolekcji. Stary dokument zostaje
+// nietknięty (nieusuwany) jako historyczna kopia zapasowa na wszelki wypadek.
+function crmMigrateOldDocIfNeeded(){
+  getDocs(crmContactsCol).then(function(snap){
+    if(!snap.empty) return;
+    var oldCrmDocRef = doc(db, "workspace_crm", "damian");
+    return getDoc(oldCrmDocRef).then(function(oldSnap){
+      if(!oldSnap.exists()) return;
+      var oldContacts = (oldSnap.data().crmContacts)||[];
+      if(!oldContacts.length) return;
+      console.log("Migracja CRM: przenoszę "+oldContacts.length+" kontaktów do workspace_crm_contacts…");
+      return crmCommitInChunks(oldContacts.filter(function(c){return c&&c.id;}).map(function(c){ return {type:"set", id:c.id, data:c}; }))
+        .then(function(){ console.log("Migracja CRM zakończona ("+oldContacts.length+" kontaktów)."); });
+    });
+  }).catch(function(err){ console.error("Migracja CRM nie powiodła się:", err); });
 }
 
 function scheduleFirestorePush(){
@@ -15046,9 +15106,18 @@ function flushCrmFirestorePush(){
   if(!pendingCrmPush) return;
   if(crmPushTimer){ clearTimeout(crmPushTimer); crmPushTimer = null; }
   pendingCrmPush = false;
-  var crmDocRef = doc(db, "workspace_crm", "damian");
-  setDoc(crmDocRef, { crmContacts: window.state.crmContacts||[], _updatedAt: window.state._updatedAt||Date.now() }).catch(function(err){
-    console.error("Firestore push (workspace_crm/damian) nie powiódł się:", err);
+  var dirtyIds = crmContactDirtyIds();
+  var removedIds = crmRemovedIds();
+  if(!dirtyIds.length && !removedIds.length) return;
+  var byId = {};
+  (window.state.crmContacts||[]).forEach(function(c){ if(c&&c.id) byId[c.id] = c; });
+  var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
+    .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
+  crmCommitInChunks(ops).then(function(){
+    dirtyIds.forEach(function(id){ crmLastPushed[id] = JSON.stringify(byId[id]); });
+    removedIds.forEach(function(id){ delete crmLastPushed[id]; });
+  }).catch(function(err){
+    console.error("Firestore batch push (workspace_crm_contacts) nie powiódł się:", err);
   });
 }
 // Zabezpieczenie przed cichym nadpisaniem świeższych danych z chmury nieaktualnym stanem
@@ -15110,19 +15179,19 @@ function startSync(){
     setSyncStatus("Offline (tylko lokalnie)");
   });
 
-  var crmDocRef = doc(db, "workspace_crm", "damian");
-  unsubscribeCrmSnapshot = onSnapshot(crmDocRef, function(snap){
-    if(snap.exists()){
-      var remote = snap.data();
-      if((remote._updatedAt||0) < (window.state._updatedAt||0)) return;
-      window.state.crmContacts = remote.crmContacts||[];
-      originalSave();
-      if(window.renderAll) window.renderAll();
-    } else if(window.state.crmContacts && window.state.crmContacts.length){
-      setDoc(crmDocRef, { crmContacts: window.state.crmContacts, _updatedAt: window.state._updatedAt||Date.now() });
-    }
+  crmMigrateOldDocIfNeeded();
+  unsubscribeCrmSnapshot = onSnapshot(crmContactsCol, function(snap){
+    var arr = [];
+    snap.forEach(function(d){
+      var data = d.data();
+      arr.push(data);
+      crmLastPushed[d.id] = JSON.stringify(data);
+    });
+    window.state.crmContacts = arr;
+    originalSave();
+    if(window.renderAll) window.renderAll();
   }, function(err){
-    console.error("Firestore onSnapshot (workspace_crm/damian) error:", err);
+    console.error("Firestore onSnapshot (workspace_crm_contacts) error:", err);
   });
 
   // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
