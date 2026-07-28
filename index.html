@@ -991,6 +991,8 @@ function renderDroga(el){
     }).join('')+
     '</div>';
 
+  html += renderDrogaBackupStatus();
+
   if(sub==="sprint"){
     var ym = todayStr().slice(0,7);
     var live = (typeof financeMonthSummary==="function") ? financeMonthSummary(ym).byCategory.przychody||0 : 0;
@@ -2777,6 +2779,11 @@ function defaultState(){
   s.clientOpsBackupSheetId = null;
   s.clientOpsBackupSheetUrl = null;
 
+  s.tasksBackupSheetId = null;
+  s.tasksBackupSheetUrl = null;
+  s.drogaBackupSheetId = null;
+  s.drogaBackupSheetUrl = null;
+
   s.audits = [];
 
   s.birthdays = [];
@@ -2795,7 +2802,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); scheduleFinanceBackupPush(); scheduleClientOpsBackupPush(); }
+function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); scheduleFinanceBackupPush(); scheduleClientOpsBackupPush(); scheduleTasksBackupPush(); scheduleDrogaBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -6449,6 +6456,7 @@ function renderZadania(el){
     '<button class="'+(zadaniaSubview==="usuniete"?"active":"")+'" onclick="setZadSub(\'usuniete\')">Usunięte</button>'+
     '</div>';
 
+  html += renderTasksBackupStatus();
   html += renderZadSearchSortBar();
 
   if(zadaniaSubview==="baza"){
@@ -8891,6 +8899,232 @@ function renderClientOpsBackupStatus(){
   return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
     (clientOpsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
     ' — <a href="'+state.clientOpsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+}
+
+/* ================= Kopia zapasowa Zadań i Drogi (2026-07-28) =================
+   Damian zgłosił, że tych dwóch modułów nie było wśród chronionych (Nawyki/CRM/
+   Finanse/Klienci/Obsługa Klientów już miały backup) — dokładnie ten sam,
+   sprawdzony wzorzec: arkusz Google Sheets, debounced push po każdym save(),
+   status-baner + przycisk "sprawdź 1:1" i "przywróć braki" jak w Nawykach/CRM. */
+var tasksBackupSyncTimer = null;
+var tasksBackupPending = false;
+var tasksBackupCreating = false;
+var tasksBackupStatus = "idle";
+var tasksVerifyStatus = "idle";
+var tasksVerifyResult = null;
+
+function ensureTasksBackupSheet(){
+  if(!window.__gcalToken || state.tasksBackupSheetId || tasksBackupCreating) return;
+  tasksBackupCreating = true;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({ properties:{title:"Zadania — kopia zapasowa (system)"}, sheets:[{properties:{title:"ZADANIA"}}] })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    tasksBackupCreating = false;
+    if(data.spreadsheetId){
+      state.tasksBackupSheetId = data.spreadsheetId;
+      state.tasksBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      save(); renderAll();
+    }
+  }).catch(function(){ tasksBackupCreating = false; });
+}
+function scheduleTasksBackupPush(){
+  if(!window.__gcalToken || !state.tasksBackupSheetId) return;
+  tasksBackupPending = true;
+  if(tasksBackupSyncTimer) clearTimeout(tasksBackupSyncTimer);
+  tasksBackupSyncTimer = setTimeout(flushTasksBackupPush, 1500);
+}
+function tasksBackupRows(){
+  var rows = [["id","tytul","kategoria","zakres","wykonane","utworzono","wykonanoDnia","dzienTygodniaCykl","usunieto"]];
+  state.tasks.slice().sort(function(a,b){ return (a.createdAt||"")<(b.createdAt||"")?-1:1; }).forEach(function(t){
+    rows.push([t.id,t.title,t.category,t.scope,!!t.done,t.createdAt||"",t.completedAt||"",t.recurWeekday==null?"":t.recurWeekday,t.deletedAt||""]);
+  });
+  return rows;
+}
+function flushTasksBackupPush(){
+  if(!tasksBackupPending) return;
+  tasksBackupPending = false;
+  if(!window.__gcalToken || !state.tasksBackupSheetId) return;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values:batchUpdate", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({valueInputOption:"RAW", data:[{range:"ZADANIA!A1", values: tasksBackupRows()}]})
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    tasksBackupStatus = r.ok ? "ok" : "error";
+  }).catch(function(){ tasksBackupStatus = "error"; });
+}
+// "Sprawdź 1:1" — porównuje arkusz z lokalnym stanem bez niczego zmieniać, tylko
+// pokazuje ile zadań brakuje po jednej i po drugiej stronie (diagnostyka).
+function tasksVerify1to1(){
+  if(!window.__gcalToken){ alert('Połącz się z Google, żeby sprawdzić zgodność z arkuszem.'); return; }
+  tasksVerifyStatus = "loading"; tasksVerifyResult = null; renderAll();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values/ZADANIA!A1:I", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(data){
+      var rows = data.values||[];
+      var sheetIds = {}; for(var i=1;i<rows.length;i++){ if(rows[i][0]) sheetIds[rows[i][0]] = true; }
+      var localIds = {}; state.tasks.forEach(function(t){ localIds[t.id] = true; });
+      var missingInSheet = state.tasks.filter(function(t){ return !sheetIds[t.id]; }).length;
+      var missingLocally = Object.keys(sheetIds).filter(function(id){ return !localIds[id]; }).length;
+      tasksVerifyStatus = "done";
+      tasksVerifyResult = {sheetTotal: rows.length-1, localTotal: state.tasks.length, missingInSheet: missingInSheet, missingLocally: missingLocally};
+      renderAll();
+    }).catch(function(){ tasksVerifyStatus="error"; renderAll(); });
+}
+// Wymuszona synchronizacja dwukierunkowa — uzupełnia WYŁĄCZNIE braki w obie strony
+// (nigdy nie kasuje i nigdy nie nadpisuje istniejącego rekordu), analogicznie do
+// nawykiRestoreFromBackup / crmRestoreFromOwnBackup.
+function tasksForceSyncTwoWay(){
+  if(!window.__gcalToken){ alert('Połącz się z Google, żeby wymusić synchronizację.'); return; }
+  tasksVerifyStatus = "loading"; tasksVerifyResult = null; renderAll();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values/ZADANIA!A1:I", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(data){
+      var rows = data.values||[];
+      var header = rows[0]||[];
+      var localById = {}; state.tasks.forEach(function(t){ localById[t.id] = t; });
+      var restoredFromSheet = 0;
+      for(var i=1;i<rows.length;i++){
+        var r = rows[i]; var id = r[0];
+        if(!id || localById[id]) continue;
+        state.tasks.push({
+          id:id, title:r[1]||"", category:r[2]||"", scope:r[3]||"baza", done: r[4]==="true"||r[4]===true,
+          createdAt:r[5]||todayStr(), completedAt:r[6]||null, recurWeekday: r[7]===""?null:parseInt(r[7],10), deletedAt: r[8]||null
+        });
+        restoredFromSheet++;
+      }
+      if(restoredFromSheet) save();
+      tasksVerifyStatus = "done";
+      tasksVerifyResult = {sheetTotal: rows.length-1, localTotal: state.tasks.length, missingInSheet: 0, missingLocally: 0, restoredFromSheet: restoredFromSheet};
+      if(restoredFromSheet) scheduleTasksBackupPush(); else renderAll();
+    }).catch(function(){ tasksVerifyStatus="error"; renderAll(); });
+}
+function renderTasksBackupStatus(){
+  if(!window.__gcalToken){
+    return '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
+  }
+  if(!state.tasksBackupSheetId){
+    ensureTasksBackupSheet();
+    return '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
+  }
+  var verifyBtns = ' <button class="btn secondary small" style="margin-left:8px" onclick="tasksVerify1to1()"'+(tasksVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
+    ' <button class="btn secondary small" onclick="tasksForceSyncTwoWay()"'+(tasksVerifyStatus==="loading"?" disabled":"")+'>🔄 Wymuś synchronizację</button>';
+  var resultTxt = '';
+  if(tasksVerifyResult){
+    if(tasksVerifyResult.restoredFromSheet!=null) resultTxt = ' <span style="color:#8fce8f">(dopisano '+tasksVerifyResult.restoredFromSheet+' z arkusza; arkusz:'+tasksVerifyResult.sheetTotal+' lokalnie:'+tasksVerifyResult.localTotal+')</span>';
+    else resultTxt = ' <span style="color:'+(tasksVerifyResult.missingInSheet||tasksVerifyResult.missingLocally?"var(--danger)":"#8fce8f")+'">(arkusz: '+tasksVerifyResult.sheetTotal+', lokalnie: '+tasksVerifyResult.localTotal+', brakuje w arkuszu: '+tasksVerifyResult.missingInSheet+', brakuje lokalnie: '+tasksVerifyResult.missingLocally+')</span>';
+  }
+  return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
+    (tasksBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
+    ' — <a href="'+state.tasksBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+verifyBtns+resultTxt+'</div>';
+}
+
+var drogaBackupSyncTimer = null;
+var drogaBackupPending = false;
+var drogaBackupCreating = false;
+var drogaBackupStatus = "idle";
+function ensureDrogaBackupSheet(){
+  if(!window.__gcalToken || state.drogaBackupSheetId || drogaBackupCreating) return;
+  drogaBackupCreating = true;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({ properties:{title:"Droga — kopia zapasowa (system)"}, sheets:[{properties:{title:"DROGA"}}] })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    drogaBackupCreating = false;
+    if(data.spreadsheetId){
+      state.drogaBackupSheetId = data.spreadsheetId;
+      state.drogaBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      save(); renderAll();
+    }
+  }).catch(function(){ drogaBackupCreating = false; });
+}
+function scheduleDrogaBackupPush(){
+  if(!window.__gcalToken || !state.drogaBackupSheetId) return;
+  drogaBackupPending = true;
+  if(drogaBackupSyncTimer) clearTimeout(drogaBackupSyncTimer);
+  drogaBackupSyncTimer = setTimeout(flushDrogaBackupPush, 1500);
+}
+// Droga to głównie zagnieżdżone mapy/liczniki (nie lista rekordów) — zamiast na sztywno
+// wymyślać kolumny dla każdego pola, zrzucamy każdy klucz najwyższego poziomu jako
+// JSON w osobnym wierszu. Trywialne do odtworzenia (JSON.parse z powrotem) i zawsze
+// aktualne, nawet jeśli kształt state.droga się rozrośnie.
+function drogaBackupRows(){
+  var rows = [["pole","wartosc_json"]];
+  Object.keys(state.droga||{}).forEach(function(k){
+    rows.push([k, JSON.stringify(state.droga[k])]);
+  });
+  return rows;
+}
+function flushDrogaBackupPush(){
+  if(!drogaBackupPending) return;
+  drogaBackupPending = false;
+  if(!window.__gcalToken || !state.drogaBackupSheetId) return;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values:batchUpdate", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({valueInputOption:"RAW", data:[{range:"DROGA!A1", values: drogaBackupRows()}]})
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    drogaBackupStatus = r.ok ? "ok" : "error";
+  }).catch(function(){ drogaBackupStatus = "error"; });
+}
+// Przywraca WYŁĄCZNIE pola, które lokalnie są puste/domyślne (fill-only) — dla map
+// (fronty/bramka/rytuał*) łączy klucze, nigdy nie kasuje istniejącego wpisu; dla
+// quest.doneDates robi unię dat (nigdy nie cofa streaka).
+function drogaRestoreFromBackup(){
+  if(!window.__gcalToken || !state.drogaBackupSheetId){ alert('Połącz się z Google, żeby przywrócić z kopii zapasowej.'); return; }
+  drogaBackupStatus = "loading"; renderAll();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values/DROGA!A1:B", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(data){
+      var rows = data.values||[];
+      var restored = 0;
+      for(var i=1;i<rows.length;i++){
+        var key = rows[i][0]; var raw = rows[i][1];
+        if(!key || raw==null) continue;
+        var val; try{ val = JSON.parse(raw); }catch(e){ continue; }
+        if(key==="quest" && val && Array.isArray(val.doneDates)){
+          var cur = state.droga.quest.doneDates||[];
+          var set = {}; cur.forEach(function(d){ set[d]=true; });
+          val.doneDates.forEach(function(d){ if(!set[d]){ cur.push(d); restored++; } });
+          state.droga.quest.doneDates = cur;
+          (val.wolneDni||[]).forEach(function(d){ if(state.droga.quest.wolneDni.indexOf(d)===-1){ state.droga.quest.wolneDni.push(d); restored++; } });
+        } else if(typeof val==="object" && val!==null && !Array.isArray(val) && typeof state.droga[key]==="object" && state.droga[key]!==null){
+          Object.keys(val).forEach(function(k2){ if(!(k2 in state.droga[key])){ state.droga[key][k2]=val[k2]; restored++; } });
+        } else if((state.droga[key]===undefined || state.droga[key]===null || state.droga[key]===0) && (val || val===0)){
+          if(!state.droga[key]){ state.droga[key]=val; restored++; }
+        }
+      }
+      drogaBackupStatus = "ok";
+      drogaBackupResult = {restored: restored};
+      if(restored) save();
+      renderAll();
+    }).catch(function(){ drogaBackupStatus="error"; renderAll(); });
+}
+var drogaBackupResult = null;
+function renderDrogaBackupStatus(){
+  if(!window.__gcalToken){
+    return '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
+  }
+  if(!state.drogaBackupSheetId){
+    ensureDrogaBackupSheet();
+    return '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
+  }
+  return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
+    (drogaBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
+    ' — <a href="'+state.drogaBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
+    ' <button class="btn secondary small" style="margin-left:8px" onclick="drogaRestoreFromBackup()">🔄 Przywróć braki z kopii zapasowej</button>'+
+    (drogaBackupResult ? ' <span style="color:#8fce8f">(uzupełniono '+drogaBackupResult.restored+' pól)</span>' : '')+
+    '</div>';
 }
 
 /* ---- Dashboard modułu (sekcja 5.1) ---- */
