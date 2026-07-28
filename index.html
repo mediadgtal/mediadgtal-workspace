@@ -8843,6 +8843,30 @@ var clientOpsBackupSyncTimer = null;
 var clientOpsBackupPending = false;
 var clientOpsBackupCreating = false;
 var clientOpsBackupStatus = "idle";
+var clientOpsVerifyStatus = "idle";
+var clientOpsVerifyResult = null;
+function clientOpsVerify1to1(){
+  if(!window.__gcalToken || !state.clientOpsBackupSheetId){ alert('Połącz się z Google, żeby sprawdzić zgodność z arkuszem.'); return; }
+  clientOpsVerifyStatus = "loading"; clientOpsVerifyResult = null; renderAll();
+  var tabs = ["KLIENCI","ZADANIA","HISTORIA","WYNIKI","PLATNOSCI"];
+  var ranges = tabs.map(function(t){ return "ranges="+encodeURIComponent(t+"!A1:Z"); }).join("&");
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchGet?"+ranges, {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(data){
+      var sheetCounts = {};
+      (data.valueRanges||[]).forEach(function(vr, i){ sheetCounts[tabs[i]] = Math.max(0, (vr.values||[]).length-1); });
+      var localCounts = {
+        KLIENCI: state.clientOps.clients.length,
+        ZADANIA: state.clientOps.tasks.length,
+        HISTORIA: state.clientOps.historia.length,
+        WYNIKI: state.clientOps.wyniki.length,
+        PLATNOSCI: state.clientOps.platnosci.length
+      };
+      clientOpsVerifyStatus = "done";
+      clientOpsVerifyResult = {sheetCounts: sheetCounts, localCounts: localCounts};
+      renderAll();
+    }).catch(function(){ clientOpsVerifyStatus="error"; renderAll(); });
+}
 function ensureClientOpsBackupSheet(){
   if(!window.__gcalToken || state.clientOpsBackupSheetId || clientOpsBackupCreating) return;
   clientOpsBackupCreating = true;
@@ -8928,9 +8952,18 @@ function renderClientOpsBackupStatus(){
     ensureClientOpsBackupSheet();
     return '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
   }
+  var resultTxt = '';
+  if(clientOpsVerifyResult){
+    var mismatch = Object.keys(clientOpsVerifyResult.localCounts).some(function(k){ return clientOpsVerifyResult.localCounts[k]!==clientOpsVerifyResult.sheetCounts[k]; });
+    resultTxt = ' <span style="color:'+(mismatch?"var(--danger)":"#8fce8f")+'">('+Object.keys(clientOpsVerifyResult.localCounts).map(function(k){
+      return k+": "+clientOpsVerifyResult.sheetCounts[k]+"/"+clientOpsVerifyResult.localCounts[k];
+    }).join(", ")+')</span>';
+  }
   return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
     (clientOpsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-    ' — <a href="'+state.clientOpsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+    ' — <a href="'+state.clientOpsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
+    ' <button class="btn secondary small" style="margin-left:8px" onclick="clientOpsVerify1to1()"'+(clientOpsVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
+    resultTxt+'</div>';
 }
 
 /* ================= Kopia zapasowa Zadań i Drogi (2026-07-28) =================
