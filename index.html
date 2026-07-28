@@ -7375,7 +7375,11 @@ function renderNawyki(el){
   } else {
     html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
       (habitsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-      ' — <a href="'+state.habitsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+      ' — <a href="'+state.habitsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
+      ' <button class="btn secondary small" style="margin-left:8px" onclick="nawykiRestoreFromBackup()"'+(nawykiRestoreStatus==="loading"?" disabled":"")+'>🔄 '+(nawykiRestoreStatus==="loading"?"Sprawdzam arkusz…":"Przywróć braki z kopii zapasowej")+'</button>'+
+      (nawykiRestoreResult ? ' <span style="color:#8fce8f">(uzupełniono '+nawykiRestoreResult.restored+' zaznaczeń)</span>' : '')+
+      (nawykiRestoreStatus==="error" ? ' <span style="color:var(--danger)">nie udało się odczytać arkusza</span>' : '')+
+      '</div>';
   }
 
   html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
@@ -7586,6 +7590,67 @@ var habitsBackupSyncTimer = null;
 var habitsBackupPending = false;
 var habitsBackupCreating = false;
 var habitsBackupStatus = "idle"; // idle|ok|error
+
+/* 2026-07-28 — przywracanie braków z kopii zapasowej (Damian zgłosił zaginięcie realnych
+   zaznaczeń z platformy — źródło: karta/urządzenie z "zamrożonym" stanem w pamięci
+   nadpisywała cały dokument Firestore starszą wersją, patrz naprawa w visibilitychange
+   wyżej). Czyta WSZYSTKIE zakładki miesięcy w arkuszu kopii zapasowej i uzupełnia
+   WYŁĄCZNIE brakujące TAK (nigdy nie cofa lokalnego TAK na NIE) — to samo bezpieczne
+   podejście co crmReconcileT4AFromSheet. */
+var nawykiRestoreStatus = "idle";
+var nawykiRestoreResult = null;
+var NAWYKI_MONTH_NAMES = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+function nawykiRestoreFromBackup(){
+  if(!window.__gcalToken || !state.habitsBackupSheetId){ alert('Połącz się z Google, żeby przywrócić z kopii zapasowej.'); return; }
+  nawykiRestoreStatus = "loading";
+  nawykiRestoreResult = null;
+  renderAll();
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId;
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
+  fetch(base+"?fields=sheets.properties", {headers:headers}).then(function(r){
+    if(!r.ok) throw new Error("http"+r.status);
+    return r.json();
+  }).then(function(meta){
+    var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(title){
+      return NAWYKI_MONTH_NAMES.some(function(mn){ return title.indexOf(mn+" ")===0; });
+    });
+    if(!monthTabs.length){ nawykiRestoreStatus="done"; nawykiRestoreResult={restored:0}; renderAll(); return; }
+    var ranges = monthTabs.map(function(t){ return "ranges="+encodeURIComponent("'"+t+"'!A1:AH50"); }).join("&");
+    return fetch(base+"/values:batchGet?"+ranges, {headers:headers}).then(function(r){
+      if(!r.ok) throw new Error("http"+r.status);
+      return r.json();
+    }).then(function(data){
+      var restored = 0;
+      (data.valueRanges||[]).forEach(function(vr, idx){
+        var tabTitle = monthTabs[idx];
+        var mIdx = NAWYKI_MONTH_NAMES.findIndex(function(mn){ return tabTitle.indexOf(mn+" ")===0; });
+        var year = tabTitle.slice(tabTitle.lastIndexOf(" ")+1);
+        var rows = (vr.values||[]);
+        if(!rows.length) return;
+        var header = rows[0];
+        for(var ri=1; ri<rows.length; ri++){
+          var row = rows[ri];
+          var habitName = row[0];
+          var h = state.habits.filter(function(x){ return x.name===habitName; })[0];
+          if(!h) continue;
+          if(!h.log) h.log = {};
+          for(var ci=1; ci<header.length; ci++){
+            var day = parseInt(header[ci], 10);
+            if(!day || day<1 || day>31) continue;
+            if(row[ci] === "TAK"){
+              var dateKey = year+"-"+String(mIdx+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+              if(!h.log[dateKey]){ h.log[dateKey] = true; restored++; }
+            }
+          }
+        }
+      });
+      nawykiRestoreStatus = "done";
+      nawykiRestoreResult = {restored: restored};
+      if(restored) save();
+      renderAll();
+    });
+  }).catch(function(){ nawykiRestoreStatus="error"; renderAll(); });
+}
 
 function ensureHabitsBackupSheet(){
   if(!window.__gcalToken || state.habitsBackupSheetId || habitsBackupCreating) return;
@@ -12793,6 +12858,59 @@ var crmBackupSyncTimer = null;
 var crmBackupPending = false;
 var crmBackupCreating = false;
 var crmBackupStatus = "idle";
+
+/* 2026-07-28 — przywracanie braków z WŁASNEJ kopii zapasowej Bazy kontaktów (RAW),
+   niezależne od uzgadniania z arkuszem Tomka (crmReconcileT4AFromSheet powyżej dotyczy
+   tylko checklisty tool4arts). Uzupełnia tylko puste pola (ostatni kontakt/otagowano/
+   notatki/blisko zamknięcia) — nigdy nie nadpisuje tego, co już jest wypełnione lokalnie. */
+var crmOwnRestoreStatus = "idle";
+var crmOwnRestoreResult = null;
+function crmRestoreFromOwnBackup(){
+  if(!window.__gcalToken || !state.crmBackupSheetId){ alert('Połącz się z Google, żeby przywrócić z kopii zapasowej.'); return; }
+  crmOwnRestoreStatus = "loading";
+  crmOwnRestoreResult = null;
+  renderAll();
+  var base = "https://sheets.googleapis.com/v4/spreadsheets/"+state.crmBackupSheetId;
+  var headers = {Authorization:"Bearer "+window.__gcalToken};
+  fetch(base+"/values/RAW!A1:S", {headers:headers}).then(function(r){
+    if(!r.ok) throw new Error("http"+r.status);
+    return r.json();
+  }).then(function(data){
+    var rows = data.values||[];
+    if(!rows.length){ crmOwnRestoreStatus="done"; crmOwnRestoreResult={restored:0,contacts:0}; renderAll(); return; }
+    var header = rows[0];
+    var idIdx = header.indexOf("id");
+    var lastContactIdx = header.indexOf("ostatni kontakt");
+    var taggedAtIdx = header.indexOf("otagowano");
+    var hotIdx = header.indexOf("blisko zamknięcia");
+    var notesIdx = header.indexOf("notatki");
+    var byId = {};
+    for(var i=1;i<rows.length;i++){
+      var r = rows[i];
+      if(r[idIdx]) byId[r[idIdx]] = r;
+    }
+    var restored = 0, contactsTouched = 0;
+    state.crmContacts.forEach(function(c){
+      var r = byId[c.id];
+      if(!r) return;
+      var touched = false;
+      var oldLastContact = r[lastContactIdx]||"";
+      var oldTaggedAt = r[taggedAtIdx]||"";
+      var oldHot = r[hotIdx]||"";
+      var oldNotes = r[notesIdx]||"";
+      if(oldLastContact && !c.lastContact){ c.lastContact = oldLastContact; restored++; touched=true; }
+      if(oldTaggedAt && !c.taggedAt){ c.taggedAt = oldTaggedAt; restored++; touched=true; }
+      if(oldHot === "TAK" && !c.hot){ c.hot = true; restored++; touched=true; }
+      if(oldNotes && !c.notes){ c.notes = oldNotes; restored++; touched=true; }
+      if(touched) contactsTouched++;
+    });
+    crmOwnRestoreStatus = "done";
+    crmOwnRestoreResult = {restored: restored, contacts: contactsTouched};
+    if(restored) save();
+    renderAll();
+  }).catch(function(){ crmOwnRestoreStatus="error"; renderAll(); });
+}
+
 function ensureCrmBackupSheet(){
   if(!window.__gcalToken || state.crmBackupSheetId || crmBackupCreating) return;
   crmBackupCreating = true;
@@ -14017,7 +14135,11 @@ function renderCRM(el){
     } else {
       html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
         (crmBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-        ' — <a href="'+state.crmBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a></div>';
+        ' — <a href="'+state.crmBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
+        ' <button class="btn secondary small" style="margin-left:8px" onclick="crmRestoreFromOwnBackup()"'+(crmOwnRestoreStatus==="loading"?" disabled":"")+'>🔄 '+(crmOwnRestoreStatus==="loading"?"Sprawdzam arkusz…":"Przywróć braki z kopii zapasowej")+'</button>'+
+        (crmOwnRestoreResult ? ' <span style="color:#8fce8f">(uzupełniono '+crmOwnRestoreResult.restored+' pól w '+crmOwnRestoreResult.contacts+' kontaktach)</span>' : '')+
+        (crmOwnRestoreStatus==="error" ? ' <span style="color:var(--danger)">nie udało się odczytać arkusza</span>' : '')+
+        '</div>';
     }
   }
 
@@ -14778,7 +14900,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
-  getFirestore, doc, setDoc, onSnapshot
+  getFirestore, doc, setDoc, onSnapshot, getDoc
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import {
   getStorage, ref, uploadBytes, getDownloadURL
@@ -14905,8 +15027,27 @@ function flushCrmFirestorePush(){
     console.error("Firestore push (workspace_crm/damian) nie powiódł się:", err);
   });
 }
+// Zabezpieczenie przed cichym nadpisaniem świeższych danych z chmury nieaktualnym stanem
+// z pamięci karty (np. karta/telefon "uśpiony" w tle przez wiele godzin/dni — JS i
+// nasłuch Firestore mogły zostać zawieszone przez system, więc window.state w tej karcie
+// jest zamrożony na starym stanie). Zamiast pozwolić kolejnemu zapisowi z tej karty
+// nadpisać cały dokument (setDoc bez merge) tym, co zamrożone, wymuszamy pełne przeładowanie
+// strony po powrocie z dłuższego ukrycia — gwarantuje to świeży stan z Firestore zanim
+// cokolwiek zostanie zapisane. Patrz [[feedback_close_other_tabs_before_bulk_writes]].
+var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
-  if(document.visibilityState === "hidden"){ flushPush(); flushCrmFirestorePush(); }
+  if(document.visibilityState === "hidden"){
+    __hiddenAt = Date.now();
+    flushPush(); flushCrmFirestorePush();
+  } else if(document.visibilityState === "visible" && __hiddenAt){
+    var hiddenMs = Date.now() - __hiddenAt;
+    __hiddenAt = null;
+    var active = document.activeElement;
+    var editingText = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && active.value;
+    if(hiddenMs > 20000 && !editingText){
+      location.reload();
+    }
+  }
 });
 window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); });
 
@@ -14959,6 +15100,28 @@ function startSync(){
   }, function(err){
     console.error("Firestore onSnapshot (workspace_crm/damian) error:", err);
   });
+
+  // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
+  // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
+  // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
+  // (getDoc) i dopiero na tej podstawie decydujemy, czy nasz lokalny stan jest
+  // faktycznie aktualny, zanim cokolwiek zostanie z tej karty zapisane.
+  setInterval(function(){
+    if(document.visibilityState !== "visible") return;
+    getDoc(docRef).then(function(snap){
+      if(!snap.exists()) return;
+      var remote = snap.data();
+      if((remote._updatedAt||0) > (window.state._updatedAt||0)){
+        var keepCrm = window.state.crmContacts;
+        var def = window.defaultState();
+        Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
+        window.state = window.migrateState(remote);
+        window.state.crmContacts = keepCrm||[];
+        originalSave();
+        window.renderAll();
+      }
+    }).catch(function(){});
+  }, 180000);
 }
 
 showGate("loading");
