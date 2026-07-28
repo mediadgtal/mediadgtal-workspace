@@ -7882,7 +7882,7 @@ function undoT4ACli(){
 
 /* ================= OBSŁUGA KLIENTÓW ================= */
 var CLIENT_OPS_FREQ_LABEL = {once:"Jednorazowe", weekly:"Co tydzień", monthly:"Co miesiąc"};
-var CLIENT_OPS_STORAGE_ENABLED = false; // ustaw na true, gdy Damian zdecyduje: Blaze albo przejscie na Firestore-jako-storage
+var CLIENT_OPS_STORAGE_ENABLED = true; // 2026-07-28: Blaze aktywny, Firebase Storage skonfigurowany (bucket + reguły)
 var CLIENT_SHOT_PROMPT = "Jesteś doświadczonym specjalistą od reklam Meta Ads, pomagasz właścicielowi agencji marketingowej szybko ocenić zrzut ekranu z Meta Ads Managera. Oceń widoczne metryki (koszt wyniku/leada, zasięg, wydany budżet, CTR jeśli widoczny, liczba wyników) na tle typowych benchmarków dla reklam w social media dla małych/średnich firm lokalnych. Zwróć uwagę na sygnały ostrzegawcze: rosnący koszt leada, malejący zasięg, szybko wyczerpujący się budżet, spadający CTR. Odpowiedz PO POLSKU, krótko (maks. 6 zdań): zacznij od jednego zdania podsumowania (dobrze/przeciętnie/źle), potem 2-4 punkty z konkretnymi liczbami widocznymi na tym zrzucie. To ma być pomocnicza sugestia do weryfikacji przez człowieka, nie ostateczna ocena — nie udawaj większej pewności niż faktycznie masz z jednego zrzutu.";
 
 /* ---- Cennik (sekcja 2 specyfikacji) ---- */
@@ -9835,7 +9835,7 @@ function runAudit(){
   var rec = {
     id: uid("audit"), name: name || "", url: url || "",
     targetType: auditDetectTargetType(url), hadScreenshot: !!file,
-    note: "", status: "wtoku", errorMsg: "", createdAt: todayStr()
+    screenshotUrl: "", note: "", status: "wtoku", errorMsg: "", createdAt: todayStr()
   };
   state.audits.unshift(rec);
   auditExpandedId = rec.id;
@@ -9843,6 +9843,15 @@ function runAudit(){
   if(nameEl) nameEl.value = "";
   auditPendingFile = null;
   save(); renderAll();
+  // 2026-07-28: zrzut ekranu audytu trwale zapisywany w Firebase Storage (wcześniej
+  // używany raz do analizy AI i odrzucany) — teraz Damian może do niego wrócić.
+  if(file && window.uploadClientScreenshot){
+    var auditExt = (file.type.split("/")[1]||"jpg").replace(/[^a-z0-9]/gi,"");
+    window.uploadClientScreenshot(file, "auditScreens/"+rec.id+"."+auditExt).then(function(url2){
+      rec.screenshotUrl = url2;
+      save(); renderAll();
+    }).catch(function(){});
+  }
   var runIt = function(base64, mediaType){
     performAudit(url, base64, mediaType).then(function(text){
       rec.note = text;
@@ -9932,6 +9941,11 @@ function renderAudyt(el){
       '</div>';
     if(expanded){
       html += '<div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border)">';
+      if(rec.screenshotUrl){
+        html += '<img src="'+escapeHtml(rec.screenshotUrl)+'" style="max-width:200px; border-radius:6px; margin-bottom:10px; cursor:pointer" onclick="window.open(\''+escapeHtml(rec.screenshotUrl)+'\',\'_blank\')">';
+      } else if(rec.hadScreenshot){
+        html += '<div class="stub-note" style="margin-bottom:10px">Zrzut ekranu wgrywam / niedostępny.</div>';
+      }
       if(rec.status==="wtoku"){
         html += '<div class="empty">Analizuję…</div>';
       } else if(rec.status==="blad"){
