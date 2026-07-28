@@ -13349,6 +13349,20 @@ function crmReconcileT4AFromSheet(){
           var city = (row[3]||"").toString().trim();
           var normName = normalizeName(name);
           c = active.filter(function(x){ return !x.t4aSheetRow && normalizeName(x.name)===normName && (!city || (x.city||"").trim()===city); })[0];
+          if(!c && city && normName.length>=4){
+            // Dopasowanie tolerancyjne (2026-07-28): nazwa w arkuszu Tomka bywa skrócona
+            // (np. bez miasta w nazwie, które w Bazie kontaktów jest dopisane) — przy
+            // zgodnym mieście uznajemy też "jedna nazwa zawiera drugą" za ten sam kontakt,
+            // zamiast wymagać identyczności znak w znak. Realny przypadek złapany
+            // 2026-07-28: "Pole Dance Institute" (arkusz) vs "Pole Dance Institute Wrocław"
+            // (Baza kontaktów) nigdy się nie łączyły mimo oczywistej zgodności.
+            c = active.filter(function(x){
+              if(x.t4aSheetRow) return false;
+              if((x.city||"").trim() !== city) return false;
+              var xn = normalizeName(x.name);
+              return xn.length>=4 && (xn.indexOf(normName)!==-1 || normName.indexOf(xn)!==-1);
+            })[0];
+          }
           if(c){ c.t4aSheetRow = rowNum; linkedNow++; }
         }
         if(!c) return;
