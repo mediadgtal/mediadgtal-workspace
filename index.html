@@ -13144,6 +13144,16 @@ function t4aRowFull(c){
 function crmT4ABoolify(v){
   return v===true || v==="TRUE" || v==="TAK" || v===1;
 }
+function excelSerialToISO(v){
+  // valueRenderOption=UNFORMATTED_VALUE zwraca daty jako numer seryjny Excela/Sheets
+  // (dni od 1899-12-30), a nie tekst — bez konwersji trafiał surowy numer (np. "46185")
+  // do <input type="date">, który go po prostu ignoruje jako nieprawidłową wartość.
+  if(typeof v === "number"){
+    var d = new Date(Math.round((v-25569)*86400*1000));
+    return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0")+"-"+String(d.getUTCDate()).padStart(2,"0");
+  }
+  return (v||"").toString().trim();
+}
 function crmT4AExtractUrl(formulaOrText){
   if(!formulaOrText) return "";
   var m = /HYPERLINK\(\s*"([^"]+)"/i.exec(formulaOrText);
@@ -13368,7 +13378,7 @@ function crmReconcileT4AFromSheet(){
         if(!c) return;
         var t = crmGetT4A(c);
         var sSent=crmT4ABoolify(row[10]), sOffer=crmT4ABoolify(row[11]), sDecision=crmT4ABoolify(row[12]), sListed=crmT4ABoolify(row[13]), sClient=crmT4ABoolify(row[14]);
-        var sSentDate=(row[15]||"").toString().trim(), sNotes=(row[17]||"").toString().trim();
+        var sSentDate=excelSerialToISO(row[15]), sNotes=(row[17]||"").toString().trim();
         var changed = false;
         if(sSent && !t.sent){ t.sent=true; changed=true; }
         if(sOffer && !t.offer){ t.offer=true; changed=true; }
