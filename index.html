@@ -6425,8 +6425,13 @@ function flushFinanceBackupPush(){
 
   // Osobna zakładka na każdy miesiąc (nazwa, kategoria, kwota, sposób płatności, data dodania) —
   // dokładnie jak widok "Finanse" w systemie, jeden miesiąc naraz, żeby nic nie było ze sobą pomieszane.
+  // 2026-07-28 gotcha: pierwotnie filtrowane tylko do backupYear (rok "rollover") — historyczne
+  // wpisy (2023-2025, doimportowane już w 2026) nigdy nie trafiały do żadnego arkusza, bo
+  // rollover na nowy rok zdarza się tylko naprzód w czasie, nie wstecz dla zaimportowanych
+  // danych. Damian potrzebuje pełnego pokrycia, nie estetyki "jeden plik na rok" — obejmujemy
+  // WSZYSTKIE lata obecne w financeEntries w tym samym, aktualnym arkuszu.
   var monthsPresent = Array.from(new Set(
-    state.financeEntries.filter(function(e){ return e.month.slice(0,4)===backupYear; }).map(function(e){ return e.month; })
+    state.financeEntries.map(function(e){ return e.month; })
   )).sort();
   var catOrder = FINANCE_CATEGORIES.map(function(c){return c[0];});
   function financeMonthGrid(ym){
