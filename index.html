@@ -2969,6 +2969,7 @@ function renderDashboard(el){
   html += '</div>';
 
   html += renderDashBirthdaysCard();
+  html += renderDashImieninyCard();
 
   html += '</div>'; // end grid-2
 
@@ -3255,6 +3256,37 @@ function renderDashBirthdaysCard(){
       var todayMid = new Date(); todayMid.setHours(0,0,0,0);
       var days = Math.round((birthdayNextOccurrence(upcoming) - todayMid)/86400000);
       html += '<div style="color:var(--muted); font-size:11.5px; margin-top:6px">Najbliższe: '+escapeHtml(upcoming.name)+' — za '+days+' dni</div>';
+    }
+  }
+  html += '</div>';
+  return html;
+}
+function imieninyMDToNextDate(md){
+  var t = new Date(); t.setHours(0,0,0,0);
+  var p = md.split("-");
+  var next = new Date(t.getFullYear(), (+p[0])-1, +p[1]);
+  if(next < t) next = new Date(t.getFullYear()+1, (+p[0])-1, +p[1]);
+  return next;
+}
+function renderDashImieninyCard(){
+  var data = imieninyPeopleByDay();
+  var t = new Date();
+  var todayMD = String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+  var todays = data.byDay[todayMD] || [];
+  var html = '<div class="card"><h3>Imieniny</h3>';
+  if(todays.length){
+    todays.forEach(function(e){
+      html += '<div class="taskitem"><span class="dot"></span><span class="ttitle">🎉 '+escapeHtml(e.name)+(e.relation?' — '+escapeHtml(e.relation):'')+'</span></div>';
+    });
+  } else {
+    html += '<div class="empty">Dziś nikt z Twojej listy nie ma imienin.</div>';
+    var days = Object.keys(data.byDay);
+    if(days.length){
+      var nearestMD = days.sort(function(a,b){ return imieninyMDToNextDate(a) - imieninyMDToNextDate(b); })[0];
+      var todayMid = new Date(); todayMid.setHours(0,0,0,0);
+      var diffDays = Math.round((imieninyMDToNextDate(nearestMD) - todayMid)/86400000);
+      var names = data.byDay[nearestMD].map(function(e){ return e.name; }).join(", ");
+      html += '<div style="color:var(--muted); font-size:11.5px; margin-top:6px">Najbliższe: '+escapeHtml(names)+' — za '+diffDays+' dni</div>';
     }
   }
   html += '</div>';
