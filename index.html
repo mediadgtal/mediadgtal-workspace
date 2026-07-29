@@ -2099,7 +2099,8 @@ function changeStatYear(delta){
   renderAll();
 }
 var statCats = {Wszystko:true};
-var calMonth, calYear;
+var __calInitNow = new Date();
+var calMonth = __calInitNow.getMonth(), calYear = __calInitNow.getFullYear();
 var gcalCalendars = null; // null = niepołączony; po połączeniu: [{id,name,color}]
 var gcalLoading = false;
 var gcalEventsCache = {}; // klucz "rok-miesiac" -> [{title,date,time,calendarName,calendarColor}]
