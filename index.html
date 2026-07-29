@@ -2104,6 +2104,7 @@ var gcalCalendars = null; // null = niepołączony; po połączeniu: [{id,name,c
 var gcalLoading = false;
 var gcalEventsCache = {}; // klucz "rok-miesiac" -> [{title,date,time,calendarName,calendarColor}]
 var gcalConnectError = null;
+var gcalFetchGen = 0; // licznik generacji — pozwala zignorować wynik "spóźnionego" wywołania ensureGCalCalendars() nadpisanego przez nowszą próbę (np. token odświeżony ponownie w trakcie oczekiwania na starą odpowiedź)
 var calEventRefs = [];
 var igActiveId = null, fbActiveId = null;
 
@@ -6798,14 +6799,17 @@ function ensureGCalCalendars(){
   if(!window.__gcalToken || gcalCalendars || gcalLoading) return;
   gcalLoading = true;
   gcalConnectError = null;
+  var myGen = ++gcalFetchGen;
   fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {headers:{Authorization:"Bearer "+window.__gcalToken}})
     .then(function(r){ if(r.status===401){ window.__gcalToken=null; throw new Error("401"); } return r.json(); })
     .then(function(j){
+      if(myGen !== gcalFetchGen) return; // ta próba została w międzyczasie zastąpiona nowszą (np. token odświeżony ponownie) — nie nadpisuj już aktualnego stanu spóźnioną odpowiedzią
       gcalCalendars = (j.items||[]).map(function(it){ return {id:it.id, name:it.summary, color:it.backgroundColor||"#8a8390"}; });
       gcalLoading = false;
       renderAll();
       fetchGCalEventsForVisibleMonth();
     }).catch(function(){
+      if(myGen !== gcalFetchGen) return;
       gcalLoading = false;
       gcalConnectError = "Nie udało się pobrać listy kalendarzy Google.";
       renderAll();
@@ -6909,7 +6913,11 @@ function ensureGCalDashboardEvents(){
   });
 }
 window.onGCalTokenReady = function(){
-  gcalCalendars = null; gcalEventsCache = {}; gcalDashboardCache = null; gcalConnectError = null;
+  // gcalFetchGen++ unieważnia odpowiedź jakiegokolwiek wciąż-w-locie starego fetcha
+  // (np. token odświeżony ponownie zanim poprzednia próba zdążyła się rozstrzygnąć) —
+  // gcalLoading też resetujemy tutaj, żeby ta stara próba nie blokowała startu nowej.
+  gcalFetchGen++;
+  gcalCalendars = null; gcalLoading = false; gcalEventsCache = {}; gcalDashboardCache = null; gcalConnectError = null;
   ensureGCalCalendars();
   ensureHabitsBackupSheet();
   scheduleHabitsBackupPush();
