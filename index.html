@@ -6811,6 +6811,16 @@ function ensureGCalCalendars(){
       renderAll();
     });
 }
+// Lekki retry po nieudanej próbie (błąd sieci / chwilowy 401 tuż po odświeżeniu tokenu) —
+// NIE otwiera okna logowania Google (to robi window.reconnectGCal, dla realnego braku
+// tokenu). gcalConnectError potrafił "utknąć" na stałe, bo ensureGCalCalendars() nigdy
+// więcej się nie uruchamiała, gdy gcalCalendars było już wcześniej wypełnione przez inne
+// udane wywołanie — stąd bywało widać ten sam błąd mimo realnie działającego połączenia.
+window.retryGCalCalendars = function(){
+  gcalConnectError = null;
+  ensureGCalCalendars();
+  renderAll();
+};
 function calTextColorFor(bgColor){
   var c = (bgColor||"").replace("#","");
   if(c.length===3) c = c.split("").map(function(ch){return ch+ch;}).join("");
@@ -6939,12 +6949,16 @@ function renderKalendarzGrid(el){
 
   if(!window.__gcalToken){
     html += '<div class="stub-note">Kalendarz lokalny (dane offline). <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google Calendar</a>, żeby zobaczyć i dodawać prawdziwe wydarzenia.</div>';
-  } else if(gcalLoading || (!gcalCalendars && !gcalConnectError)){
+  } else if(gcalCalendars){
+    // Realne dane mają priorytet — nawet jeśli gcalConnectError został kiedyś ustawiony
+    // przez wcześniejszą nieudaną próbę, nie chowamy za nim już działającego połączenia.
+    html += '<div class="stub-note">Połączono z Google Calendar ('+gcalCalendars.map(function(c){return escapeHtml(c.name);}).join(", ")+').</div>';
+  } else if(gcalLoading){
     html += '<div class="stub-note">Łączenie z Google Calendar…</div>';
   } else if(gcalConnectError){
-    html += '<div class="stub-note">'+escapeHtml(gcalConnectError)+' <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Spróbuj ponownie</a></div>';
+    html += '<div class="stub-note">'+escapeHtml(gcalConnectError)+' <a href="#" onclick="window.retryGCalCalendars(); return false;" style="color:var(--accent)">Spróbuj ponownie</a></div>';
   } else {
-    html += '<div class="stub-note">Połączono z Google Calendar ('+gcalCalendars.map(function(c){return escapeHtml(c.name);}).join(", ")+').</div>';
+    html += '<div class="stub-note">Łączenie z Google Calendar…</div>';
   }
 
   var legendSource = gcalCalendars || state.calendars;
