@@ -15543,9 +15543,12 @@ function flushCrmFirestorePush(){
 // z pamięci karty (np. karta/telefon "uśpiony" w tle przez wiele godzin/dni — JS i
 // nasłuch Firestore mogły zostać zawieszone przez system, więc window.state w tej karcie
 // jest zamrożony na starym stanie). Zamiast pozwolić kolejnemu zapisowi z tej karty
-// nadpisać cały dokument (setDoc bez merge) tym, co zamrożone, wymuszamy pełne przeładowanie
-// strony po powrocie z dłuższego ukrycia — gwarantuje to świeży stan z Firestore zanim
-// cokolwiek zostanie zapisane. Patrz [[feedback_close_other_tabs_before_bulk_writes]].
+// nadpisać cały dokument (setDoc bez merge) tym, co zamrożone, po powrocie z dłuższego
+// ukrycia wymuszamy sprawdzenie świeżego stanu w Firestore (reconcileFromServer,
+// zdefiniowane w startSync — ta sama funkcja co 3-minutowy interwał niżej). Celowo NIE
+// robimy tu location.reload() (dawne rozwiązanie) — to rzucało z powrotem na pulpit i
+// przerywało to, co było akurat otwarte; reconcileFromServer tylko re-renderuje na
+// świeżym stanie, zostając na tej samej zakładce. Patrz [[feedback_close_other_tabs_before_bulk_writes]].
 var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
@@ -15557,7 +15560,11 @@ document.addEventListener("visibilitychange", function(){
     var active = document.activeElement;
     var editingText = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && active.value;
     if(hiddenMs > 20000 && !editingText){
-      location.reload();
+      if(window.__reconcileFromServer){
+        window.__reconcileFromServer();
+      } else {
+        location.reload();
+      }
     }
   }
 });
@@ -15617,8 +15624,11 @@ function startSync(){
   // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
   // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
   // (getDoc) i dopiero na tej podstawie decydujemy, czy nasz lokalny stan jest
-  // faktycznie aktualny, zanim cokolwiek zostanie z tej karty zapisane.
-  setInterval(function(){
+  // faktycznie aktualny, zanim cokolwiek zostanie z tej karty zapisane. Ta sama funkcja
+  // jest też wywoływana po powrocie z ukrycia karty (patrz visibilitychange niżej) —
+  // celowo NIE robi location.reload(): tylko renderAll(), więc zostajesz na tej samej
+  // zakładce zamiast lądować z powrotem na pulpicie.
+  function reconcileFromServer(){
     if(document.visibilityState !== "visible") return;
     getDoc(docRef).then(function(snap){
       if(!snap.exists()) return;
@@ -15633,7 +15643,9 @@ function startSync(){
         window.renderAll();
       }
     }).catch(function(){});
-  }, 180000);
+  }
+  window.__reconcileFromServer = reconcileFromServer;
+  setInterval(reconcileFromServer, 180000);
 }
 
 showGate("loading");
