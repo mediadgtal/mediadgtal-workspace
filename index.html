@@ -4227,7 +4227,7 @@ var __publishingIds = {};
 function publishStatusLine(entry){
   if(!entry) return '';
   var color = entry.ok ? '#3ecf7e' : '#d1636f';
-  var text = entry.ok ? (entry.scheduled ? 'Zaplanowano ✓' : 'Opublikowano ✓') : ('Błąd — '+escapeHtml(entry.error||'nieznany błąd'));
+  var text = entry.ok ? (entry.scheduled ? 'Zaplanowano ✓' : 'Opublikowano ✓'+(entry.auto?' (automatycznie)':'')) : ('Błąd — '+escapeHtml(entry.error||'nieznany błąd'));
   return '<div style="font-size:12px; color:'+color+'; margin-top:2px">'+text+'</div>';
 }
 function postIsToday(p){ return !p.date || p.date<=todayStr(); }
@@ -4255,7 +4255,7 @@ function renderPublishSection(p){
   if(isToday){
     html += '<button class="btn small" style="margin-top:8px" '+(busyIg?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'ig\')">'+(busyIg?'Wysyłanie…':'📷 Publikuj teraz (Instagram)')+'</button>';
   } else {
-    html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Instagram nie obsługuje zaplanowanej publikacji przez API — przycisk pojawi się w dniu publikacji ('+fmtDate(p.date)+').</div>';
+    html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">📅 Zaplanowano — Instagram nie ma natywnego planowania w API, więc nasza funkcja w tle sama opublikuje ten post na Instagramie '+fmtDate(p.date)+(p.time?' o '+p.time:'')+' (sprawdza co 15 minut).</div>';
   }
   html += '</div>';
 
@@ -15398,7 +15398,7 @@ function doFbSignIn(){
       window.__fbToken = response.authResponse.accessToken;
       ensureFbPages(function(){ renderAll(); });
     }
-  }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights,pages_manage_posts,instagram_content_publish"});
+  }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights,pages_manage_posts,instagram_business_content_publish"});
 }
 window.reconnectFb = doFbSignIn;
 
