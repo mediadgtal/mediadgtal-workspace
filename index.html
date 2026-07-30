@@ -15398,7 +15398,7 @@ function doFbSignIn(){
       window.__fbToken = response.authResponse.accessToken;
       ensureFbPages(function(){ renderAll(); });
     }
-  }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights,pages_manage_posts,instagram_business_content_publish"});
+  }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights,pages_manage_posts,instagram_content_publish"});
 }
 window.reconnectFb = doFbSignIn;
 
