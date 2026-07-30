@@ -4696,7 +4696,7 @@ function openPostModal(opts){
     '<div class="field"><label>Etap</label><select id="pmStage">'+stageOptions+'</select></div>'+
     '<div class="row" style="gap:14px">'+
       '<div class="field" style="flex:1"><label>Data (opcjonalnie)</label><input type="date" id="pmDate" value="'+(opts.date||"")+'"></div>'+
-      '<div class="field" id="pmTimeWrap" style="flex:1"><label>Godzina (dla zaplanowanej publikacji na FB)</label><input type="time" id="pmTime" value="'+escapeHtml(opts.time||"")+'"></div>'+
+      '<div class="field" id="pmTimeWrap" style="flex:1"><label>Godzina publikacji</label><input type="time" id="pmTime" value="'+escapeHtml(opts.time||"")+'"></div>'+
     '</div>'+
     '<div class="field"><label>Opis na Facebooku</label><textarea id="pmCaptionFb" rows="3" placeholder="Treść publikowana pod postem na Facebooku...">'+escapeHtml(opts.captionFb||"")+'</textarea></div>'+
     '<div class="field" id="pmFirstCommentWrap"><label>Pierwszy komentarz na Facebooku (opcjonalnie — publikuje się razem z postem)</label><textarea id="pmFirstCommentFb" rows="2" placeholder="Np. link, hashtagi...">'+escapeHtml(opts.firstCommentFb||"")+'</textarea></div>'+
