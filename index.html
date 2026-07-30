@@ -6597,7 +6597,20 @@ function flushFinanceBackupPush(){
 }
 
 /* ================= ZADANIA ================= */
+function autoRolloverMonthlyTasks(){
+  var curMonth = todayStr().slice(0,7);
+  var changed = false;
+  state.tasks.forEach(function(t){
+    if(t.scope!=="miesiac" || t.done || t.deletedAt || t.recurWeekday!=null) return;
+    var d = t.completedAt || t.createdAt;
+    if(!d || d.slice(0,7)>=curMonth) return;
+    t.createdAt = curMonth+"-01";
+    changed = true;
+  });
+  if(changed) save();
+}
 function renderZadania(el){
+  autoRolloverMonthlyTasks();
   setTopActions('<button class="btn secondary" onclick="undoZad()">↺ Cofnij</button> <button class="btn" onclick="addTask()">+ Nowe zadanie</button>');
   var html = '<div class="tabsw">'+
     '<button class="'+(zadaniaSubview==="zadania"?"active":"")+'" onclick="setZadSub(\'zadania\')">Zadania</button>'+
