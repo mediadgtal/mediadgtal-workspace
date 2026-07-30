@@ -13558,7 +13558,7 @@ function crmFormatT4ARow(rowNum){
       repeatCell:{
         range:{sheetId:T4A_SHEET_GID, startRowIndex:rowNum-1, endRowIndex:rowNum, startColumnIndex:0, endColumnIndex:18},
         cell:{userEnteredFormat:{textFormat:{fontFamily:"Montserrat", fontSize:10}}},
-        fields:"userEnteredFormat.textFormat"
+        fields:"userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize"
       }
     }]})
   }).catch(function(){});
