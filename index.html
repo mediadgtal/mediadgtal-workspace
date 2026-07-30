@@ -13534,8 +13534,13 @@ function crmT4ASendFollowToday(id){
 function crmSetT4AFollowStage(id, stageId){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
-  c.t4a2Stage = stageId;
-  c.t4a2DueDate = (stageId==="follow30") ? crmAddDays(todayStr(), 30) : "";
+  if(c.t4a2Stage===stageId){
+    c.t4a2Stage = "";
+    c.t4a2DueDate = "";
+  } else {
+    c.t4a2Stage = stageId;
+    c.t4a2DueDate = (stageId==="follow30") ? crmAddDays(todayStr(), 30) : "";
+  }
   save(); renderAll();
   crmRefreshT4AFollowBlock(id);
 }
