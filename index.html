@@ -13643,12 +13643,22 @@ function crmT4AFollowDueContacts(){
     return days!==null && days>=0;
   }).sort(function(a,b){ return crmT4AFollowOverdueDays(b) - crmT4AFollowOverdueDays(a); });
 }
+function crmAdvanceReviewAfterTag(c){
+  // Skoro tool4arts jest teraz głównym torem tagowania w Przeglądzie, otagowanie
+  // przez te funkcje przesuwa "kursor" przeglądu do kolejnego pasującego kontaktu —
+  // ten sam wzorzec co wcześniej miał crmSetStatus (status marketingowy).
+  var filter = state.crmMeta.filter || "all";
+  var curIdx = state.crmContacts.indexOf(c);
+  var next = crmFindIndex(curIdx, 1, filter);
+  state.crmMeta.reviewIndex = (next===-1) ? curIdx : next;
+}
 function crmT4ASendFollowToday(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
   c.t4a2SentAt = todayStr();
   c.t4a2Stage = "";
   c.t4a2DueDate = "";
+  crmAdvanceReviewAfterTag(c);
   save(); renderAll();
   crmRefreshT4AFollowBlock(id);
 }
@@ -13662,6 +13672,7 @@ function crmSetT4AFollowStage(id, stageId){
     c.t4a2Stage = stageId;
     c.t4a2DueDate = (stageId==="follow30") ? crmAddDays(todayStr(), 30) : "";
   }
+  crmAdvanceReviewAfterTag(c);
   save(); renderAll();
   crmRefreshT4AFollowBlock(id);
 }
@@ -14627,8 +14638,9 @@ function crmSetSubview(v){ crmSubview = v; renderAll(); }
 function crmFilterMatch(c, filter){
   if(!c || c.deletedAt) return false;
   if(filter==="all") return true;
-  if(filter==="untagged") return !c.status;
-  return c.status === filter;
+  if(filter==="untagged") return !c.t4a2Stage && !c.t4a2SentAt;
+  if(filter==="sent_pending") return !c.t4a2Stage && !!c.t4a2SentAt;
+  return c.t4a2Stage === filter;
 }
 function crmFindIndex(fromIndex, dir, filter){
   var list = state.crmContacts;
@@ -14841,16 +14853,19 @@ function renderCrmPrzeglad(){
   var c = state.crmContacts[idx];
   var posInActive = activeList.indexOf(c) + 1;
 
-  var counts = {untagged:0};
-  CRM_STATUSES.forEach(function(s){ counts[s.id] = 0; });
+  var counts = {untagged:0, sent_pending:0};
+  CRM_T4A_FOLLOW_STAGES.forEach(function(s){ counts[s.id] = 0; });
   activeList.forEach(function(x){
-    if(!x.status) counts.untagged++; else counts[x.status] = (counts[x.status]||0) + 1;
+    if(x.t4a2Stage) counts[x.t4a2Stage] = (counts[x.t4a2Stage]||0) + 1;
+    else if(x.t4a2SentAt) counts.sent_pending++;
+    else counts.untagged++;
   });
 
   var html = '<div class="chiprow">';
   html += '<span class="chip'+(filter==="all"?" active":"")+'" onclick="crmSetFilter(\'all\')">Wszystkie ('+activeList.length+')</span>';
   html += '<span class="chip'+(filter==="untagged"?" active":"")+'" onclick="crmSetFilter(\'untagged\')">Nieotagowane ('+counts.untagged+')</span>';
-  CRM_STATUSES.forEach(function(s){
+  html += '<span class="chip'+(filter==="sent_pending"?" active":"")+'" onclick="crmSetFilter(\'sent_pending\')">Wysłano, czeka ('+counts.sent_pending+')</span>';
+  CRM_T4A_FOLLOW_STAGES.forEach(function(s){
     html += '<span class="chip'+(filter===s.id?" active":"")+'" onclick="crmSetFilter(\''+s.id+'\')">'+s.label+' ('+(counts[s.id]||0)+')</span>';
   });
   html += '</div>';
@@ -14858,7 +14873,7 @@ function renderCrmPrzeglad(){
   html += '<div class="card" style="max-width:560px">';
   html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">'+
     '<span style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em">Kontakt '+posInActive+' z '+activeList.length+'</span>'+
-    '<span>'+(c.status ? crmStatusTag(c.status) : '')+
+    '<span>'+(crmT4AFollowTag(c)||'')+
     ' <button class="linklike" style="font-size:16px; vertical-align:middle" title="Blisko zamknięcia" onclick="crmToggleHot(\''+c.id+'\')">'+(c.hot?'🔥':'🤍')+'</button></span>'+
     '</div>';
 
@@ -14889,7 +14904,9 @@ function renderCrmPrzeglad(){
     (c.lastContact ? '<button class="btn secondary small" onclick="crmSetLastContact(\''+c.id+'\', \'\')">✕ Wyczyść</button>' : '')+
     '</div></div>';
 
-  html += '<div class="field"><label>Status — współpraca marketingowa</label><div class="chiprow" style="margin-bottom:0">';
+  html += crmT4AFollowModalHtml(c);
+
+  html += '<div class="field"><label>Status — współpraca marketingowa (pomocniczo)</label><div class="chiprow" style="margin-bottom:0">';
   CRM_STATUSES.forEach(function(s){
     var active = c.status===s.id;
     html += '<button class="chip'+(active?" active":"")+'"'+(active?(' style="background:'+s.color+'; border-color:'+s.color+'; color:#1a1418; font-weight:700"'):'')+' onclick="crmSetStatus(\''+c.id+'\',\''+s.id+'\')">'+s.label+'</button>';
