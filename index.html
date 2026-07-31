@@ -4252,9 +4252,13 @@ function renderPublishSection(p){
     html += publishStatusLine(p.igPublishStatus);
     if(p.igPublishStatus.attemptedAt) html += '<div style="font-size:11px; color:var(--muted)">'+new Date(p.igPublishStatus.attemptedAt).toLocaleString('pl-PL')+'</div>';
   }
-  html += '<button class="btn small" style="margin-top:8px" '+(busyIg?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'ig\')">'+(busyIg?'Wysyłanie…':'📷 Publikuj teraz (Instagram)')+'</button>';
-  if(!isToday){
-    html += '<div style="font-size:11px; color:var(--muted); margin-top:6px">Instagram nie ma natywnego planowania w API — kliknij ręcznie w dniu publikacji ('+fmtDate(p.date)+(p.time?' o '+p.time:'')+').</div>';
+  var igLabel;
+  if(busyIg) igLabel = 'Wysyłanie…';
+  else if(isToday) igLabel = '📷 Publikuj teraz (Instagram)';
+  else igLabel = p.igScheduleRequested ? '✕ Anuluj zaplanowaną publikację (Instagram)' : '📅 Zaplanuj teraz (Instagram)';
+  html += '<button class="btn small" style="margin-top:8px" '+(busyIg?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'ig\')">'+igLabel+'</button>';
+  if(!isToday && p.igScheduleRequested && !p.igPublishStatus){
+    html += '<div style="font-size:11px; color:var(--muted); margin-top:6px">📅 Zaplanowano — system spróbuje opublikować automatycznie '+fmtDate(p.date)+(p.time?' o '+p.time:'')+' (dokładnie jedna próba, bez ponawiania).</div>';
   }
   html += '</div>';
 
@@ -4267,6 +4271,42 @@ function triggerPublishPost(id, target){
   var p = state.posts.filter(function(x){return x.id===id;})[0];
   if(!p) return;
   var isToday = postIsToday(p);
+  if(target==="ig" && !isToday){
+    // Instagram nie ma natywnego planowania w Graph API — dla przyszłej daty nie publikujemy
+    // teraz, tylko tworzymy jednorazowe zadanie Cloud Tasks zaplanowane dokładnie na moment
+    // publikacji (funkcje scheduleIgPublish/cancelIgSchedule). Zero cyklicznego sprawdzania
+    // w tle — zgoda jest jawna, a próba publikacji następuje dokładnie raz.
+    if(__publishingIds[key]) return;
+    if(p.igScheduleRequested){
+      if(!confirm("Anulować zaplanowaną automatyczną publikację tego posta na Instagramie?")) return;
+      __publishingIds[key] = true;
+      renderPostPreviewModal();
+      window.cancelIgScheduleFn({postId:id}).then(function(){
+        delete __publishingIds[key];
+        p.igScheduleRequested = false;
+        p.igTaskName = null;
+        renderAll(); renderPostPreviewModal();
+      }).catch(function(err){
+        delete __publishingIds[key];
+        alert("Nie udało się anulować: "+(err && err.message ? err.message : err));
+        renderAll(); renderPostPreviewModal();
+      });
+    } else {
+      if(!confirm("Zaplanować automatyczną publikację tego posta na Instagramie w dniu "+fmtDate(p.date)+(p.time?" o "+p.time:"")+"? System spróbuje opublikować go DOKŁADNIE RAZ w tym dniu — bez ponawiania prób.")) return;
+      __publishingIds[key] = true;
+      renderPostPreviewModal();
+      window.scheduleIgPublishFn({postId:id}).then(function(){
+        delete __publishingIds[key];
+        p.igScheduleRequested = true;
+        renderAll(); renderPostPreviewModal();
+      }).catch(function(err){
+        delete __publishingIds[key];
+        alert("Nie udało się zaplanować: "+(err && err.message ? err.message : err));
+        renderAll(); renderPostPreviewModal();
+      });
+    }
+    return;
+  }
   var label = target==="fb" ? "Facebooku" : "Instagramie";
   var verb = target==="fb" ? (isToday?"opublikować":"zaplanować publikację") : "opublikować";
   if(!confirm((target==="fb"?"Na pewno "+verb:"Opublikować ten post NA ŻYWO")+" na "+label+"? Tej operacji nie da się cofnąć.")) return;
@@ -4808,7 +4848,23 @@ function savePostModal(){
   var p;
   if(ctx.id){
     p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
-    if(p){ prevStage = p.stage; p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.time=time; p.captionFb=captionFb; p.firstCommentFb=firstCommentFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; p.video=video; }
+    if(p){
+      prevStage = p.stage;
+      var igScheduleStale = p.igScheduleRequested && !p.igPublishStatus && (
+        p.date!==date || p.time!==time || p.captionIg!==captionIg ||
+        JSON.stringify(p.images)!==JSON.stringify(images) || p.isCarousel!==isCarousel ||
+        p.video!==video || p.platform!==platform
+      );
+      p.title=title; p.brand=brand; p.platform=platform; p.stage=stage; p.date=date; p.time=time; p.captionFb=captionFb; p.firstCommentFb=firstCommentFb; p.captionIg=captionIg; p.images=images; p.isCarousel=isCarousel; p.fbImage=fbImage; p.video=video;
+      if(igScheduleStale){
+        // Zmiana danych posta unieważnia wcześniejszą zgodę na automatyczną publikację —
+        // zaplanowane zadanie Cloud Tasks dotyczyłoby już nieaktualnej treści/daty.
+        window.cancelIgScheduleFn({postId:p.id}).catch(function(err){ console.error("cancelIgSchedule po edycji nie powiodło się:", err); });
+        p.igScheduleRequested = false;
+        p.igTaskName = null;
+        alert('Zmieniłeś dane tego posta, więc anulowałem wcześniej zaplanowaną automatyczną publikację na Instagramie. Kliknij "Zaplanuj teraz (Instagram)" ponownie, jeśli ma się nadal opublikować automatycznie.');
+      }
+    }
   } else {
     p = {id:uid("post"), title:title, brand:brand, stage:stage, category:null, date:date, time:time, platform:platform,
       captionFb:captionFb, firstCommentFb:firstCommentFb, captionIg:captionIg, images:images, isCarousel:isCarousel, fbImage:fbImage, video:video};
@@ -4826,7 +4882,14 @@ function deletePostModal(){
   if(!ctx || !ctx.id) return;
   if(!confirm('Usunąć post "'+ctx.title+'"? Trafi do Kosza na 30 dni.')) return;
   var p = state.posts.filter(function(x){return x.id===ctx.id;})[0];
-  if(p){ p.deletedAt = todayStr(); syncContentCalendarFromPost(p); }
+  if(p){
+    if(p.igScheduleRequested && !p.igPublishStatus){
+      window.cancelIgScheduleFn({postId:p.id}).catch(function(err){ console.error("cancelIgSchedule przy usuwaniu nie powiodło się:", err); });
+      p.igScheduleRequested = false;
+      p.igTaskName = null;
+    }
+    p.deletedAt = todayStr(); syncContentCalendarFromPost(p);
+  }
   closePostModal();
   save(); renderAll();
 }
@@ -15531,6 +15594,10 @@ window.generateOutreachDraft = function(contactData){
 // 2026-07-30 — Realna publikacja postów/relacji/rolek na FB/IG (Cloud Function `publishPost`,
 // używa sekretu FB_PAGE_TOKENS już istniejącego dla cotygodniowego pobierania statystyk).
 window.publishPostFn = httpsCallable(functionsInstance, "publishPost");
+// 2026-07-31 — Planowanie publikacji na Instagramie: jednorazowe zadanie Cloud Tasks
+// utworzone w momencie kliknięcia "Zaplanuj", zero cyklicznego sprawdzania w tle.
+window.scheduleIgPublishFn = httpsCallable(functionsInstance, "scheduleIgPublish");
+window.cancelIgScheduleFn = httpsCallable(functionsInstance, "cancelIgSchedule");
 
 var gate = document.getElementById("authGate");
 var gateTitle = document.getElementById("gateTitle");
