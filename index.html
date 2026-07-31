@@ -14164,11 +14164,13 @@ function crmT4AChecklistHtml(c){
   var syncState = crmT4ASyncStatus[c.id];
   var statusLine;
   if(!connected){
-    statusLine = '<div class="stub-note" style="margin-top:8px">Nie połączono z Google — <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">połącz</a>, aby synchronizować z arkuszem Tomka. Zaznaczenia zapisują się lokalnie.</div>';
+    statusLine = '<div class="stub-note" style="margin-top:8px">Nie połączono z Google — <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">połącz</a>, aby synchronizować z arkuszem Tomka. Zaznaczenia zapisują się lokalnie i wyślą się automatycznie po połączeniu (sprawdzane co 45 sek.).</div>';
   } else if(syncState==="syncing"){
     statusLine = '<div style="font-size:11.5px; color:var(--muted); margin-top:8px">Synchronizuję z arkuszem…</div>';
   } else if(syncState==="error"){
-    statusLine = '<div style="font-size:11.5px; color:var(--danger); margin-top:8px">Błąd synchronizacji — spróbuję ponownie przy następnej zmianie.</div>';
+    statusLine = '<div style="font-size:11.5px; color:var(--danger); margin-top:8px">Błąd synchronizacji — ponawiam automatycznie co 45 sek.</div>';
+  } else if(c.t4aDirty){
+    statusLine = '<div style="font-size:11.5px; color:var(--accent); margin-top:8px">⏳ Oczekuje na wysłanie do arkusza Tomka…</div>';
   } else if(c.t4aSheetRow){
     statusLine = '<div style="font-size:11.5px; color:#63b58a; margin-top:8px">Zsynchronizowano z arkuszem Tomka (wiersz '+c.t4aSheetRow+') ✓</div>';
   } else {
@@ -15497,7 +15499,7 @@ function init(){
   load();
   renderAll();
   injectCrosshairCSS();
-  setInterval(function(){ crmT4ALastPull = Date.now(); crmPullT4AStatuses(); }, 45000);
+  setInterval(function(){ crmT4ALastPull = Date.now(); crmPullT4AStatuses(); crmFlushPendingT4ASync(); }, 45000);
 }
 init();
 </script>
