@@ -4252,10 +4252,9 @@ function renderPublishSection(p){
     html += publishStatusLine(p.igPublishStatus);
     if(p.igPublishStatus.attemptedAt) html += '<div style="font-size:11px; color:var(--muted)">'+new Date(p.igPublishStatus.attemptedAt).toLocaleString('pl-PL')+'</div>';
   }
-  if(isToday){
-    html += '<button class="btn small" style="margin-top:8px" '+(busyIg?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'ig\')">'+(busyIg?'Wysyłanie…':'📷 Publikuj teraz (Instagram)')+'</button>';
-  } else {
-    html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">📅 Zaplanowano — Instagram nie ma natywnego planowania w API, więc nasza funkcja w tle sama opublikuje ten post na Instagramie '+fmtDate(p.date)+(p.time?' o '+p.time:'')+' (sprawdza co 15 minut).</div>';
+  html += '<button class="btn small" style="margin-top:8px" '+(busyIg?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'ig\')">'+(busyIg?'Wysyłanie…':'📷 Publikuj teraz (Instagram)')+'</button>';
+  if(!isToday){
+    html += '<div style="font-size:11px; color:var(--muted); margin-top:6px">Instagram nie ma natywnego planowania w API — kliknij ręcznie w dniu publikacji ('+fmtDate(p.date)+(p.time?' o '+p.time:'')+').</div>';
   }
   html += '</div>';
 
