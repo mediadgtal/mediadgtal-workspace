@@ -984,14 +984,15 @@ function renderDroga(el){
   var d = state.droga;
   var sub = d.subtab || "sprint";
 
-  var html = '<div class="tabsw">'+
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
+  html += '<div class="tabsw" style="margin-bottom:0">'+
     ['sprint','wizja','rytualy','nagrody','zasady','skrypty'].map(function(s){
       var labels = {sprint:"Sprint Q3", wizja:"Wizja", rytualy:"Rytuały", nagrody:"Nagrody", zasady:"Zasady", skrypty:"Skrypty"};
       return '<button class="'+(sub===s?"active":"")+'" onclick="drogaSetSubtab(\''+s+'\')">'+labels[s]+'</button>';
     }).join('')+
     '</div>';
-
   html += renderDrogaBackupStatus();
+  html += '</div>';
 
   if(sub==="sprint"){
     var ym = todayStr().slice(0,7);
@@ -6340,6 +6341,26 @@ function changeFinanceYear(delta){
   if(financeTab && financeTab!=="TOTAL"){ financeTab = financeYear+"-"+financeTab.split("-")[1]; }
   renderAll();
 }
+// 2026-07-31 — Kompaktowy wskaźnik kopii zapasowej, obok zakładek modułu zamiast
+// pełnowidocznego banera zajmującego osobną linię (Damian: "to jest tylko informacja").
+// Ten sam kształt danych używany we wszystkich modułach z backupem (Nawyki/Zadania/
+// Finanse/Klienci/Obsługa Klientów/Droga/Baza kontaktów) — cfg.actions to lista
+// dodatkowych przycisków (Sprawdź 1:1 / Przywróć braki / Wymuś synchronizację itp.),
+// bo różnią się między modułami; sam status+link do arkusza jest identyczny wszędzie.
+function renderBackupBadge(cfg){
+  if(!cfg.connected){
+    return '<span class="linklike" style="font-size:11px; color:var(--muted); white-space:nowrap" title="Kopia zapasowa w Google Sheets wyłączona — kliknij, aby połączyć z Google" onclick="window.reconnectGCal(); return false;">⚠ Backup wyłączony</span>';
+  }
+  if(!cfg.sheetId){
+    return '<span style="font-size:11px; color:var(--muted); white-space:nowrap">Tworzę kopię…</span>';
+  }
+  var html = '<a href="'+escapeHtml(cfg.sheetUrl||"#")+'" target="_blank" class="linklike" style="font-size:11px; color:'+(cfg.error?"var(--danger)":"#8fce8f")+'; white-space:nowrap" title="'+(cfg.error?"Ostatnia synchronizacja nie powiodła się, spróbuję ponownie":"Kopia zapasowa aktywna")+' — kliknij, aby otworzyć arkusz">'+(cfg.error?"⚠":"✓")+' Backup</a>';
+  (cfg.actions||[]).forEach(function(a){
+    var title = a.title + (a.result ? " — "+a.result : "");
+    html += ' <button type="button" class="linklike" style="font-size:11px'+(a.danger?"; color:var(--danger)":"")+'" title="'+escapeHtml(title)+'" '+(a.disabled?"disabled":"")+' onclick="'+a.onclick+'">'+a.icon+'</button>';
+  });
+  return html;
+}
 function renderFinanse(el){
   ensureRecurringFirmoweEntries();
   var now = new Date();
@@ -6349,23 +6370,20 @@ function renderFinanse(el){
   var yr = String(financeYear);
 
   var html = '';
-  if(!window.__gcalToken){
-    html += '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
-  } else if(!state.financeBackupSheetId){
-    html += '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
-    ensureFinanceBackupSheet();
-  } else {
-    html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
-      (financeBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-      ' — <a href="'+state.financeBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
-      ' <button class="btn secondary small" style="margin-left:8px" onclick="financeVerify1to1()"'+(financeVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
-      (financeVerifyResult ? ' <span style="color:'+(financeVerifyResult.sheetTotal!==financeVerifyResult.localTotal?"var(--danger)":"#8fce8f")+'">(arkusz: '+financeVerifyResult.sheetTotal+', lokalnie: '+financeVerifyResult.localTotal+')</span>' : '')+
-      '</div>';
-  }
+  if(window.__gcalToken && !state.financeBackupSheetId) ensureFinanceBackupSheet();
 
-  html += '<div class="tabsw">';
+  html += '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
+  html += '<div class="tabsw" style="margin-bottom:0">';
   FINANCE_CATEGORIES.forEach(function(c){
     html += '<button class="'+(financeSubview===c[0]?"active":"")+'" onclick="setFinanceSubview(\''+c[0]+'\')">'+c[1]+'</button>';
+  });
+  html += '</div>';
+  html += renderBackupBadge({
+    connected: !!window.__gcalToken, sheetId: state.financeBackupSheetId, sheetUrl: state.financeBackupSheetUrl,
+    error: financeBackupStatus==="error",
+    actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: financeVerifyStatus==="loading", onclick:"financeVerify1to1()",
+      danger: !!(financeVerifyResult && financeVerifyResult.sheetTotal!==financeVerifyResult.localTotal),
+      result: financeVerifyResult ? ("arkusz: "+financeVerifyResult.sheetTotal+", lokalnie: "+financeVerifyResult.localTotal) : null}]
   });
   html += '</div>';
 
@@ -6711,14 +6729,16 @@ function autoRolloverMonthlyTasks(){
 function renderZadania(el){
   autoRolloverMonthlyTasks();
   setTopActions('<button class="btn secondary" onclick="undoZad()">↺ Cofnij</button> <button class="btn" onclick="addTask()">+ Nowe zadanie</button>');
-  var html = '<div class="tabsw">'+
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
+  html += '<div class="tabsw" style="margin-bottom:0">'+
     '<button class="'+(zadaniaSubview==="zadania"?"active":"")+'" onclick="setZadSub(\'zadania\')">Zadania</button>'+
     '<button class="'+(zadaniaSubview==="baza"?"active":"")+'" onclick="setZadSub(\'baza\')">Baza</button>'+
     '<button class="'+(zadaniaSubview==="wykonane"?"active":"")+'" onclick="setZadSub(\'wykonane\')">Wykonane</button>'+
     '<button class="'+(zadaniaSubview==="usuniete"?"active":"")+'" onclick="setZadSub(\'usuniete\')">Usunięte</button>'+
     '</div>';
-
   html += renderTasksBackupStatus();
+  html += '</div>';
+
   html += renderZadSearchSortBar();
 
   if(zadaniaSubview==="baza"){
@@ -7658,26 +7678,22 @@ function renderNawyki(el){
   var yr = String(nawykiYear);
 
   var html = '';
-  if(!window.__gcalToken){
-    html += '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup (osobny arkusz, nie dotyka Twojego oryginalnego Arkusza zadań 2026).</div>';
-  } else if(!state.habitsBackupSheetId){
-    html += '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
-    ensureHabitsBackupSheet();
-  } else {
-    html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
-      (habitsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-      ' — <a href="'+state.habitsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
-      ' <button class="btn secondary small" style="margin-left:8px" onclick="nawykiRestoreFromBackup()"'+(nawykiRestoreStatus==="loading"?" disabled":"")+'>🔄 '+(nawykiRestoreStatus==="loading"?"Sprawdzam arkusz…":"Przywróć braki z kopii zapasowej")+'</button>'+
-      (nawykiRestoreResult ? ' <span style="color:#8fce8f">(uzupełniono '+nawykiRestoreResult.restored+' zaznaczeń)</span>' : '')+
-      (nawykiRestoreStatus==="error" ? ' <span style="color:var(--danger)">nie udało się odczytać arkusza</span>' : '')+
-      '</div>';
-  }
+  if(window.__gcalToken && !state.habitsBackupSheetId) ensureHabitsBackupSheet();
 
-  html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
+  html += '<div class="row" style="margin-bottom:10px; gap:10px; justify-content:space-between; flex-wrap:wrap">'+
+    '<div class="row" style="gap:10px">'+
     '<span style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Rok</span>'+
     '<button class="btn secondary small" onclick="changeNawykiYear(-1)">◀</button>'+
     '<b style="font-size:14px; min-width:40px; text-align:center">'+yr+'</b>'+
     '<button class="btn secondary small" onclick="changeNawykiYear(1)">▶</button>'+
+    '</div>'+
+    renderBackupBadge({
+      connected: !!window.__gcalToken, sheetId: state.habitsBackupSheetId, sheetUrl: state.habitsBackupSheetUrl,
+      error: habitsBackupStatus==="error",
+      actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", disabled: nawykiRestoreStatus==="loading", onclick:"nawykiRestoreFromBackup()",
+        danger: nawykiRestoreStatus==="error",
+        result: nawykiRestoreResult ? ("uzupełniono "+nawykiRestoreResult.restored+" zaznaczeń") : (nawykiRestoreStatus==="error" ? "nie udało się odczytać arkusza" : null)}]
+    })+
     '</div>';
 
   html += '<div class="chiprow">';
@@ -8404,11 +8420,14 @@ function renderClientOps(el){
   var topBtns = '<button class="btn secondary" onclick="undoClientOps()">↺ Cofnij</button>';
   topBtns += ' <button class="btn" onclick="openClientOpsClientModal(null)">+ Dodaj klienta</button>';
   setTopActions(topBtns);
-  var html = '<div class="tabsw">'+
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
+  html += '<div class="tabsw" style="margin-bottom:0">'+
     '<button class="'+(clientOpsView==="dashboard"?"active":"")+'" onclick="setClientOpsView(\'dashboard\')">Dashboard</button>'+
     '<button class="'+(clientOpsView==="lista"?"active":"")+'" onclick="setClientOpsView(\'lista\')">Lista klientów</button>'+
     (clientOpsView==="karta" ? '<button class="active">Karta klienta</button>' : '')+
     '</div>';
+  html += renderClientOpsBackupStatus();
+  html += '</div>';
   if(clientOpsView==="karta" && clientOpsActiveClientId){
     html += renderClientOpsKarta(clientOpsActiveClientId);
   } else if(clientOpsView==="lista"){
@@ -9196,25 +9215,19 @@ function flushClientOpsBackupPush(){
   }).catch(function(){ clientOpsBackupStatus = "error"; });
 }
 function renderClientOpsBackupStatus(){
-  if(!window.__gcalToken){
-    return '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
-  }
-  if(!state.clientOpsBackupSheetId){
-    ensureClientOpsBackupSheet();
-    return '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
-  }
-  var resultTxt = '';
+  if(window.__gcalToken && !state.clientOpsBackupSheetId) ensureClientOpsBackupSheet();
+  var resultTxt = null, mismatch = false;
   if(clientOpsVerifyResult){
-    var mismatch = Object.keys(clientOpsVerifyResult.localCounts).some(function(k){ return clientOpsVerifyResult.localCounts[k]!==clientOpsVerifyResult.sheetCounts[k]; });
-    resultTxt = ' <span style="color:'+(mismatch?"var(--danger)":"#8fce8f")+'">('+Object.keys(clientOpsVerifyResult.localCounts).map(function(k){
+    mismatch = Object.keys(clientOpsVerifyResult.localCounts).some(function(k){ return clientOpsVerifyResult.localCounts[k]!==clientOpsVerifyResult.sheetCounts[k]; });
+    resultTxt = Object.keys(clientOpsVerifyResult.localCounts).map(function(k){
       return k+": "+clientOpsVerifyResult.sheetCounts[k]+"/"+clientOpsVerifyResult.localCounts[k];
-    }).join(", ")+')</span>';
+    }).join(", ");
   }
-  return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
-    (clientOpsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-    ' — <a href="'+state.clientOpsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
-    ' <button class="btn secondary small" style="margin-left:8px" onclick="clientOpsVerify1to1()"'+(clientOpsVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
-    resultTxt+'</div>';
+  return renderBackupBadge({
+    connected: !!window.__gcalToken, sheetId: state.clientOpsBackupSheetId, sheetUrl: state.clientOpsBackupSheetUrl,
+    error: clientOpsBackupStatus==="error",
+    actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: clientOpsVerifyStatus==="loading", onclick:"clientOpsVerify1to1()", danger: mismatch, result: resultTxt}]
+  });
 }
 
 /* ================= Kopia zapasowa Zadań i Drogi (2026-07-28) =================
@@ -9321,23 +9334,23 @@ function tasksForceSyncTwoWay(){
     }).catch(function(){ tasksVerifyStatus="error"; renderAll(); });
 }
 function renderTasksBackupStatus(){
-  if(!window.__gcalToken){
-    return '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
-  }
-  if(!state.tasksBackupSheetId){
-    ensureTasksBackupSheet();
-    return '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
-  }
-  var verifyBtns = ' <button class="btn secondary small" style="margin-left:8px" onclick="tasksVerify1to1()"'+(tasksVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
-    ' <button class="btn secondary small" onclick="tasksForceSyncTwoWay()"'+(tasksVerifyStatus==="loading"?" disabled":"")+'>🔄 Wymuś synchronizację</button>';
-  var resultTxt = '';
+  if(window.__gcalToken && !state.tasksBackupSheetId) ensureTasksBackupSheet();
+  var resultTxt = null, danger = false;
   if(tasksVerifyResult){
-    if(tasksVerifyResult.restoredFromSheet!=null) resultTxt = ' <span style="color:#8fce8f">(dopisano '+tasksVerifyResult.restoredFromSheet+' z arkusza; arkusz:'+tasksVerifyResult.sheetTotal+' lokalnie:'+tasksVerifyResult.localTotal+')</span>';
-    else resultTxt = ' <span style="color:'+(tasksVerifyResult.missingInSheet||tasksVerifyResult.missingLocally?"var(--danger)":"#8fce8f")+'">(arkusz: '+tasksVerifyResult.sheetTotal+', lokalnie: '+tasksVerifyResult.localTotal+', brakuje w arkuszu: '+tasksVerifyResult.missingInSheet+', brakuje lokalnie: '+tasksVerifyResult.missingLocally+')</span>';
+    if(tasksVerifyResult.restoredFromSheet!=null) resultTxt = "dopisano "+tasksVerifyResult.restoredFromSheet+" z arkusza; arkusz:"+tasksVerifyResult.sheetTotal+" lokalnie:"+tasksVerifyResult.localTotal;
+    else {
+      danger = !!(tasksVerifyResult.missingInSheet || tasksVerifyResult.missingLocally);
+      resultTxt = "arkusz: "+tasksVerifyResult.sheetTotal+", lokalnie: "+tasksVerifyResult.localTotal+", brakuje w arkuszu: "+tasksVerifyResult.missingInSheet+", brakuje lokalnie: "+tasksVerifyResult.missingLocally;
+    }
   }
-  return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
-    (tasksBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-    ' — <a href="'+state.tasksBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+verifyBtns+resultTxt+'</div>';
+  return renderBackupBadge({
+    connected: !!window.__gcalToken, sheetId: state.tasksBackupSheetId, sheetUrl: state.tasksBackupSheetUrl,
+    error: tasksBackupStatus==="error",
+    actions: [
+      {icon:"🔍", title:"Sprawdź 1:1", disabled: tasksVerifyStatus==="loading", onclick:"tasksVerify1to1()", danger: danger, result: resultTxt},
+      {icon:"🔄", title:"Wymuś synchronizację", disabled: tasksVerifyStatus==="loading", onclick:"tasksForceSyncTwoWay()"}
+    ]
+  });
 }
 
 var drogaBackupSyncTimer = null;
@@ -9428,19 +9441,13 @@ function drogaRestoreFromBackup(){
 }
 var drogaBackupResult = null;
 function renderDrogaBackupStatus(){
-  if(!window.__gcalToken){
-    return '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup.</div>';
-  }
-  if(!state.drogaBackupSheetId){
-    ensureDrogaBackupSheet();
-    return '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
-  }
-  return '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
-    (drogaBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-    ' — <a href="'+state.drogaBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
-    ' <button class="btn secondary small" style="margin-left:8px" onclick="drogaRestoreFromBackup()">🔄 Przywróć braki z kopii zapasowej</button>'+
-    (drogaBackupResult ? ' <span style="color:#8fce8f">(uzupełniono '+drogaBackupResult.restored+' pól)</span>' : '')+
-    '</div>';
+  if(window.__gcalToken && !state.drogaBackupSheetId) ensureDrogaBackupSheet();
+  return renderBackupBadge({
+    connected: !!window.__gcalToken, sheetId: state.drogaBackupSheetId, sheetUrl: state.drogaBackupSheetUrl,
+    error: drogaBackupStatus==="error",
+    actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", onclick:"drogaRestoreFromBackup()",
+      result: drogaBackupResult ? ("uzupełniono "+drogaBackupResult.restored+" pól") : null}]
+  });
 }
 
 /* ---- Dashboard modułu (sekcja 5.1) ---- */
@@ -9493,8 +9500,6 @@ function renderClientOpsDashboard(){
   html += '</div>';
   html += renderClientOpsWeekCalendar();
   html += '</div>';
-
-  html += '<div class="card" style="margin-top:16px"><h3>Kopia zapasowa modułu</h3>'+renderClientOpsBackupStatus()+'</div>';
   return html;
 }
 function renderClientOpsWeekCalendar(){
@@ -12776,25 +12781,22 @@ function renderKlienci(el){
   setTopActions(topBtns);
 
   var html = '';
-  if(!window.__gcalToken){
-    html += '<div class="stub-note">Kopia zapasowa w Google Sheets wyłączona. <a href="#" onclick="window.reconnectGCal(); return false;" style="color:var(--accent)">Połącz z Google</a>, żeby włączyć automatyczny backup (osobny arkusz, nie dotyka Twojej Bazy Klientów Agencji 2026).</div>';
-  } else if(!state.clientsBackupSheetId){
-    html += '<div class="stub-note">Tworzę arkusz kopii zapasowej…</div>';
-    ensureClientsBackupSheet();
-  } else {
-    html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
-      (clientsBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-      ' — <a href="'+state.clientsBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
-      ' <button class="btn secondary small" style="margin-left:8px" onclick="clientsVerify1to1()"'+(clientsVerifyStatus==="loading"?" disabled":"")+'>🔍 Sprawdź 1:1</button>'+
-      (clientsVerifyResult ? ' <span style="color:'+(clientsVerifyResult.sheetTotal!==clientsVerifyResult.localTotal?"var(--danger)":"#8fce8f")+'">(arkusz: '+clientsVerifyResult.sheetTotal+', lokalnie: '+clientsVerifyResult.localTotal+')</span>' : '')+
-      '</div>';
-  }
+  if(window.__gcalToken && !state.clientsBackupSheetId) ensureClientsBackupSheet();
 
-  html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
+  html += '<div class="row" style="margin-bottom:10px; gap:10px; justify-content:space-between; flex-wrap:wrap">'+
+    '<div class="row" style="gap:10px">'+
     '<span style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Rok</span>'+
     '<button class="btn secondary small" onclick="changeKlienciYear(-1)">◀</button>'+
     '<b style="font-size:14px; min-width:40px; text-align:center">'+yr+'</b>'+
     '<button class="btn secondary small" onclick="changeKlienciYear(1)">▶</button>'+
+    '</div>'+
+    renderBackupBadge({
+      connected: !!window.__gcalToken, sheetId: state.clientsBackupSheetId, sheetUrl: state.clientsBackupSheetUrl,
+      error: clientsBackupStatus==="error",
+      actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: clientsVerifyStatus==="loading", onclick:"clientsVerify1to1()",
+        danger: !!(clientsVerifyResult && clientsVerifyResult.sheetTotal!==clientsVerifyResult.localTotal),
+        result: clientsVerifyResult ? ("arkusz: "+clientsVerifyResult.sheetTotal+", lokalnie: "+clientsVerifyResult.localTotal) : null}]
+    })+
     '</div>';
 
   html += '<div class="chiprow">';
@@ -14740,45 +14742,34 @@ function renderCRM(el){
   if(window.__gcalToken && Date.now()-crmT4ALastPull>45000){ crmT4ALastPull = Date.now(); crmPullT4AStatuses(); }
   setTopActions('<button class="btn secondary" onclick="crmUndo()">↺ Cofnij</button> <button class="btn secondary" onclick="crmAddCategory()">+ Dodaj kategorię</button> <button class="btn" onclick="openCrmModal()">+ Dodaj klienta</button>');
   var koszCount = state.crmContacts.filter(function(c){ return c.deletedAt; }).length;
-  var html = '<div class="tabsw">'+
+  if(window.__gcalToken && !state.crmBackupSheetId) ensureCrmBackupSheet();
+  var reconcileResult = null;
+  if(crmT4AReconcileStatus==="done" && crmT4AReconcileResult){
+    reconcileResult = "sprawdzono "+crmT4AReconcileResult.rows+" wierszy — uzupełniono "+crmT4AReconcileResult.restored+" kontaktów"+(crmT4AReconcileResult.linkedNow?", w tym "+crmT4AReconcileResult.linkedNow+" na nowo powiązanych":"");
+  } else if(crmT4AReconcileStatus==="error"){
+    reconcileResult = "błąd połączenia z arkuszem — spróbuj ponownie";
+  }
+
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
+  html += '<div class="tabsw" style="margin-bottom:0">'+
     '<button class="'+(crmSubview==="priorytety"?"active":"")+'" onclick="crmSetSubview(\'priorytety\')">Priorytety</button>'+
     '<button class="'+(crmSubview==="baza"?"active":"")+'" onclick="crmSetSubview(\'baza\')">Baza</button>'+
     '<button class="'+(crmSubview==="przeglad"?"active":"")+'" onclick="crmSetSubview(\'przeglad\')">Przegląd</button>'+
     '<button class="'+(crmSubview==="import"?"active":"")+'" onclick="crmSetSubview(\'import\')">Import</button>'+
     '<button class="'+(crmSubview==="kosz"?"active":"")+'" onclick="crmSetSubview(\'kosz\')">Kosz'+(koszCount?" ("+koszCount+")":"")+'</button>'+
     '</div>';
-
-  if(window.__gcalToken){
-    if(!state.crmBackupSheetId){
-      html += '<div class="stub-note">Tworzę arkusz kopii zapasowej Bazy kontaktów…</div>';
-      ensureCrmBackupSheet();
-    } else {
-      html += '<div class="stub-note" style="border-color:rgba(130,200,140,.3); background:rgba(130,200,140,.08); color:#8fce8f">✓ Kopia zapasowa aktywna'+
-        (crmBackupStatus==="error"?' <span style="color:var(--danger)">(ostatnia synchronizacja nie powiodła się, spróbuję ponownie)</span>':'')+
-        ' — <a href="'+state.crmBackupSheetUrl+'" target="_blank" style="color:#8fce8f; text-decoration:underline">otwórz arkusz</a>'+
-        ' <button class="btn secondary small" style="margin-left:8px" onclick="crmRestoreFromOwnBackup()"'+(crmOwnRestoreStatus==="loading"?" disabled":"")+'>🔄 '+(crmOwnRestoreStatus==="loading"?"Sprawdzam arkusz…":"Przywróć braki z kopii zapasowej")+'</button>'+
-        (crmOwnRestoreResult ? ' <span style="color:#8fce8f">(uzupełniono '+crmOwnRestoreResult.restored+' pól w '+crmOwnRestoreResult.contacts+' kontaktach)</span>' : '')+
-        (crmOwnRestoreStatus==="error" ? ' <span style="color:var(--danger)">nie udało się odczytać arkusza</span>' : '')+
-        '</div>';
-    }
-  }
-
-  html += '<div class="stub-note" style="margin-bottom:16px">'+
-    '<button class="btn secondary small" onclick="crmReconcileT4AFromSheet()"'+(crmT4AReconcileStatus==="loading"?" disabled":"")+'>🔄 '+(crmT4AReconcileStatus==="loading"?"Sprawdzam arkusz Tomka…":"Sprawdź arkusz Tomka i uzupełnij brakujące zaznaczenia")+'</button>'+
-    '<div style="font-size:11.5px; color:var(--muted); margin-top:6px">Dociąga wstecznie z arkusza Tomka zaznaczenia tool4arts (Wysłano/Oferta/Decyzja/Lista/Klient + data + notatki), których brakuje lokalnie — także dla kontaktów, którym zgubiło się powiązanie z wierszem. Nigdy nie cofa zaznaczeń, tylko uzupełnia braki.</div>'+
-    (crmT4AReconcileStatus==="done" && crmT4AReconcileResult ? '<div style="font-size:12.5px; color:#8fce8f; margin-top:6px">✓ Sprawdzono '+crmT4AReconcileResult.rows+' wierszy arkusza — przywrócono/uzupełniono '+crmT4AReconcileResult.restored+' kontaktów'+(crmT4AReconcileResult.linkedNow?', w tym '+crmT4AReconcileResult.linkedNow+' na nowo powiązanych z wierszem':'')+'.</div>' : '')+
-    (crmT4AReconcileStatus==="error" ? '<div style="font-size:12.5px; color:var(--danger); margin-top:6px">Błąd połączenia z arkuszem — spróbuj ponownie.</div>' : '')+
-    '</div>';
-
-  var active = crmActiveContacts();
-  var total = active.length;
-  var tagged = active.filter(function(c){ return !!c.status; }).length;
-  var pct = total ? Math.round(tagged/total*100) : 0;
-  html += '<div class="card" style="margin-bottom:16px">'+
-    '<div class="progress-label"><span>Otagowane kontakty</span><span>'+tagged+' / '+total+' ('+pct+'%)</span></div>'+
-    '<div class="habit-bar" style="margin-bottom:0"><div style="width:'+pct+'%"></div></div>'+
-    (total ? '' : '<div class="empty" style="margin-top:10px; padding:0">Baza jest pusta — zaimportuj kontakty w zakładce "Import" albo dodaj kontakt ręcznie.</div>')+
-    '</div>';
+  html += renderBackupBadge({
+    connected: !!window.__gcalToken, sheetId: state.crmBackupSheetId, sheetUrl: state.crmBackupSheetUrl,
+    error: crmBackupStatus==="error",
+    actions: [
+      {icon:"🔄", title:"Przywróć braki z kopii zapasowej", disabled: crmOwnRestoreStatus==="loading", onclick:"crmRestoreFromOwnBackup()",
+        danger: crmOwnRestoreStatus==="error",
+        result: crmOwnRestoreResult ? ("uzupełniono "+crmOwnRestoreResult.restored+" pól w "+crmOwnRestoreResult.contacts+" kontaktach") : (crmOwnRestoreStatus==="error" ? "nie udało się odczytać arkusza" : null)},
+      {icon:"📋", title:"Sprawdź arkusz Tomka i uzupełnij brakujące zaznaczenia", disabled: crmT4AReconcileStatus==="loading", onclick:"crmReconcileT4AFromSheet()",
+        danger: crmT4AReconcileStatus==="error", result: reconcileResult}
+    ]
+  });
+  html += '</div>';
 
   html += (crmSubview==="import") ? renderCrmImport() : (crmSubview==="priorytety" ? renderCrmPriorytety() : (crmSubview==="kosz" ? renderCrmKosz() : (crmSubview==="baza" ? renderCrmBaza() : renderCrmPrzeglad())));
   el.innerHTML = html;
@@ -15347,8 +15338,7 @@ function renderCrmPriorytety(){
     (t4aDue.length ? t4aDue.map(crmT4AFollowRow).join("") : '<div class="empty">Brak zaległych follow-upów tool4arts na dziś.</div>')+
     '</div>';
   var sections = [
-    {label:"Follow-upy (marketing)", list:b.followup, empty:"Brak rozmów czekających na follow-up."},
-    {label:"Nowe kontakty", list:b.nowe, empty:"Brak nowych, nieotagowanych kontaktów."}
+    {label:"Follow-upy (marketing)", list:b.followup, empty:"Brak rozmów czekających na follow-up."}
   ];
   sections.forEach(function(s){
     html += '<div class="card" style="margin-bottom:16px">'+
