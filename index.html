@@ -15295,13 +15295,13 @@ function crmDailyBriefing(){
   crmT4AFollowDueContacts().forEach(function(c){
     var overdue = crmT4AFollowOverdueDays(c);
     var suffix = overdue>0 ? ' (spóźnione o '+overdue+' dni)' : ' (dziś)';
-    items.push({tier:0, days:overdue, id:c.id, text:'🎯 <b style="color:#fff">'+escapeHtml(c.name)+'</b> — wyślij follow-up tool4arts'+suffix+'.'});
+    items.push({tier:0, days:overdue, id:c.id, text:'🎯 <b style="color:#fff; cursor:pointer" onclick="openCrmModal(\''+c.id+'\')">'+escapeHtml(c.name)+'</b> — wyślij follow-up tool4arts'+suffix+'.'});
   });
   crmActiveContacts().forEach(function(c){
     if(c.status==="klient" || c.status==="odrzucili") return;
     var days = crmDaysSince(c);
     if(c.status==="w_rozmowie" && days>=4){
-      items.push({tier:1, days:days, id:c.id, text:'<b style="color:#fff">'+escapeHtml(c.name)+'</b> — zrób follow-up marketingowy: rozmowa w toku, cisza od '+days+' dni.'});
+      items.push({tier:1, days:days, id:c.id, text:'<b style="color:#fff; cursor:pointer" onclick="openCrmModal(\''+c.id+'\')">'+escapeHtml(c.name)+'</b> — zrób follow-up marketingowy: rozmowa w toku, cisza od '+days+' dni.'});
     }
   });
   items.sort(function(a,b){ return (a.tier-b.tier) || (b.days-a.days); });
