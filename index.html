@@ -13617,7 +13617,14 @@ function crmAddDays(dateStr, n){
 }
 function crmT4AFollowDueDate(c){
   if(c.t4a2Stage==="follow30") return c.t4a2DueDate||"";
-  if(!c.t4a2Stage && c.t4a2SentAt) return crmAddDays(c.t4a2SentAt, 7);
+  if(!c.t4a2Stage && c.t4a2SentAt){
+    // Licz termin od realnej daty ostatniego kontaktu (c.lastContact), nie od kliknięcia
+    // "Wysłano follow-up dziś" — to drugie bywa spóźnione względem faktycznego kontaktu
+    // i fałszywie przesuwa termin w przyszłość. Fallback na t4a2SentAt tylko gdy lastContact
+    // nigdy nie było ustawione.
+    var base = c.lastContact || c.t4a2SentAt;
+    return crmAddDays(base, 7);
+  }
   return "";
 }
 // 0 = termin dziś, >0 = tyle dni po terminie (pokazywane na czerwono jako "-N"), null = brak terminu
@@ -14124,6 +14131,7 @@ function crmT4AFollowModalHtml(c){
     '<div style="background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px">'+
     '<div>'+tag+'</div>'+
     (c.t4a2SentAt ? '<div style="font-size:11.5px; color:var(--muted); margin-top:4px">Ostatnia wiadomość: '+fmtDate(c.t4a2SentAt)+'</div>' : '')+
+    (c.t4a2SentAt && !c.t4a2Stage && c.lastContact && c.lastContact!==c.t4a2SentAt ? '<div style="font-size:11.5px; color:var(--muted); margin-top:2px">Termin liczony od daty ostatniego kontaktu: '+fmtDate(c.lastContact)+'</div>' : '')+
     dueLine+
     '<div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap">'+
     '<button type="button" class="btn small" onclick="crmT4ASendFollowToday(\''+c.id+'\')">'+(c.t4a2SentAt?"Wysłano follow-up dziś":"Wysłano 1. wiadomość dziś")+'</button>'+
