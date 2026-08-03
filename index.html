@@ -13981,27 +13981,33 @@ function crmPushT4ARow(c){
     }).then(function(data){
       var cell = ((data.values && data.values[0] && data.values[0][0]) || "").toString().trim().toLowerCase();
       var expected = (c.name||"").trim().toLowerCase();
-      if(cell !== expected){
-        // Niezgodność ma dwa możliwe źródła: (a) ktoś naprawdę przesunął wiersze w arkuszu
-        // Tomka (wstawił/usunął wiersz) - wtedy trzeba dopasować od nowa, albo (b) to Ty
-        // po prostu zmieniłeś nazwę TEGO kontaktu w aplikacji - wiersz nadal jest właściwy,
-        // tylko trzeba w nim nadpisać starą nazwę (dawniej kod zawsze zakładał (a), co przy
-        // (b) tworzyło duplikat: gubił poprawny wiersz i dopisywał nowy na końcu arkusza).
-        // Rozróżnienie: jeśli treść komórki pasuje do nazwy INNEGO znanego kontaktu, to
-        // naprawdę doszło do przesunięcia - dopasuj od nowa. Jeśli nie pasuje do żadnego
-        // znanego kontaktu (pusta komórka albo Twoja własna, wcześniejsza nazwa), zaufaj
-        // zapamiętanemu numerowi wiersza i po prostu go nadpisz - kolumna A i tak zapisze
-        // aktualną nazwę.
-        var belongsToOther = cell && state.crmContacts.some(function(x){
-          return x.id!==c.id && !x.deletedAt && (x.name||"").trim().toLowerCase()===cell;
-        });
-        if(belongsToOther){
-          c.t4aSheetRow = null;
-          crmSyncT4ARow(c);
-          return;
-        }
+      if(cell === expected){
+        crmPushT4ARowActual(c, rn);
+        return;
       }
-      crmPushT4ARowActual(c, rn);
+      // Niezgodność ma dwa możliwe źródła: (a) w arkuszu Tomka wiersze zostały ręcznie
+      // przestawione (dodane/usunięte/przesunięte - niezależnie czy na miejsce innego
+      // znanego lokalnie kontaktu, czy kogoś spoza naszej bazy) - wtedy trzeba znaleźć
+      // AKTUALNY wiersz tej szkoły od nowa, albo (b) to Ty po prostu zmieniłeś nazwę TEGO
+      // kontaktu w aplikacji - wiersz nadal jest właściwy, tylko arkusz ma jeszcze starą
+      // nazwę. Rozstrzygamy to jednoznacznie: szukamy AKTUALNEJ nazwy kontaktu po całej
+      // kolumnie A. Jeśli się znajdzie (obojętnie na którym wierszu) - to jest właściwy
+      // wiersz, samo-naprawiamy zapamiętany numer niezależnie od tego, ile razy i jak
+      // wiersze się przestawiły. Jeśli nie znajdzie się WCALE - to prawie na pewno Twoja
+      // własna, wcześniejsza nazwa tego kontaktu (rename, którego arkusz jeszcze nie widział)
+      // - wtedy ufamy zapamiętanemu numerowi i po prostu go nadpisujemy.
+      fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A2:A")+"?valueRenderOption=FORMULA", {headers:headers})
+        .then(function(r2){
+          if(r2.status===401){ window.__gcalToken=null; throw new Error("401"); }
+          if(!r2.ok) throw new Error("http"+r2.status);
+          return r2.json();
+        }).then(function(data2){
+          var names = (data2.values||[]).map(function(row){ return (row[0]||"").toString().trim().toLowerCase(); });
+          var idx = expected ? names.indexOf(expected) : -1;
+          var realRow = idx>-1 ? idx+2 : rn;
+          c.t4aSheetRow = realRow;
+          crmPushT4ARowActual(c, realRow);
+        }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
     }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
 }
 function crmPushT4ARowActual(c, rn){
