@@ -13982,9 +13982,24 @@ function crmPushT4ARow(c){
       var cell = ((data.values && data.values[0] && data.values[0][0]) || "").toString().trim().toLowerCase();
       var expected = (c.name||"").trim().toLowerCase();
       if(cell !== expected){
-        c.t4aSheetRow = null;
-        crmSyncT4ARow(c);
-        return;
+        // Niezgodność ma dwa możliwe źródła: (a) ktoś naprawdę przesunął wiersze w arkuszu
+        // Tomka (wstawił/usunął wiersz) - wtedy trzeba dopasować od nowa, albo (b) to Ty
+        // po prostu zmieniłeś nazwę TEGO kontaktu w aplikacji - wiersz nadal jest właściwy,
+        // tylko trzeba w nim nadpisać starą nazwę (dawniej kod zawsze zakładał (a), co przy
+        // (b) tworzyło duplikat: gubił poprawny wiersz i dopisywał nowy na końcu arkusza).
+        // Rozróżnienie: jeśli treść komórki pasuje do nazwy INNEGO znanego kontaktu, to
+        // naprawdę doszło do przesunięcia - dopasuj od nowa. Jeśli nie pasuje do żadnego
+        // znanego kontaktu (pusta komórka albo Twoja własna, wcześniejsza nazwa), zaufaj
+        // zapamiętanemu numerowi wiersza i po prostu go nadpisz - kolumna A i tak zapisze
+        // aktualną nazwę.
+        var belongsToOther = cell && state.crmContacts.some(function(x){
+          return x.id!==c.id && !x.deletedAt && (x.name||"").trim().toLowerCase()===cell;
+        });
+        if(belongsToOther){
+          c.t4aSheetRow = null;
+          crmSyncT4ARow(c);
+          return;
+        }
       }
       crmPushT4ARowActual(c, rn);
     }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
