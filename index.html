@@ -4349,11 +4349,21 @@ function triggerPublishPost(id, target){
       p.publishedAt = todayStr();
       syncContentCalendarFromPost(p);
     }
+    save();
     renderAll();
     renderPostPreviewModal();
   }).catch(function(err){
     delete __publishingIds[key];
-    alert("Publikacja nie powiodła się: "+(err && err.message ? err.message : err));
+    // Wcześniej ten błąd tylko pokazywał alert() i nic nie zapisywał - jeśli Damian
+    // przeoczył/zamknął alert, w interfejsie nie zostawał żaden ślad próby (przycisk
+    // po prostu wracał do "Zaplanuj teraz", jakby nic się nie stało). Teraz zapisujemy
+    // to jako trwały status (czerwony "Błąd — ..." pod przyciskiem, tak jak przy
+    // niepowodzeniu zwróconym normalnie przez funkcję), żeby zawsze zostawała informacja.
+    var msg = (err && err.message) ? err.message : String(err);
+    var entry = {ok:false, error:msg, attemptedAt:new Date().toISOString()};
+    if(target==="fb") p.fbPublishStatus = entry; else p.igPublishStatus = entry;
+    save();
+    alert("Publikacja nie powiodła się: "+msg);
     renderAll();
     renderPostPreviewModal();
   });
