@@ -13759,9 +13759,12 @@ function crmAdvanceReviewAfterTag(c){
 function crmT4ASendFollowToday(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
+  var already = c.lastContact===todayStr();
   c.t4a2SentAt = todayStr();
   c.t4a2Stage = "";
   c.t4a2DueDate = "";
+  c.lastContact = todayStr();
+  if(!already) ceoAwardXpEvent("outreachSent");
   crmAdvanceReviewAfterTag(c);
   save(); renderAll();
   crmRefreshT4AFollowBlock(id);
