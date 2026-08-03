@@ -14058,12 +14058,14 @@ function crmPullT4AStatuses(){
         var t = crmGetT4A(c);
         var next = {sent:crmT4ABoolify(row[0]), offer:crmT4ABoolify(row[1]), decision:crmT4ABoolify(row[2]), listed:crmT4ABoolify(row[3]), client:crmT4ABoolify(row[4])};
         var nextSentDate = (row[5]||"").toString().trim();
+        var nextSystem = (row[6]||"").toString().trim();
         var nextNotes = (row[7]||"").toString().trim();
         if(next.sent!==t.sent || next.offer!==t.offer || next.decision!==t.decision || next.listed!==t.listed || next.client!==t.client){
           t.sent=next.sent; t.offer=next.offer; t.decision=next.decision; t.listed=next.listed; t.client=next.client;
           changed = true;
         }
         if(nextSentDate && !t.sentDate){ t.sentDate = nextSentDate; changed = true; }
+        if(nextSystem && nextSystem!==c.system){ c.system = nextSystem; changed = true; }
         if(nextNotes && !t.notes){ t.notes = nextNotes; changed = true; }
       });
       if(changed){ save(); renderAll(); }
@@ -14124,7 +14126,7 @@ function crmReconcileT4AFromSheet(){
         if(!c) return;
         var t = crmGetT4A(c);
         var sSent=crmT4ABoolify(row[10]), sOffer=crmT4ABoolify(row[11]), sDecision=crmT4ABoolify(row[12]), sListed=crmT4ABoolify(row[13]), sClient=crmT4ABoolify(row[14]);
-        var sSentDate=excelSerialToISO(row[15]), sNotes=(row[17]||"").toString().trim();
+        var sSentDate=excelSerialToISO(row[15]), sSystem=(row[16]||"").toString().trim(), sNotes=(row[17]||"").toString().trim();
         var changed = false;
         if(sSent && !t.sent){ t.sent=true; changed=true; }
         if(sOffer && !t.offer){ t.offer=true; changed=true; }
@@ -14132,6 +14134,7 @@ function crmReconcileT4AFromSheet(){
         if(sListed && !t.listed){ t.listed=true; changed=true; }
         if(sClient && !t.client){ t.client=true; changed=true; }
         if(sSentDate && !t.sentDate){ t.sentDate=sSentDate; changed=true; }
+        if(sSystem && !c.system){ c.system=sSystem; changed=true; }
         if(sNotes && !t.notes){ t.notes=sNotes; changed=true; }
         if(changed) restored++;
       });
