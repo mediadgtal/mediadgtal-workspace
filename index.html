@@ -4247,6 +4247,12 @@ function renderPublishSection(p){
   var busyIg = !!__publishingIds[p.id+":ig"];
   var html = '<div style="margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); display:flex; gap:16px; flex-wrap:wrap">';
 
+  // 2026-08-05 — Damian potwierdził: konto MediaDGtal publikuje TYLKO na Instagramie, nigdy
+  // na Facebooku (świadomy wybór, nie przeoczenie). Wcześniej przycisk FB był zawsze widoczny
+  // nawet dla tego konta i dało się go przypadkiem kliknąć — raz to zrobił, opublikował się
+  // realny (błędny, bo appka nie obsługuje wielozdjęciowych postów FB) wpis na jego profilu.
+  // Dla marki MediaDGtal sekcja Facebooka w ogóle się nie renderuje.
+  if(p.brand!=="MediaDGtal"){
   html += '<div style="min-width:160px">';
   if(p.fbPublishStatus){
     html += publishStatusLine(p.fbPublishStatus);
@@ -4265,6 +4271,7 @@ function renderPublishSection(p){
     html += '<button class="btn small" style="margin-top:8px" '+(busyFb?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'fb\')">'+fbLabel+'</button>';
   }
   html += '</div>';
+  }
 
   html += '<div style="min-width:160px">';
   if(p.igPublishStatus){
@@ -4296,6 +4303,10 @@ function triggerPublishPost(id, target){
   if(__publishingIds[key]) return;
   var p = state.posts.filter(function(x){return x.id===id;})[0];
   if(!p) return;
+  if(target==="fb" && p.brand==="MediaDGtal"){
+    alert("Konto MediaDGtal publikuje tylko na Instagramie — Facebook jest dla niego wyłączony.");
+    return;
+  }
   var isToday = postIsToday(p);
   if(target==="fb" && p.fbPublishStatus && p.fbPublishStatus.ok && p.fbPublishStatus.scheduled){
     // Facebook jest planowany natywnie przez Metę w momencie kliknięcia "Zaplanuj teraz" —
