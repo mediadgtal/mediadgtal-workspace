@@ -4077,9 +4077,13 @@ function renderPostyZaplanowane(){
     var isToday = dstr===todayS;
     html += '<div class="cal-cell'+(inMonth?"":" out")+(isToday?" today":"")+'" ondblclick="openPostModal({brand:\''+jsAttrStr(postyFilter)+'\', date:\''+dstr+'\', stage:\'zaplanowany\'})"><div class="cal-daynum">'+gd.getDate()+'</div>';
     (byDate[dstr]||[]).forEach(function(p){
-      var bg = p.platform==="tiktok" ? "#c9c9c9" : p.platform==="youtube" ? "#e0a19d" : "#c8b8f0";
-      html += '<div class="cal-ev" style="background:'+bg+'; color:'+calTextColorFor(bg)+'" onclick="event.stopPropagation(); openPostPreview(\''+p.id+'\')">'+
-        (p.platform?POST_PLATFORM_ICON[p.platform]+" ":"")+escapeHtml(p.title)+'</div>';
+      // 2026-08-05 — verifyPublishedPosts (Cloud Function, co 30 min) sama wykrywa gdy
+      // opublikowany post zniknie z FB/IG (ręcznie usunięty poza appką) i ustawia tę flagę —
+      // czerwone tło zamiast normalnego koloru, żeby było widać na pierwszy rzut oka bez
+      // klikania w każdy wpis. Automatyczne, bez przycisku.
+      var bg = p.publishMissingExternally ? "#d1636f" : (p.platform==="tiktok" ? "#c9c9c9" : p.platform==="youtube" ? "#e0a19d" : "#c8b8f0");
+      html += '<div class="cal-ev" style="background:'+bg+'; color:'+calTextColorFor(bg)+'" onclick="event.stopPropagation(); openPostPreview(\''+p.id+'\')" title="'+(p.publishMissingExternally?"Zniknęło z profilu — sprawdzono automatycznie":"")+'">'+
+        (p.publishMissingExternally?"⚠️ ":"")+(p.platform?POST_PLATFORM_ICON[p.platform]+" ":"")+escapeHtml(p.title)+'</div>';
     });
     html += '</div>';
   }
@@ -4247,6 +4251,9 @@ function renderPublishSection(p){
   var busyIg = !!__publishingIds[p.id+":ig"];
   var html = '<div style="margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); display:flex; gap:16px; flex-wrap:wrap">';
 
+  if(p.publishMissingExternally){
+    html += '<div style="width:100%; font-size:12px; color:#d1636f; background:rgba(209,99,111,.12); padding:8px 10px; border-radius:6px">⚠️ Ten post pokazywał się jako opublikowany, ale automatyczna kontrola wykryła że zniknął z profilu (usunięty ręcznie poza appką) — status zresetowany, możesz opublikować ponownie.</div>';
+  }
   // 2026-08-05 — Damian potwierdził: konto MediaDGtal publikuje TYLKO na Instagramie, nigdy
   // na Facebooku (świadomy wybór, nie przeoczenie). Wcześniej przycisk FB był zawsze widoczny
   // nawet dla tego konta i dało się go przypadkiem kliknąć — raz to zrobił, opublikował się
