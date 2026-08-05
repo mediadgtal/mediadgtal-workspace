@@ -4233,6 +4233,13 @@ function publishStatusLine(entry){
   return '<div style="font-size:12px; color:'+color+'; margin-top:2px">'+text+'</div>';
 }
 function postIsToday(p){ return !p.date || p.date<=todayStr(); }
+// Etykieta "Zaplanowano"/"Opublikowano" na zielono, TRWALE widoczna dopóki stan faktycznie
+// na to wskazuje — nie znika, nie jest zastępowana przez przycisk (Damian klikał "Zaplanuj"
+// po kilka razy 2026-08-03 bo przycisk zostawał aktywny nawet po sukcesie i nie było pewności
+// czy to zadziałało, co spowodowało realne duplikaty publikacji na FB/IG).
+function publishPermanentBadge(text){
+  return '<div style="font-size:13px; font-weight:600; color:#3ecf7e; margin-top:8px">✓ '+text+'</div>';
+}
 function renderPublishSection(p){
   if(p.platform!=="fbig") return '';
   var isToday = postIsToday(p);
@@ -4246,11 +4253,17 @@ function renderPublishSection(p){
     if(p.fbPublishStatus.attemptedAt) html += '<div style="font-size:11px; color:var(--muted)">'+new Date(p.fbPublishStatus.attemptedAt).toLocaleString('pl-PL')+'</div>';
   }
   var fbScheduledPending = !!(p.fbPublishStatus && p.fbPublishStatus.ok && p.fbPublishStatus.scheduled);
-  var fbLabel;
-  if(busyFb) fbLabel = 'Wysyłanie…';
-  else if(fbScheduledPending) fbLabel = '✕ Anuluj zaplanowaną publikację (Facebook)';
-  else fbLabel = isToday ? '📘 Publikuj teraz (Facebook)' : '📅 Zaplanuj teraz (Facebook)';
-  html += '<button class="btn small" style="margin-top:8px" '+(busyFb?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'fb\')">'+fbLabel+'</button>';
+  var fbAlreadyLive = !!(p.fbPublishStatus && p.fbPublishStatus.ok && !p.fbPublishStatus.scheduled);
+  if(fbAlreadyLive){
+    html += publishPermanentBadge('Opublikowano (Facebook)');
+  } else {
+    var fbLabel;
+    if(busyFb) fbLabel = 'Wysyłanie…';
+    else if(fbScheduledPending) fbLabel = '✕ Anuluj zaplanowaną publikację (Facebook)';
+    else fbLabel = isToday ? '📘 Publikuj teraz (Facebook)' : '📅 Zaplanuj teraz (Facebook)';
+    if(fbScheduledPending) html += publishPermanentBadge('Zaplanowano (Facebook)');
+    html += '<button class="btn small" style="margin-top:8px" '+(busyFb?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'fb\')">'+fbLabel+'</button>';
+  }
   html += '</div>';
 
   html += '<div style="min-width:160px">';
@@ -4258,13 +4271,20 @@ function renderPublishSection(p){
     html += publishStatusLine(p.igPublishStatus);
     if(p.igPublishStatus.attemptedAt) html += '<div style="font-size:11px; color:var(--muted)">'+new Date(p.igPublishStatus.attemptedAt).toLocaleString('pl-PL')+'</div>';
   }
-  var igLabel;
-  if(busyIg) igLabel = 'Wysyłanie…';
-  else if(isToday) igLabel = '📷 Publikuj teraz (Instagram)';
-  else igLabel = p.igScheduleRequested ? '✕ Anuluj zaplanowaną publikację (Instagram)' : '📅 Zaplanuj teraz (Instagram)';
-  html += '<button class="btn small" style="margin-top:8px" '+(busyIg?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'ig\')">'+igLabel+'</button>';
-  if(!isToday && p.igScheduleRequested && !p.igPublishStatus){
-    html += '<div style="font-size:11px; color:var(--muted); margin-top:6px">📅 Zaplanowano — system spróbuje opublikować automatycznie '+fmtDate(p.date)+(p.time?' o '+p.time:'')+' (dokładnie jedna próba, bez ponawiania).</div>';
+  var igAlreadyLive = !!(p.igPublishStatus && p.igPublishStatus.ok);
+  var igSchedPending = !isToday && p.igScheduleRequested && !p.igPublishStatus;
+  if(igAlreadyLive){
+    html += publishPermanentBadge('Opublikowano (Instagram)');
+  } else {
+    var igLabel;
+    if(busyIg) igLabel = 'Wysyłanie…';
+    else if(isToday) igLabel = '📷 Publikuj teraz (Instagram)';
+    else igLabel = p.igScheduleRequested ? '✕ Anuluj zaplanowaną publikację (Instagram)' : '📅 Zaplanuj teraz (Instagram)';
+    if(igSchedPending) html += publishPermanentBadge('Zaplanowano (Instagram)');
+    html += '<button class="btn small" style="margin-top:8px" '+(busyIg?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'ig\')">'+igLabel+'</button>';
+    if(igSchedPending){
+      html += '<div style="font-size:11px; color:var(--muted); margin-top:6px">📅 System spróbuje opublikować automatycznie '+fmtDate(p.date)+(p.time?' o '+p.time:'')+' (dokładnie jedna próba, bez ponawiania).</div>';
+    }
   }
   html += '</div>';
 
@@ -14023,19 +14043,27 @@ function crmPushT4ARow(c){
 function crmPushT4ARowActual(c, rn){
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
   var headers = {Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"};
-  fetch(base+"/values:batchUpdate", {
-    method:"POST", headers:headers,
-    body: JSON.stringify({valueInputOption:"USER_ENTERED", data:[
-      {range:T4A_SHEET_TAB+"!A"+rn+":H"+rn, values:[t4aBlockA_H(c)]},
-      {range:T4A_SHEET_TAB+"!J"+rn+":P"+rn, values:[t4aBlockJ_P(c)]},
-      {range:T4A_SHEET_TAB+"!Q"+rn+":R"+rn, values:[t4aBlockQ_R(c)]}
-    ]})
-  }).then(function(resp){
-    if(resp.status===401){ window.__gcalToken=null; throw new Error("401"); }
-    if(!resp.ok) throw new Error("http"+resp.status);
-    c.t4aDirty = false; save();
-    crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
-  }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+  var doWrite = function(){
+    fetch(base+"/values:batchUpdate", {
+      method:"POST", headers:headers,
+      body: JSON.stringify({valueInputOption:"USER_ENTERED", data:[
+        {range:T4A_SHEET_TAB+"!A"+rn+":H"+rn, values:[t4aBlockA_H(c)]},
+        {range:T4A_SHEET_TAB+"!J"+rn+":P"+rn, values:[t4aBlockJ_P(c)]},
+        {range:T4A_SHEET_TAB+"!Q"+rn+":R"+rn, values:[t4aBlockQ_R(c)]}
+      ]})
+    }).then(function(resp){
+      if(resp.status===401){ window.__gcalToken=null; throw new Error("401"); }
+      if(!resp.ok) throw new Error("http"+resp.status);
+      c.t4aDirty = false; save();
+      crmT4ASyncStatus[c.id] = "ok"; renderAll(); crmRefreshT4ABlock(c.id);
+    }).catch(function(){ crmT4ASyncStatus[c.id] = "error"; renderAll(); crmRefreshT4ABlock(c.id); });
+  };
+  // Backup best-effort przed nadpisaniem wiersza — patrz komentarz przy t4aBackupBeforeWrite.
+  if(window.t4aBackupBeforeWrite){
+    window.t4aBackupBeforeWrite(rn, c.id, c.name).then(doWrite, doWrite);
+  } else {
+    doWrite();
+  }
 }
 var crmT4ALastPull = 0;
 function crmPullT4AStatuses(){
@@ -15752,6 +15780,33 @@ var functionsInstance = getFunctions(app, "us-central1");
 window.uploadClientScreenshot = function(file, path){
   var r = ref(storage, path);
   return uploadBytes(r, file).then(function(){ return getDownloadURL(r); });
+};
+// 2026-08-05 — zabezpieczenie po incydencie z 03.08 (crmPushT4ARowActual nadpisał notatki
+// 7 kontaktów treścią sąsiedniego wiersza, bezpowrotnie). Przed KAŻDYM zapisem do arkusza
+// Tomka zapisujemy najpierw stan wiersza SPRZED nadpisania do Firestore (kolekcja
+// t4aRowBackups) — best-effort, nieblokujące: jeśli backup się nie uda, właściwy zapis i tak
+// idzie dalej (backup ma być siatką bezpieczeństwa, nie kolejnym punktem awarii).
+window.t4aBackupBeforeWrite = function(rn, contactId, contactName){
+  try {
+    var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
+    var headers = {Authorization:"Bearer "+window.__gcalToken};
+    return fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A"+rn+":R"+rn), {headers:headers})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if(!data) return;
+        var backupRef = doc(collection(db, "t4aRowBackups"));
+        return setDoc(backupRef, {
+          row: rn,
+          contactId: contactId || null,
+          contactName: contactName || null,
+          values: (data.values && data.values[0]) || [],
+          backedUpAt: Date.now()
+        });
+      }).catch(function(err){ console.error("t4a row backup nie powiódł się (nieblokujące):", err); });
+  } catch(e) {
+    console.error("t4a row backup exception (nieblokujące):", e);
+    return Promise.resolve();
+  }
 };
 var provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/calendar');
