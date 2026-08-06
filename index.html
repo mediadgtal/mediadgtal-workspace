@@ -2806,7 +2806,7 @@ function load(){
     state = migrateState(parsed);
   }catch(e){ state = def; }
 }
-function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); scheduleFinanceBackupPush(); scheduleClientOpsBackupPush(); scheduleTasksBackupPush(); scheduleDrogaBackupPush(); }
+function save(){ state._updatedAt = Date.now(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); scheduleHabitsBackupPush(); scheduleClientsBackupPush(); scheduleCrmBackupPush(); scheduleFinanceBackupPush(); scheduleClientOpsBackupPush(); scheduleTasksBackupPush(); scheduleDrogaBackupPush(); schedulePostyBackupPush(); }
 
 /* ================= NAV / SHELL ================= */
 function renderNav(){
@@ -3788,7 +3788,8 @@ function renderPosty(el){
   autoPublishPastPosts();
   setTopActions('');
 
-  var html = '<div class="tabsw">'+
+  var html = '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
+  html += '<div class="tabsw" style="margin-bottom:0">'+
     '<button class="'+(postySubtab==="pulpit"?"active":"")+'" onclick="setPostySub(\'pulpit\')">Pulpit</button>'+
     '<button class="'+(postySubtab==="kalendarz"?"active":"")+'" onclick="setPostySub(\'kalendarz\')">Kalendarz publikacji</button>'+
     '<button class="'+(postySubtab==="zaplanowane"?"active":"")+'" onclick="setPostySub(\'zaplanowane\')">Zaplanowane</button>'+
@@ -3798,6 +3799,8 @@ function renderPosty(el){
     '<button class="'+(postySubtab==="wideo"?"active":"")+'" onclick="setPostySub(\'wideo\')">Wideo</button>'+
     '<button class="'+(postySubtab==="kosz"?"active":"")+'" onclick="setPostySub(\'kosz\')">Kosz</button>'+
     '</div>';
+  html += renderPostyBackupStatus();
+  html += '</div>';
 
   if(postySubtab!=="wideo"){
     html += '<div class="chiprow">';
@@ -9559,6 +9562,97 @@ function renderDrogaBackupStatus(){
     error: drogaBackupStatus==="error",
     actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", onclick:"drogaRestoreFromBackup()",
       result: drogaBackupResult ? ("uzupełniono "+drogaBackupResult.restored+" pól") : null}]
+  });
+}
+
+/* ================= Kopia zapasowa Postów (2026-08-06) =================
+   Moduł Posty (publikacje FB/IG) nie miał jeszcze własnego backupu — zgłoszone
+   jako luka przez codzienny health-check. Ten sam sprawdzony wzorzec co
+   Zadania/Droga: arkusz Google Sheets, debounced push po każdym save(),
+   status-baner + "sprawdź 1:1" w nagłówku modułu Posty. */
+var postyBackupSyncTimer = null;
+var postyBackupPending = false;
+var postyBackupCreating = false;
+var postyBackupStatus = "idle";
+var postyVerifyStatus = "idle";
+var postyVerifyResult = null;
+function ensurePostyBackupSheet(){
+  if(!window.__gcalToken || state.postyBackupSheetId || postyBackupCreating) return;
+  postyBackupCreating = true;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({ properties:{title:"Posty — kopia zapasowa (system)"}, sheets:[{properties:{title:"POSTY"}}] })
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    return r.json();
+  }).then(function(data){
+    postyBackupCreating = false;
+    if(data.spreadsheetId){
+      state.postyBackupSheetId = data.spreadsheetId;
+      state.postyBackupSheetUrl = data.spreadsheetUrl || ("https://docs.google.com/spreadsheets/d/"+data.spreadsheetId+"/edit");
+      save(); renderAll();
+    }
+  }).catch(function(){ postyBackupCreating = false; });
+}
+function schedulePostyBackupPush(){
+  if(!window.__gcalToken || !state.postyBackupSheetId) return;
+  postyBackupPending = true;
+  if(postyBackupSyncTimer) clearTimeout(postyBackupSyncTimer);
+  postyBackupSyncTimer = setTimeout(flushPostyBackupPush, 1500);
+}
+function postyBackupRows(){
+  var rows = [["id","tytul","brand","platforma","etap","kategoria","data","godzina","captionFb","captionIg","firstCommentFb","isCarousel","obrazy_json","video_json","statusFb_json","statusIg_json","usunieto"]];
+  state.posts.slice().sort(function(a,b){ return (a.date||"")<(b.date||"")?-1:1; }).forEach(function(p){
+    rows.push([p.id, p.title||"", p.brand||"", p.platform||"", p.stage||"", p.category||"", p.date||"", p.time||"",
+      p.captionFb||"", p.captionIg||"", p.firstCommentFb||"", !!p.isCarousel,
+      JSON.stringify(p.images||p.fbImage||null), JSON.stringify(p.video||null),
+      JSON.stringify(p.fbPublishStatus||null), JSON.stringify(p.igPublishStatus||null), p.deletedAt||""]);
+  });
+  return rows;
+}
+function flushPostyBackupPush(){
+  if(!postyBackupPending) return;
+  postyBackupPending = false;
+  if(!window.__gcalToken || !state.postyBackupSheetId) return;
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values:batchUpdate", {
+    method:"POST",
+    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+    body: JSON.stringify({valueInputOption:"RAW", data:[{range:"POSTY!A1", values: postyBackupRows()}]})
+  }).then(function(r){
+    if(r.status===401){ window.__gcalToken=null; }
+    postyBackupStatus = r.ok ? "ok" : "error";
+  }).catch(function(){ postyBackupStatus = "error"; });
+}
+// "Sprawdź 1:1" — porównuje arkusz z lokalnym stanem bez niczego zmieniać, tylko
+// pokazuje ile postów brakuje po jednej i po drugiej stronie (diagnostyka).
+function postyVerify1to1(){
+  if(!window.__gcalToken){ alert('Połącz się z Google, żeby sprawdzić zgodność z arkuszem.'); return; }
+  postyVerifyStatus = "loading"; postyVerifyResult = null; renderAll();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values/POSTY!A1:Q", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(data){
+      var rows = data.values||[];
+      var sheetIds = {}; for(var i=1;i<rows.length;i++){ if(rows[i][0]) sheetIds[rows[i][0]] = true; }
+      var localIds = {}; state.posts.forEach(function(p){ localIds[p.id] = true; });
+      var missingInSheet = state.posts.filter(function(p){ return !sheetIds[p.id]; }).length;
+      var missingLocally = Object.keys(sheetIds).filter(function(id){ return !localIds[id]; }).length;
+      postyVerifyStatus = "done";
+      postyVerifyResult = {sheetTotal: rows.length-1, localTotal: state.posts.length, missingInSheet: missingInSheet, missingLocally: missingLocally};
+      renderAll();
+    }).catch(function(){ postyVerifyStatus="error"; renderAll(); });
+}
+function renderPostyBackupStatus(){
+  if(window.__gcalToken && !state.postyBackupSheetId) ensurePostyBackupSheet();
+  var resultTxt = null, danger = false;
+  if(postyVerifyResult){
+    danger = !!(postyVerifyResult.missingInSheet || postyVerifyResult.missingLocally);
+    resultTxt = "arkusz: "+postyVerifyResult.sheetTotal+", lokalnie: "+postyVerifyResult.localTotal+", brakuje w arkuszu: "+postyVerifyResult.missingInSheet+", brakuje lokalnie: "+postyVerifyResult.missingLocally;
+  }
+  return renderBackupBadge({
+    connected: !!window.__gcalToken, sheetId: state.postyBackupSheetId, sheetUrl: state.postyBackupSheetUrl,
+    error: postyBackupStatus==="error",
+    actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: postyVerifyStatus==="loading", onclick:"postyVerify1to1()", danger: danger, result: resultTxt}]
   });
 }
 
