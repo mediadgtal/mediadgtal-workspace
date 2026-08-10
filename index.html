@@ -15826,7 +15826,7 @@ function doFbSignIn(){
       window.__fbToken = response.authResponse.accessToken;
       ensureFbPages(function(){ renderAll(); });
     }
-  }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights,pages_manage_posts,instagram_content_publish"});
+  }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights,pages_manage_posts,instagram_content_publish,pages_read_user_content,pages_manage_engagement"});
 }
 window.reconnectFb = doFbSignIn;
 
@@ -15968,7 +15968,9 @@ window.generateOutreachDraft = function(contactData){
 
 // 2026-07-30 — Realna publikacja postów/relacji/rolek na FB/IG (Cloud Function `publishPost`,
 // używa sekretu FB_PAGE_TOKENS już istniejącego dla cotygodniowego pobierania statystyk).
-window.publishPostFn = httpsCallable(functionsInstance, "publishPost");
+// timeout dopasowany do timeoutSeconds:300 funkcji — domyślne 70s SDK potrafiło zgłosić
+// "deadline-exceeded" dla dużych karuzel, mimo że publikacja po stronie serwera się udawała.
+window.publishPostFn = httpsCallable(functionsInstance, "publishPost", {timeout: 300000});
 // 2026-07-31 — Planowanie publikacji na Instagramie: jednorazowe zadanie Cloud Tasks
 // utworzone w momencie kliknięcia "Zaplanuj", zero cyklicznego sprawdzania w tle.
 window.scheduleIgPublishFn = httpsCallable(functionsInstance, "scheduleIgPublish");
