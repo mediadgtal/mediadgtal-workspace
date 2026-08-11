@@ -13497,19 +13497,93 @@ function klienciAggregateRevenue(ymList){
     (state.clientsMonthly[ym]||[]).forEach(function(r){
       var norm = (r.nazwa||"").trim().toLowerCase();
       if(!norm) return;
-      if(!byKey[norm]) byKey[norm] = {nazwa:r.nazwa, total:0};
+      if(!byKey[norm]) byKey[norm] = {nazwa:r.nazwa, norm:norm, total:0};
       byKey[norm].total += (+r.wynagrodzenie||0);
       byKey[norm].nazwa = r.nazwa;
     });
   });
   return Object.keys(byKey).map(function(k){ return byKey[k]; }).sort(function(a,b){ return b.total-a.total; });
 }
+function klienciClientHistory(norm){
+  var rows = [];
+  Object.keys(state.clientsMonthly).sort().forEach(function(ym){
+    (state.clientsMonthly[ym]||[]).forEach(function(r){
+      if((r.nazwa||"").trim().toLowerCase()!==norm) return;
+      rows.push({ym:ym, nazwa:r.nazwa, wynagrodzenie:+r.wynagrodzenie||0, budzetRekl:+r.budzetRekl||0,
+        okresDni:r.okresDni?(+r.okresDni):null, notatki:r.notatki||"", etapWsp:r.etapWsp||"", statusKlienta:r.statusKlienta||""});
+    });
+  });
+  var nazwa = rows.length ? rows[rows.length-1].nazwa : "";
+  var sumaWynagrodzenie=0, sumaBudzet=0, okresyDni=[];
+  rows.forEach(function(r){
+    sumaWynagrodzenie += r.wynagrodzenie;
+    sumaBudzet += r.budzetRekl;
+    if(r.okresDni && okresyDni.indexOf(r.okresDni)===-1) okresyDni.push(r.okresDni);
+  });
+  var notatki = rows.filter(function(r){ return (r.notatki||"").trim(); }).map(function(r){ return {ym:r.ym, text:r.notatki}; });
+  return {
+    nazwa: nazwa, rows: rows,
+    miesiecy: rows.length,
+    sumaWynagrodzenie: sumaWynagrodzenie,
+    sumaBudzet: sumaBudzet,
+    sredniBudzet: rows.length ? sumaBudzet/rows.length : 0,
+    pierwszyYm: rows.length ? rows[0].ym : "",
+    ostatniYm: rows.length ? rows[rows.length-1].ym : "",
+    okresyDni: okresyDni.sort(function(a,b){ return a-b; }),
+    ostatniStatus: rows.length ? rows[rows.length-1].statusKlienta : "",
+    notatki: notatki
+  };
+}
+function klienciYmLabel(ym){
+  var parts = ym.split("-");
+  var mIdx = (+parts[1]||1)-1;
+  return (NAWYKI_MONTH_NAMES[mIdx]||ym)+" "+parts[0];
+}
+function openKlientPodsumowanieModal(norm){
+  var h = klienciClientHistory(norm);
+  if(!h.rows.length) return;
+  var okresLabel = h.okresyDni.length ? h.okresyDni.join(" / ")+" dni" : "—";
+  var zakresLabel = h.pierwszyYm ? klienciYmLabel(h.pierwszyYm)+" – "+klienciYmLabel(h.ostatniYm) : "—";
+  var rowsHtml = h.rows.map(function(r){
+    return '<tr><td>'+escapeHtml(klienciYmLabel(r.ym))+'</td>'+
+      '<td style="text-align:right">'+fmtPln(r.wynagrodzenie)+'</td>'+
+      '<td style="text-align:right">'+fmtPln(r.budzetRekl)+'</td>'+
+      '<td>'+escapeHtml(r.etapWsp||"—")+'</td></tr>';
+  }).join("");
+  var notatkiHtml = h.notatki.length
+    ? h.notatki.map(function(n){ return '<div style="margin-top:6px; font-size:12.5px"><span style="color:var(--muted)">'+escapeHtml(klienciYmLabel(n.ym))+':</span> '+escapeHtml(n.text)+'</div>'; }).join("")
+    : '<div class="empty" style="margin-top:6px">Brak zapisanych notatek/uwag.</div>';
+  var podsumowanieTekst = 'Klient '+h.nazwa+' współpracował z nami przez '+h.miesiecy+' mies. ('+zakresLabel+'), łącznie zapłacił '+fmtPln(h.sumaWynagrodzenie)+
+    ' przy łącznym budżecie reklamowym '+fmtPln(h.sumaBudzet)+' (średnio '+fmtPln(h.sredniBudzet)+'/mies.), na umowach '+okresLabel+
+    (h.ostatniStatus ? ('. Ostatni status współpracy: '+h.ostatniStatus+'.') : '.');
+  var html = '<div class="modal-overlay" id="klientPodsumowanieModal" data-close="closeKlientPodsumowanieModal">'+
+    '<div class="modal-box card" style="max-width:560px">'+
+    '<h3>Podsumowanie współpracy — '+escapeHtml(h.nazwa)+'</h3>'+
+    '<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px">'+
+    '<div><div class="stat-value" style="font-size:22px">'+h.miesiecy+'</div><div class="stat-sub">miesięcy współpracy</div></div>'+
+    '<div><div class="stat-value" style="font-size:22px">'+fmtPln(h.sumaWynagrodzenie)+'</div><div class="stat-sub">łącznie zapłacone kwoty</div></div>'+
+    '<div><div class="stat-value" style="font-size:22px">'+fmtPln(h.sumaBudzet)+'</div><div class="stat-sub">suma budżetu reklamowego</div></div>'+
+    '<div><div class="stat-value" style="font-size:22px">'+fmtPln(h.sredniBudzet)+'</div><div class="stat-sub">średni budżet/mies.</div></div>'+
+    '<div><div class="stat-value" style="font-size:16px">'+escapeHtml(zakresLabel)+'</div><div class="stat-sub">okres współpracy</div></div>'+
+    '<div><div class="stat-value" style="font-size:16px">'+escapeHtml(okresLabel)+'</div><div class="stat-sub">długość umów</div></div>'+
+    '</div>'+
+    '<div style="margin-top:16px"><label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Historia miesięcy</label>'+
+    '<div style="overflow-x:auto; margin-top:6px; max-height:240px; overflow-y:auto"><table class="nawyki-grid"><thead><tr><th>Miesiąc</th><th>Kwota</th><th>Budżet rekl.</th><th>Etap</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'+
+    '</div>'+
+    '<div style="margin-top:16px"><label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Notatki/Uwagi</label>'+notatkiHtml+'</div>'+
+    '<div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border); font-size:12.5px; color:var(--muted-light)">'+escapeHtml(podsumowanieTekst)+'</div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:16px">'+
+    '<button class="btn secondary small" onclick="closeKlientPodsumowanieModal()">Zamknij</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+function closeKlientPodsumowanieModal(){ var e=document.getElementById("klientPodsumowanieModal"); if(e) e.remove(); }
 function klienciRenderPodium(ranking){
   if(!ranking.length) return '<div class="empty">Brak danych o przychodach.</div>';
   var top3 = ranking.slice(0,3);
   var html = '<div style="display:grid; grid-template-columns:repeat('+top3.length+',1fr); gap:14px; margin:14px 0">';
   top3.forEach(function(r, i){
-    html += '<div style="text-align:center"><div style="font-size:28px">'+KLIENCI_MEDALS[i]+'</div>'+
+    html += '<div style="text-align:center; cursor:pointer" onclick="openKlientPodsumowanieModal(\''+jsAttrStr(r.norm)+'\')"><div style="font-size:28px">'+KLIENCI_MEDALS[i]+'</div>'+
       '<div class="stat-value" style="font-size:16px">'+escapeHtml(r.nazwa)+'</div>'+
       '<div class="stat-sub">'+fmtPln(r.total)+'</div></div>';
   });
@@ -13520,7 +13594,7 @@ function klienciRenderRankTable(ranking){
   if(!ranking.length) return '';
   var html = '<div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr><th>#</th><th>Klient</th><th>Przychód</th></tr></thead><tbody>';
   ranking.forEach(function(r, i){
-    html += '<tr><td>'+(i+1)+'.</td><td>'+escapeHtml(r.nazwa)+'</td>'+
+    html += '<tr style="cursor:pointer" onclick="openKlientPodsumowanieModal(\''+jsAttrStr(r.norm)+'\')"><td>'+(i+1)+'.</td><td>'+escapeHtml(r.nazwa)+'</td>'+
       '<td style="text-align:right; font-weight:700; color:var(--accent)">'+fmtPln(r.total)+'</td></tr>';
   });
   html += '</tbody></table></div>';
