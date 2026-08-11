@@ -13593,10 +13593,14 @@ function klienciRenderPodium(ranking){
 function klienciRenderRankTable(ranking){
   if(!ranking.length) return '';
   var html = '<div style="overflow-x:auto"><table class="nawyki-grid"><thead><tr><th>#</th><th>Klient</th><th>Przychód</th></tr></thead><tbody>';
+  var suma = 0;
   ranking.forEach(function(r, i){
+    suma += (+r.total||0);
     html += '<tr style="cursor:pointer" onclick="openKlientPodsumowanieModal(\''+jsAttrStr(r.norm)+'\')"><td>'+(i+1)+'.</td><td>'+escapeHtml(r.nazwa)+'</td>'+
       '<td style="text-align:right; font-weight:700; color:var(--accent)">'+fmtPln(r.total)+'</td></tr>';
   });
+  html += '<tr style="border-top:2px solid var(--border)"><td></td><td style="font-weight:700">SUMA</td>'+
+    '<td style="text-align:right; font-weight:700">'+fmtPln(suma)+'</td></tr>';
   html += '</tbody></table></div>';
   return html;
 }
@@ -13916,7 +13920,8 @@ var CRM_STATUSES = [
   {id:"ucichlo", label:"Odpisali - ucichło", color:"#e0954a", bg:"#322419"},
   {id:"w_rozmowie", label:"W rozmowie", color:"#cf9b4a", bg:"#342c1f"},
   {id:"odrzucili", label:"Odrzucili", color:"#d1636f", bg:"#33222a"},
-  {id:"klient", label:"Klient", color:"#63b58a", bg:"#20302a"}
+  {id:"klient", label:"Klient", color:"#63b58a", bg:"#20302a"},
+  {id:"zakonczone", label:"Zakończone", color:"#7fa9c9", bg:"#1c2732"}
 ];
 
 /* 2026-07-27 — osobny, prywatny (nie zsynchronizowany z arkuszem Tomka) tor tagowania
