@@ -13547,8 +13547,7 @@ function openKlientPodsumowanieModal(norm){
   var rowsHtml = h.rows.map(function(r){
     return '<tr><td>'+escapeHtml(klienciYmLabel(r.ym))+'</td>'+
       '<td style="text-align:right">'+fmtPln(r.wynagrodzenie)+'</td>'+
-      '<td style="text-align:right">'+fmtPln(r.budzetRekl)+'</td>'+
-      '<td>'+escapeHtml(r.etapWsp||"—")+'</td></tr>';
+      '<td style="text-align:right">'+fmtPln(r.budzetRekl)+'</td></tr>';
   }).join("");
   var notatkiHtml = h.notatki.length
     ? h.notatki.map(function(n){ return '<div style="margin-top:6px; font-size:12.5px"><span style="color:var(--muted)">'+escapeHtml(klienciYmLabel(n.ym))+':</span> '+escapeHtml(n.text)+'</div>'; }).join("")
@@ -13568,7 +13567,7 @@ function openKlientPodsumowanieModal(norm){
     '<div><div class="stat-value" style="font-size:16px">'+escapeHtml(okresLabel)+'</div><div class="stat-sub">długość umów</div></div>'+
     '</div>'+
     '<div style="margin-top:16px"><label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Historia miesięcy</label>'+
-    '<div style="overflow-x:auto; margin-top:6px; max-height:240px; overflow-y:auto"><table class="nawyki-grid"><thead><tr><th>Miesiąc</th><th>Kwota</th><th>Budżet rekl.</th><th>Etap</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'+
+    '<div style="overflow-x:auto; margin-top:6px; max-height:240px; overflow-y:auto"><table class="nawyki-grid"><thead><tr><th>Miesiąc</th><th>Kwota</th><th>Budżet rekl.</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'+
     '</div>'+
     '<div style="margin-top:16px"><label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Notatki/Uwagi</label>'+notatkiHtml+'</div>'+
     '<div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border); font-size:12.5px; color:var(--muted-light)">'+escapeHtml(podsumowanieTekst)+'</div>'+
