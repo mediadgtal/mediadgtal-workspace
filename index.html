@@ -13405,6 +13405,53 @@ function klientFieldInputHtml(f, val, row){
   if(f.type==="date") return '<input type="date" id="'+id+'" value="'+escapeHtml(val||"")+'">';
   return '<input type="text" id="'+id+'" value="'+escapeHtml(val||"")+'">';
 }
+// Zwraca ostatni (najświeższy chronologicznie) pełny wiersz klienta o danej znormalizowanej
+// nazwie, niezależnie od miesiąca — używane do podpowiedzi/auto-uzupełniania przy dodawaniu
+// tego samego klienta w kolejnym miesiącu.
+function klienciFindLatestRecord(norm){
+  var latest = null, latestYm = null;
+  Object.keys(state.clientsMonthly).sort().forEach(function(ym){
+    (state.clientsMonthly[ym]||[]).forEach(function(r){
+      if((r.nazwa||"").trim().toLowerCase()===norm){ latest = r; latestYm = ym; }
+    });
+  });
+  return latest ? {row:latest, ym:latestYm} : null;
+}
+// Lista unikalnych nazw klientów (najświeższa pisownia) ze wszystkich miesięcy — do <datalist>
+// przy polu Nazwa w formularzu nowego klienta.
+function klienciAllClientNames(){
+  var byNorm = {};
+  Object.keys(state.clientsMonthly).sort().forEach(function(ym){
+    (state.clientsMonthly[ym]||[]).forEach(function(r){
+      var norm = (r.nazwa||"").trim().toLowerCase();
+      if(norm) byNorm[norm] = r.nazwa;
+    });
+  });
+  return Object.keys(byNorm).map(function(k){ return byNorm[k]; }).sort();
+}
+// Pola przejmowane automatycznie od poprzedniego wystąpienia tego samego klienta — lokalizacja,
+// kwoty i warunki współpracy zwykle się powtarzają; faktura/status/daty kampanii celowo NIE są
+// kopiowane (dotyczą konkretnie nowego miesiąca).
+var KLIENT_AUTOFILL_KEYS = ["lokalizacja","wynagrodzenie","budzetRekl","okresDni","etapWsp","notatki"];
+function klientNazwaAutofillCheck(){
+  var nameEl = document.getElementById("krm_nazwa");
+  var hintEl = document.getElementById("krm_autofill_hint");
+  if(!nameEl || !hintEl) return;
+  var norm = nameEl.value.trim().toLowerCase();
+  if(!norm){ hintEl.innerHTML = ""; return; }
+  var found = klienciFindLatestRecord(norm);
+  if(!found){ hintEl.innerHTML = ""; return; }
+  KLIENT_AUTOFILL_KEYS.forEach(function(key){
+    var el = document.getElementById("krm_"+key);
+    if(!el) return;
+    el.value = found.row[key] || (typeof found.row[key]==="number" ? 0 : "");
+  });
+  var statusEl = document.getElementById("krm_statusKlienta");
+  if(statusEl) statusEl.value = "Kontynuacja";
+  var iloscEl = document.getElementById("krm_iloscWsp");
+  if(iloscEl) iloscEl.value = (+found.row.iloscWsp||0) + 1;
+  hintEl.innerHTML = '✓ Znaleziono w historii (ostatnio: '+escapeHtml(klienciYmLabel(found.ym))+') — dane uzupełnione, sprawdź i popraw w razie potrzeby.';
+}
 function openClientRowModal(ym, rowId){
   closeClientRowModal();
   var existing = rowId ? (state.clientsMonthly[ym]||[]).filter(function(x){ return x.id===rowId; })[0] : null;
@@ -13415,7 +13462,13 @@ function openClientRowModal(ym, rowId){
     '<h3>'+(isEdit?"Edytuj klienta":"Nowy klient")+'</h3>';
   CLIENT_FIELDS.forEach(function(f){
     var val = existing ? existing[f.key] : (f.type==="number" ? 0 : "");
-    html += '<div class="field"><label>'+f.label+'</label>'+klientFieldInputHtml(f, val, existing)+'</div>';
+    var inputHtml = klientFieldInputHtml(f, val, existing);
+    if(!isEdit && f.key==="nazwa"){
+      inputHtml = inputHtml.replace('<input type="text" id="krm_nazwa"', '<input type="text" id="krm_nazwa" list="krmNazwyDatalist" oninput="klientNazwaAutofillCheck()"')+
+        '<datalist id="krmNazwyDatalist">'+klienciAllClientNames().map(function(n){ return '<option value="'+escapeHtml(n)+'">'; }).join("")+'</datalist>'+
+        '<div id="krm_autofill_hint" style="font-size:11.5px; color:var(--success); margin-top:4px"></div>';
+    }
+    html += '<div class="field"><label>'+f.label+'</label>'+inputHtml+'</div>';
   });
   html += '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
     (isEdit ? '<button class="btn danger small" onclick="deleteClientRowModal()">Usuń</button>' : '')+
