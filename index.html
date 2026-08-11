@@ -16106,146 +16106,18 @@ window.reconnectGCal = doSignIn;
 
 var unsubscribeSnapshot = null;
 var unsubscribeCrmSnapshot = null;
-var unsubscribeFinanceSnapshot = null;
-var unsubscribePostsSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
 var crmPushTimer = null;
 var pendingCrmPush = false;
-var financePushTimer = null;
-var pendingFinancePush = false;
-var postsPushTimer = null;
-var pendingPostsPush = false;
 
-// crmContacts, financeEntries i posts rosną bez ograniczeń — trzymamy je poza głównym
-// dokumentem, żeby ich rozmiar nigdy nie blokował zapisu reszty stanu (zadania, nawyki
-// itd.), i odwrotnie. Patrz [[2026-08-11 GOTCHA]] niżej — główny dokument doszedł do 75%
-// twardego limitu Firestore 1 MiB głównie przez financeEntries (200 KB) i posts (267 KB).
+// crmContacts rośnie bez ograniczeń (setki/tysiące firm) — trzymamy go poza głównym
+// dokumentem, żeby jego rozmiar nigdy nie blokował zapisu reszty stanu (zadania, posty,
+// nawyki itd.), i odwrotnie.
 function mainStateForPush(){
   var copy = Object.assign({}, window.state);
   delete copy.crmContacts;
-  delete copy.financeEntries;
-  delete copy.posts;
   return copy;
-}
-// Fabryka do trzymania tablicy stanu (financeEntries/posts, każdy element z .id) jako
-// osobnej kolekcji Firestore (jeden dokument na wpis) zamiast jednej wielkiej tablicy w
-// głównym dokumencie — dokładnie ten sam wzorzec, który 2026-07-28 naprawił realną,
-// cichą utratę danych w CRM (patrz komentarz przy crmContactsCol niżej).
-function makeArrayCollectionSync(colName){
-  var col = collection(db, colName);
-  var lastPushed = {}; // id -> JSON.stringify ostatniej wersji faktycznie zapisanej w Firestore
-  function dirtyIds(stateKey){
-    var ids = [];
-    (window.state[stateKey]||[]).forEach(function(item){
-      if(!item || !item.id) return;
-      var json = JSON.stringify(item);
-      if(lastPushed[item.id] !== json) ids.push(item.id);
-    });
-    return ids;
-  }
-  function removedIds(stateKey){
-    var current = {};
-    (window.state[stateKey]||[]).forEach(function(item){ if(item && item.id) current[item.id] = true; });
-    return Object.keys(lastPushed).filter(function(id){ return !current[id]; });
-  }
-  function commitInChunks(ops){
-    var chunks = [];
-    for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
-    var chain = Promise.resolve();
-    chunks.forEach(function(chunk){
-      chain = chain.then(function(){
-        var batch = writeBatch(db);
-        chunk.forEach(function(op){
-          var ref = doc(col, op.id);
-          if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
-        });
-        return batch.commit();
-      });
-    });
-    return chain;
-  }
-  return {col:col, lastPushed:lastPushed, dirtyIds:dirtyIds, removedIds:removedIds, commitInChunks:commitInChunks};
-}
-var financeSync = makeArrayCollectionSync("workspace_finance_entries");
-var postsSync = makeArrayCollectionSync("workspace_posts");
-function scheduleFinanceFirestorePush(){
-  pendingFinancePush = true;
-  if(financePushTimer) clearTimeout(financePushTimer);
-  financePushTimer = setTimeout(flushFinanceFirestorePush, 500);
-}
-function flushFinanceFirestorePush(){
-  if(!pendingFinancePush) return;
-  if(financePushTimer){ clearTimeout(financePushTimer); financePushTimer = null; }
-  pendingFinancePush = false;
-  var dirtyIds = financeSync.dirtyIds("financeEntries");
-  var removedIds = financeSync.removedIds("financeEntries");
-  if(!dirtyIds.length && !removedIds.length) return;
-  var byId = {};
-  (window.state.financeEntries||[]).forEach(function(e){ if(e&&e.id) byId[e.id]=e; });
-  var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
-    .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
-  financeSync.commitInChunks(ops).then(function(){
-    dirtyIds.forEach(function(id){ financeSync.lastPushed[id] = JSON.stringify(byId[id]); });
-    removedIds.forEach(function(id){ delete financeSync.lastPushed[id]; });
-  }).catch(function(err){
-    console.error("Firestore batch push (workspace_finance_entries) nie powiódł się:", err);
-  });
-}
-function schedulePostsFirestorePush(){
-  pendingPostsPush = true;
-  if(postsPushTimer) clearTimeout(postsPushTimer);
-  postsPushTimer = setTimeout(flushPostsFirestorePush, 500);
-}
-function flushPostsFirestorePush(){
-  if(!pendingPostsPush) return;
-  if(postsPushTimer){ clearTimeout(postsPushTimer); postsPushTimer = null; }
-  pendingPostsPush = false;
-  var dirtyIds = postsSync.dirtyIds("posts");
-  var removedIds = postsSync.removedIds("posts");
-  if(!dirtyIds.length && !removedIds.length) return;
-  var byId = {};
-  (window.state.posts||[]).forEach(function(p){ if(p&&p.id) byId[p.id]=p; });
-  var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
-    .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
-  postsSync.commitInChunks(ops).then(function(){
-    dirtyIds.forEach(function(id){ postsSync.lastPushed[id] = JSON.stringify(byId[id]); });
-    removedIds.forEach(function(id){ delete postsSync.lastPushed[id]; });
-  }).catch(function(err){
-    console.error("Firestore batch push (workspace_posts) nie powiódł się:", err);
-  });
-}
-// Migracja jednorazowa: jeśli nowa kolekcja jest pusta, a stary dokument workspace/damian
-// wciąż ma tablicę wbudowaną — przepisz ją do kolekcji. Stary dokument nie jest ręcznie
-// czyszczony — po prostu przestaje dostawać te pola przy kolejnych zapisach (setDoc bez
-// merge usuwa pola, których nie ma w nowym obiekcie).
-function financeMigrateOldFieldIfNeeded(){
-  getDocs(financeSync.col).then(function(snap){
-    if(!snap.empty) return;
-    var mainRef = doc(db, "workspace", "damian");
-    return getDoc(mainRef).then(function(mainSnap){
-      if(!mainSnap.exists()) return;
-      var oldEntries = (mainSnap.data().financeEntries)||[];
-      if(!oldEntries.length) return;
-      console.log("Migracja Finansów: przenoszę "+oldEntries.length+" wpisów do workspace_finance_entries…");
-      return financeSync.commitInChunks(oldEntries.filter(function(e){return e&&e.id;}).map(function(e){ return {type:"set", id:e.id, data:e}; }))
-        .then(function(){ console.log("Migracja Finansów zakończona ("+oldEntries.length+" wpisów)."); });
-    });
-  }).catch(function(err){ console.error("Migracja Finansów nie powiodła się:", err); });
-}
-function postsMigrateOldFieldIfNeeded(){
-  getDocs(postsSync.col).then(function(snap){
-    if(!snap.empty) return;
-    var mainRef = doc(db, "workspace", "damian");
-    return getDoc(mainRef).then(function(mainSnap){
-      if(!mainSnap.exists()) return;
-      var oldPosts = (mainSnap.data().posts)||[];
-      if(!oldPosts.length) return;
-      console.log("Migracja Postów: przenoszę "+oldPosts.length+" postów do workspace_posts…");
-      return postsSync.commitInChunks(oldPosts.filter(function(p){return p&&p.id;}).map(function(p){ return {type:"set", id:p.id, data:p}; }))
-        .then(function(){ console.log("Migracja Postów zakończona ("+oldPosts.length+" postów)."); });
-    });
-  }).catch(function(err){ console.error("Migracja Postów nie powiodła się:", err); });
 }
 
 // 2026-07-28 — GOTCHA POWAŻNY: workspace_crm/damian (jeden dokument z całą tablicą
@@ -16315,8 +16187,6 @@ function scheduleFirestorePush(){
   if(pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(flushPush, 500);
   scheduleCrmFirestorePush();
-  scheduleFinanceFirestorePush();
-  schedulePostsFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return;
@@ -16367,7 +16237,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushFinanceFirestorePush(); flushPostsFirestorePush();
+    flushPush(); flushCrmFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -16382,7 +16252,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushFinanceFirestorePush(); flushPostsFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -16402,19 +16272,10 @@ function startSync(){
         return;
       }
       var keepCrm = window.state.crmContacts;
-      // financeEntries/posts: jeśli remote (stary dokument sprzed migracji z 2026-08-11)
-      // wciąż ma te pola wbudowane, użyj ich (to źródło dla jednorazowej migracji do
-      // kolekcji); jeśli remote już ich nie ma (po migracji), zachowaj to, co jest lokalnie
-      // (zsynchronizowane osobno z workspace_finance_entries/workspace_posts) — dokładnie
-      // ten sam wzorzec co keepCrm powyżej.
-      var keepFinance = ("financeEntries" in remote) ? remote.financeEntries : window.state.financeEntries;
-      var keepPosts = ("posts" in remote) ? remote.posts : window.state.posts;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
       window.state.crmContacts = keepCrm||[];
-      window.state.financeEntries = keepFinance||[];
-      window.state.posts = keepPosts||[];
       originalSave();
       window.renderAll();
       setSyncStatus("Zsynchronizowano");
@@ -16443,36 +16304,6 @@ function startSync(){
     console.error("Firestore onSnapshot (workspace_crm_contacts) error:", err);
   });
 
-  financeMigrateOldFieldIfNeeded();
-  unsubscribeFinanceSnapshot = onSnapshot(financeSync.col, function(snap){
-    var arr = [];
-    snap.forEach(function(d){
-      var data = d.data();
-      arr.push(data);
-      financeSync.lastPushed[d.id] = JSON.stringify(data);
-    });
-    window.state.financeEntries = arr;
-    originalSave();
-    if(window.renderAll) window.renderAll();
-  }, function(err){
-    console.error("Firestore onSnapshot (workspace_finance_entries) error:", err);
-  });
-
-  postsMigrateOldFieldIfNeeded();
-  unsubscribePostsSnapshot = onSnapshot(postsSync.col, function(snap){
-    var arr = [];
-    snap.forEach(function(d){
-      var data = d.data();
-      arr.push(data);
-      postsSync.lastPushed[d.id] = JSON.stringify(data);
-    });
-    window.state.posts = arr;
-    originalSave();
-    if(window.renderAll) window.renderAll();
-  }, function(err){
-    console.error("Firestore onSnapshot (workspace_posts) error:", err);
-  });
-
   // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
   // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
   // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
@@ -16488,14 +16319,10 @@ function startSync(){
       var remote = snap.data();
       if((remote._updatedAt||0) > (window.state._updatedAt||0)){
         var keepCrm = window.state.crmContacts;
-        var keepFinance = ("financeEntries" in remote) ? remote.financeEntries : window.state.financeEntries;
-        var keepPosts = ("posts" in remote) ? remote.posts : window.state.posts;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
         window.state.crmContacts = keepCrm||[];
-        window.state.financeEntries = keepFinance||[];
-        window.state.posts = keepPosts||[];
         originalSave();
         window.renderAll();
       }
