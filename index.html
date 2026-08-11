@@ -13557,7 +13557,7 @@ function openKlientPodsumowanieModal(norm){
     ' przy łącznym budżecie reklamowym '+fmtPln(h.sumaBudzet)+' (średnio '+fmtPln(h.sredniBudzet)+'/mies.), na umowach '+okresLabel+
     (h.ostatniStatus ? ('. Ostatni status współpracy: '+h.ostatniStatus+'.') : '.');
   var html = '<div class="modal-overlay" id="klientPodsumowanieModal" data-close="closeKlientPodsumowanieModal">'+
-    '<div class="modal-box card" style="max-width:560px">'+
+    '<div class="modal-box card" style="max-width:min(760px, 92vw)">'+
     '<h3>Podsumowanie współpracy — '+escapeHtml(h.nazwa)+'</h3>'+
     '<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px">'+
     '<div><div class="stat-value" style="font-size:22px">'+h.miesiecy+'</div><div class="stat-sub">miesięcy współpracy</div></div>'+
