@@ -8811,8 +8811,7 @@ function toggleClientOpsTask(id){
     openClientOpsMeetingNoteModal(id);
     return;
   }
-  var wynik = prompt("Wynik (opcjonalnie, 1-2 zdania):", "");
-  clientOpsCompleteTask(id, wynik);
+  clientOpsCompleteTask(id, "");
 }
 function clientOpsCompleteTask(id, wynik){
   var t = state.clientOps.tasks.filter(function(x){ return x.id===id; })[0];
