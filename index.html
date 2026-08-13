@@ -1630,6 +1630,7 @@ function migrateState(s){
     if(c.typUmowy==null) c.typUmowy = "czasowa";
     if(!c.coExcludedAutoKeys) c.coExcludedAutoKeys = [];
     if(!c.coRecurringSeries) c.coRecurringSeries = [];
+    if(!c.coDisabledAutoTypes) c.coDisabledAutoTypes = [];
   });
   s.clientOps.tasks.forEach(function(t){
     if(!t.date){
@@ -8283,6 +8284,9 @@ var CLIENT_OPS_TASK_TYPE_LABEL = {
 // Zadania "reaktywne" — planowane nie z góry na cały okres umowy, tylko w momencie zajścia zdarzenia
 // (start pierwszej kampanii). Wyłączone z automatycznego czyszczenia/regeneracji przy edycji klienta.
 var CLIENT_OPS_REACTIVE_TASK_TYPES = ["konsultacja_7dni","konsultacja_30dni","konsultacja_60dni","spotkanie_koncowe"];
+// Auto-generowane typy zadań, które powtarzają się co miesiąc przez cały okres umowy — jedyne, dla których
+// "Usuń cykl" ma sens (pozostałe typy auto to zadania jednorazowe przy starcie/końcu współpracy).
+var CLIENT_OPS_RECURRING_AUTO_TYPES = ["raport_miesieczny","wystawienie_faktury","kontrola_jakosci_leadow","kontrola_gwarancji"];
 // Typy zadań, których odznaczenie otwiera notatkę/transkrypcję ze spotkania zamiast krótkiego promptu.
 var CLIENT_OPS_MEETING_TASK_TYPES = ["onboarding","konsultacja_7dni","konsultacja_30dni","konsultacja_60dni","spotkanie_koncowe","spotkanie_online"];
 function clientOpsMonthlyEquivalent(c){
@@ -8328,6 +8332,7 @@ function clientOpsGenerateTaskCandidates(c){
   if(!isOpenEnded && (!end || end < start)) return out;
   function push(type, date, title, opis){
     if(!date) return;
+    if((c.coDisabledAutoTypes||[]).indexOf(type)!==-1) return;
     date = coShiftWeekend(date);
     out.push({type:type, date:date, title:title, opis:opis||""});
   }
@@ -8558,6 +8563,13 @@ function undoClientOps(){
   } else if(a.type==="cancelSeries"){
     state.clientOps.tasks = state.clientOps.tasks.concat(a.removedTasks||[]);
     state.clientOps.clients.forEach(function(x){ (x.coRecurringSeries||[]).forEach(function(s){ if(s.id===a.seriesId) s.active=true; }); });
+  } else if(a.type==="cancelAutoType"){
+    state.clientOps.tasks = state.clientOps.tasks.concat(a.removedTasks||[]);
+    var cAt = state.clientOps.clients.filter(function(x){ return x.id===a.clientId; })[0];
+    if(cAt && cAt.coDisabledAutoTypes){
+      var kiAt = cAt.coDisabledAutoTypes.indexOf(a.taskType);
+      if(kiAt!==-1) cAt.coDisabledAutoTypes.splice(kiAt,1);
+    }
   }
   save(); renderAll();
 }
@@ -8959,6 +8971,19 @@ function cancelClientOpsTaskSeries(seriesId){
   state.clientOps.tasks = state.clientOps.tasks.filter(function(t){ return !(t.seriesId===seriesId && !t.done && t.date>=today); });
   series.active = false;
   pushClientOpsUndo({type:"cancelSeries", seriesId:seriesId, removedTasks:removed});
+  save(); renderAll();
+}
+function cancelClientOpsAutoTaskType(clientId, type){
+  var c = state.clientOps.clients.filter(function(x){ return x.id===clientId; })[0];
+  if(!c) return;
+  var label = CLIENT_OPS_TASK_TYPE_LABEL[type] || type;
+  if(!confirm('Wyłączyć na stałe automatyczne zadania typu "'+label+'" dla tego klienta? Przyszłe niewykonane zadania tego typu zostaną usunięte. Wykonane i przeszłe zostaną zachowane w historii.')) return;
+  if(!c.coDisabledAutoTypes) c.coDisabledAutoTypes = [];
+  if(c.coDisabledAutoTypes.indexOf(type)===-1) c.coDisabledAutoTypes.push(type);
+  var today = todayStr();
+  var removed = state.clientOps.tasks.filter(function(t){ return t.clientId===clientId && t.auto && t.type===type && !t.done && t.date>=today; });
+  state.clientOps.tasks = state.clientOps.tasks.filter(function(t){ return !(t.clientId===clientId && t.auto && t.type===type && !t.done && t.date>=today); });
+  pushClientOpsUndo({type:"cancelAutoType", clientId:clientId, taskType:type, removedTasks:removed});
   save(); renderAll();
 }
 function openClientOpsExtModal(taskId){
@@ -10061,6 +10086,7 @@ function renderClientOpsTabZadania(c){
       '<button class="linklike" onclick="openClientOpsTaskModal(\''+c.id+'\',\''+t.id+'\')">Edytuj</button>'+
       '<button class="linklike danger" onclick="deleteClientOpsTask(\''+t.id+'\')">Usuń</button>'+
       (t.seriesId ? '<button class="linklike danger" onclick="cancelClientOpsTaskSeries(\''+t.seriesId+'\')">Usuń cykl</button>' : '')+
+      (!t.seriesId && t.auto && CLIENT_OPS_RECURRING_AUTO_TYPES.indexOf(t.type)!==-1 ? '<button class="linklike danger" onclick="cancelClientOpsAutoTaskType(\''+c.id+'\',\''+t.type+'\')">Usuń cykl</button>' : '')+
       '</div>';
   });
   html += '</div>';
