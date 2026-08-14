@@ -4326,7 +4326,7 @@ function triggerPublishPost(id, target){
     if(!confirm("Anulować zaplanowaną publikację tego posta na Facebooku? Tej operacji nie da się cofnąć (post zostanie usunięty z harmonogramu Mety).")) return;
     __publishingIds[key] = true;
     renderPostPreviewModal();
-    window.cancelFbScheduleFn({postId:id}).then(function(){
+    waitForPendingPush().then(function(){ return window.cancelFbScheduleFn({postId:id}); }).then(function(){
       delete __publishingIds[key];
       p.fbPublishStatus = null;
       renderAll(); renderPostPreviewModal();
@@ -4347,7 +4347,7 @@ function triggerPublishPost(id, target){
       if(!confirm("Anulować zaplanowaną automatyczną publikację tego posta na Instagramie?")) return;
       __publishingIds[key] = true;
       renderPostPreviewModal();
-      window.cancelIgScheduleFn({postId:id}).then(function(){
+      waitForPendingPush().then(function(){ return window.cancelIgScheduleFn({postId:id}); }).then(function(){
         delete __publishingIds[key];
         p.igScheduleRequested = false;
         p.igTaskName = null;
@@ -4361,7 +4361,7 @@ function triggerPublishPost(id, target){
       if(!confirm("Zaplanować automatyczną publikację tego posta na Instagramie w dniu "+fmtDate(p.date)+(p.time?" o "+p.time:"")+"? System spróbuje opublikować go DOKŁADNIE RAZ w tym dniu — bez ponawiania prób.")) return;
       __publishingIds[key] = true;
       renderPostPreviewModal();
-      window.scheduleIgPublishFn({postId:id}).then(function(){
+      waitForPendingPush().then(function(){ return window.scheduleIgPublishFn({postId:id}); }).then(function(){
         delete __publishingIds[key];
         p.igScheduleRequested = true;
         renderAll(); renderPostPreviewModal();
@@ -4378,7 +4378,7 @@ function triggerPublishPost(id, target){
   if(!confirm((target==="fb"?"Na pewno "+verb:"Opublikować ten post NA ŻYWO")+" na "+label+"? Tej operacji nie da się cofnąć.")) return;
   __publishingIds[key] = true;
   renderPostPreviewModal();
-  window.publishPostFn({postId:id, target:target}).then(function(res){
+  waitForPendingPush().then(function(){ return window.publishPostFn({postId:id, target:target}); }).then(function(res){
     delete __publishingIds[key];
     var data = res.data || {};
     var entry = data.result;
@@ -16404,16 +16404,26 @@ function scheduleFirestorePush(){
   scheduleCrmFirestorePush();
 }
 function flushPush(){
-  if(!pendingPush) return;
+  if(!pendingPush) return Promise.resolve();
   if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
   pendingPush = false;
   var docRef = doc(db, "workspace", "damian");
-  setDoc(docRef, mainStateForPush()).then(function(){
+  return setDoc(docRef, mainStateForPush()).then(function(){
     setSyncStatus("Zsynchronizowano");
   }).catch(function(err){
     console.error("Firestore push (workspace/damian) nie powiódł się:", err);
     setSyncStatus("Offline (tylko lokalnie)");
   });
+}
+// 2026-08-14 — naprawa wyścigu przy publikacji: "Publikuj teraz" wywoływało Cloud Function
+// publishPost natychmiast po kliknięciu, a ta czyta posty z dokumentu workspace/damian w
+// Firestore. Zapis do Firestore jest jednak debounce'owany o 500ms (scheduleFirestorePush) —
+// jeśli post był dopiero co utworzony/edytowany, serwer mógł sprawdzić dokument zanim ten
+// zapis dotarł, i zwrócić "Nie znaleziono posta." mimo że post istniał lokalnie cały czas.
+// waitForPendingPush() domyka każdy oczekujący zapis PRZED wywołaniem funkcji, które czytają
+// posty po ID z tego dokumentu (publishPost, scheduleIgPublish, cancelIgSchedule, cancelFbSchedule).
+function waitForPendingPush(){
+  return pendingPush ? flushPush() : Promise.resolve();
 }
 function scheduleCrmFirestorePush(){
   pendingCrmPush = true;
