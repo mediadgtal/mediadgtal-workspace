@@ -4326,7 +4326,7 @@ function triggerPublishPost(id, target){
     if(!confirm("Anulować zaplanowaną publikację tego posta na Facebooku? Tej operacji nie da się cofnąć (post zostanie usunięty z harmonogramu Mety).")) return;
     __publishingIds[key] = true;
     renderPostPreviewModal();
-    waitForPendingPush().then(function(){ return window.cancelFbScheduleFn({postId:id}); }).then(function(){
+    window.waitForPendingPush().then(function(){ return window.cancelFbScheduleFn({postId:id}); }).then(function(){
       delete __publishingIds[key];
       p.fbPublishStatus = null;
       renderAll(); renderPostPreviewModal();
@@ -4347,7 +4347,7 @@ function triggerPublishPost(id, target){
       if(!confirm("Anulować zaplanowaną automatyczną publikację tego posta na Instagramie?")) return;
       __publishingIds[key] = true;
       renderPostPreviewModal();
-      waitForPendingPush().then(function(){ return window.cancelIgScheduleFn({postId:id}); }).then(function(){
+      window.waitForPendingPush().then(function(){ return window.cancelIgScheduleFn({postId:id}); }).then(function(){
         delete __publishingIds[key];
         p.igScheduleRequested = false;
         p.igTaskName = null;
@@ -4361,7 +4361,7 @@ function triggerPublishPost(id, target){
       if(!confirm("Zaplanować automatyczną publikację tego posta na Instagramie w dniu "+fmtDate(p.date)+(p.time?" o "+p.time:"")+"? System spróbuje opublikować go DOKŁADNIE RAZ w tym dniu — bez ponawiania prób.")) return;
       __publishingIds[key] = true;
       renderPostPreviewModal();
-      waitForPendingPush().then(function(){ return window.scheduleIgPublishFn({postId:id}); }).then(function(){
+      window.waitForPendingPush().then(function(){ return window.scheduleIgPublishFn({postId:id}); }).then(function(){
         delete __publishingIds[key];
         p.igScheduleRequested = true;
         renderAll(); renderPostPreviewModal();
@@ -4378,7 +4378,7 @@ function triggerPublishPost(id, target){
   if(!confirm((target==="fb"?"Na pewno "+verb:"Opublikować ten post NA ŻYWO")+" na "+label+"? Tej operacji nie da się cofnąć.")) return;
   __publishingIds[key] = true;
   renderPostPreviewModal();
-  waitForPendingPush().then(function(){ return window.publishPostFn({postId:id, target:target}); }).then(function(res){
+  window.waitForPendingPush().then(function(){ return window.publishPostFn({postId:id, target:target}); }).then(function(res){
     delete __publishingIds[key];
     var data = res.data || {};
     var entry = data.result;
@@ -16425,6 +16425,7 @@ function flushPush(){
 function waitForPendingPush(){
   return pendingPush ? flushPush() : Promise.resolve();
 }
+window.waitForPendingPush = waitForPendingPush;
 function scheduleCrmFirestorePush(){
   pendingCrmPush = true;
   if(crmPushTimer) clearTimeout(crmPushTimer);
