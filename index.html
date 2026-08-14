@@ -14484,13 +14484,38 @@ function crmPushT4ARowActual(c, rn){
   }
 }
 var crmT4ALastPull = 0;
+function crmApplyT4APullRow(c, row){
+  // row jest A:R (indeks 0 = nazwa w kolumnie A), statusy zaczynają się od K = indeks 10 —
+  // patrz t4aBlockA_H/J_P/Q_R (te same offsety, co zapis).
+  var changed = false;
+  var t = crmGetT4A(c);
+  var next = {sent:crmT4ABoolify(row[10]), offer:crmT4ABoolify(row[11]), decision:crmT4ABoolify(row[12]), listed:crmT4ABoolify(row[13]), client:crmT4ABoolify(row[14])};
+  var nextSentDate = (row[15]||"").toString().trim();
+  var nextSystem = (row[16]||"").toString().trim();
+  var nextNotes = (row[17]||"").toString().trim();
+  if(next.sent!==t.sent || next.offer!==t.offer || next.decision!==t.decision || next.listed!==t.listed || next.client!==t.client){
+    t.sent=next.sent; t.offer=next.offer; t.decision=next.decision; t.listed=next.listed; t.client=next.client;
+    changed = true;
+  }
+  if(nextSentDate && !t.sentDate){ t.sentDate = nextSentDate; changed = true; }
+  if(nextSystem && nextSystem!==c.system){ c.system = nextSystem; changed = true; }
+  if(nextNotes && !t.notes){ t.notes = nextNotes; changed = true; }
+  return changed;
+}
 function crmPullT4AStatuses(){
   if(!window.__gcalToken) return;
   var linked = state.crmContacts.filter(function(c){ return c.t4aSheetRow && !c.t4aDirty; });
   if(!linked.length) return;
   var base = "https://sheets.googleapis.com/v4/spreadsheets/"+T4A_SHEET_ID;
   var headers = {Authorization:"Bearer "+window.__gcalToken};
-  var params = linked.map(function(c){ return "ranges="+encodeURIComponent(T4A_SHEET_TAB+"!K"+c.t4aSheetRow+":R"+c.t4aSheetRow); }).join("&");
+  // Pobieramy CAŁY wiersz (A:R), nie tylko statusy (K:R) — kolumna A pozwala sprawdzić, czy
+  // zapamiętany numer wiersza wciąż wskazuje na tego samego kontaktu. Bez tej weryfikacji, gdy
+  // Tomek ręcznie doda/usunie/przestawi wiersz w arkuszu, appka po cichu przypisywała status
+  // ZUPEŁNIE INNEJ firmy do kontaktu (znaleziony 2026-08-14: "Pole Dance Institute Wrocław"
+  // miał zapamiętany wiersz 31, który w międzyczasie stał się wierszem "Latin Dance Academy" —
+  // appka pokazywała Wrocławiowi cudzy "Klient: tak"). Push (crmPushT4ARow) już się przed tym
+  // zabezpieczał samo-naprawą numeru wiersza; pull miał tej ochrony brak.
+  var params = linked.map(function(c){ return "ranges="+encodeURIComponent(T4A_SHEET_TAB+"!A"+c.t4aSheetRow+":R"+c.t4aSheetRow); }).join("&");
   fetch(base+"/values:batchGet?"+params, {headers:headers})
     .then(function(r){
       if(r.status===401){ window.__gcalToken=null; throw new Error("401"); }
@@ -14498,23 +14523,54 @@ function crmPullT4AStatuses(){
       return r.json();
     }).then(function(data){
       var changed = false;
+      var mismatched = [];
       (data.valueRanges||[]).forEach(function(vr, i){
         var c = linked[i];
         var row = (vr.values && vr.values[0]) || [];
-        var t = crmGetT4A(c);
-        var next = {sent:crmT4ABoolify(row[0]), offer:crmT4ABoolify(row[1]), decision:crmT4ABoolify(row[2]), listed:crmT4ABoolify(row[3]), client:crmT4ABoolify(row[4])};
-        var nextSentDate = (row[5]||"").toString().trim();
-        var nextSystem = (row[6]||"").toString().trim();
-        var nextNotes = (row[7]||"").toString().trim();
-        if(next.sent!==t.sent || next.offer!==t.offer || next.decision!==t.decision || next.listed!==t.listed || next.client!==t.client){
-          t.sent=next.sent; t.offer=next.offer; t.decision=next.decision; t.listed=next.listed; t.client=next.client;
-          changed = true;
-        }
-        if(nextSentDate && !t.sentDate){ t.sentDate = nextSentDate; changed = true; }
-        if(nextSystem && nextSystem!==c.system){ c.system = nextSystem; changed = true; }
-        if(nextNotes && !t.notes){ t.notes = nextNotes; changed = true; }
+        var cell = (row[0]||"").toString().trim().toLowerCase();
+        var expected = (c.name||"").trim().toLowerCase();
+        if(expected && cell !== expected){ mismatched.push(c); return; }
+        if(crmApplyT4APullRow(c, row)) changed = true;
       });
-      if(changed){ save(); renderAll(); }
+      if(!mismatched.length){
+        if(changed){ save(); renderAll(); }
+        return;
+      }
+      // Dla niedopasowanych: znajdź AKTUALNY wiersz każdego kontaktu po nazwie w całej
+      // kolumnie A (tak samo jak robi to push), popraw zapamiętany numer i dociągnij dane
+      // z właściwego, świeżo znalezionego wiersza.
+      fetch(base+"/values/"+encodeURIComponent(T4A_SHEET_TAB+"!A2:A")+"?valueRenderOption=FORMULA", {headers:headers})
+        .then(function(r2){
+          if(r2.status===401){ window.__gcalToken=null; throw new Error("401"); }
+          if(!r2.ok) throw new Error("http"+r2.status);
+          return r2.json();
+        }).then(function(data2){
+          var names = (data2.values||[]).map(function(row){ return (row[0]||"").toString().trim().toLowerCase(); });
+          var toRefetch = [];
+          mismatched.forEach(function(c){
+            var expected = (c.name||"").trim().toLowerCase();
+            var idx = expected ? names.indexOf(expected) : -1;
+            if(idx>-1){ c.t4aSheetRow = idx+2; toRefetch.push(c); }
+            else { console.warn("crmPullT4AStatuses: nie znaleziono wiersza dla kontaktu w arkuszu Tomka:", c.name); }
+          });
+          if(!toRefetch.length){
+            if(changed){ save(); renderAll(); }
+            return;
+          }
+          var params2 = toRefetch.map(function(c){ return "ranges="+encodeURIComponent(T4A_SHEET_TAB+"!A"+c.t4aSheetRow+":R"+c.t4aSheetRow); }).join("&");
+          fetch(base+"/values:batchGet?"+params2, {headers:headers})
+            .then(function(r3){
+              if(!r3.ok) throw new Error("http"+r3.status);
+              return r3.json();
+            }).then(function(data3){
+              (data3.valueRanges||[]).forEach(function(vr, i){
+                var row = (vr.values && vr.values[0]) || [];
+                if(crmApplyT4APullRow(toRefetch[i], row)) changed = true;
+              });
+              save();
+              if(changed) renderAll();
+            }).catch(function(){ if(changed){ save(); renderAll(); } });
+        }).catch(function(){ if(changed){ save(); renderAll(); } });
     }).catch(function(){});
 }
 /* 2026-07-27 — uzgodnienie RĘCZNE z całym arkuszem Tomka (Damian zgłosił brakujące
