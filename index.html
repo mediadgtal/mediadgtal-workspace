@@ -2795,6 +2795,8 @@ function defaultState(){
   s.birthdays = [];
   s.imieninyExtra = [];
 
+  s.fbAuth = null;
+
   return s;
 }
 
@@ -16157,6 +16159,11 @@ var fbPagesLoading = false;
 
 window.fbAsyncInit = function(){
   FB.init({ appId: FB_APP_ID, cookie: true, xfbml: false, version: FB_GRAPH_VERSION });
+  // Najpierw spróbuj długożyjącego tokenu zapisanego w Firestore (state.fbAuth) —
+  // przetrwa przeładowanie strony i nie zależy od sesyjnego cookie Facebooka (którego
+  // FB.getLoginStatus czasem nie widzi, np. gdy Chrome blokuje cookies stron trzecich).
+  // Dopiero gdy brak/wygasł, spróbuj dotychczasowej ścieżki przez getLoginStatus.
+  if(tryStoredFbAuth()) return;
   FB.getLoginStatus(function(response){
     if(response && response.status === "connected"){
       window.__fbToken = response.authResponse.accessToken;
@@ -16164,6 +16171,21 @@ window.fbAsyncInit = function(){
     }
   });
 };
+
+// Zwraca true, jeśli udało się odzyskać ważny token z state.fbAuth (zapisany po ostatnim
+// ręcznym połączeniu i wymieniony na długożyjący, ~60 dni, przez exchangeFbLongLivedToken).
+function tryStoredFbAuth(retries){
+  retries = retries || 0;
+  if(typeof state === "undefined" || !state){
+    if(retries < 20) setTimeout(function(){ tryStoredFbAuth(retries+1); }, 500);
+    return false;
+  }
+  var auth = state.fbAuth;
+  if(!auth || !auth.accessToken || !auth.expiresAt || auth.expiresAt <= Date.now()) return false;
+  window.__fbToken = auth.accessToken;
+  maybeAutoSyncSocial();
+  return true;
+}
 
 function doFbSignIn(){
   if(typeof FB === "undefined"){
@@ -16173,11 +16195,27 @@ function doFbSignIn(){
   FB.login(function(response){
     if(response && response.authResponse){
       window.__fbToken = response.authResponse.accessToken;
+      persistLongLivedFbToken(response.authResponse.accessToken);
       ensureFbPages(function(){ renderAll(); });
     }
   }, {scope:"pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_insights,pages_manage_posts,instagram_content_publish,pages_read_user_content,pages_manage_engagement"});
 }
 window.reconnectFb = doFbSignIn;
+
+// Wymienia krótkożyjący token (FB.login, ~1-2h) na długożyjący (~60 dni) przez serwerową
+// funkcję (potrzebuje App Secret, więc nie może się to dziać w przeglądarce) i zapisuje
+// wynik w state.fbAuth, żeby przetrwał przeładowanie strony bez ponownego klikania.
+function persistLongLivedFbToken(shortLivedToken){
+  if(!window.exchangeFbLongLivedTokenFn){ console.error("exchangeFbLongLivedTokenFn niedostępne"); return; }
+  window.exchangeFbLongLivedTokenFn({shortLivedToken: shortLivedToken}).then(function(res){
+    var data = res.data || {};
+    if(!data.accessToken || !data.expiresIn) return;
+    state.fbAuth = { accessToken: data.accessToken, expiresAt: Date.now() + data.expiresIn*1000 };
+    save();
+  }).catch(function(err){
+    console.error("Wymiana tokenu FB na długożyjący nie powiodła się (nieblokujące):", err);
+  });
+}
 
 function ensureFbPages(cb){
   if(!window.__fbToken){ if(cb) cb(); return; }
@@ -16186,7 +16224,11 @@ function ensureFbPages(cb){
   fetch("https://graph.facebook.com/"+FB_GRAPH_VERSION+"/me/accounts?fields=name,id,fan_count,about,picture{url},instagram_business_account{id,username,followers_count,follows_count,media_count,biography,profile_picture_url}", {
     headers:{Authorization:"Bearer "+window.__fbToken}
   }).then(function(r){
-    if(r.status===401){ window.__fbToken=null; throw new Error("401"); }
+    if(r.status===401){
+      window.__fbToken=null;
+      if(typeof state !== "undefined" && state && state.fbAuth){ state.fbAuth = null; save(); }
+      throw new Error("401");
+    }
     return r.json();
   }).then(function(json){
     window.__fbPagesData = json.data || [];
@@ -16326,6 +16368,9 @@ window.scheduleIgPublishFn = httpsCallable(functionsInstance, "scheduleIgPublish
 window.cancelIgScheduleFn = httpsCallable(functionsInstance, "cancelIgSchedule");
 // 2026-07-31 — Anulowanie natywnie zaplanowanego posta na Facebooku (usuwa go z serwerów Mety).
 window.cancelFbScheduleFn = httpsCallable(functionsInstance, "cancelFbSchedule");
+// 2026-08-17 — Wymiana krótkożyjącego tokenu z FB.login (~1-2h) na długożyjący (~60 dni),
+// żeby ręczne "Połącz z Facebookiem" nie było potrzebne przy każdym wejściu do apki.
+window.exchangeFbLongLivedTokenFn = httpsCallable(functionsInstance, "exchangeFbLongLivedToken");
 
 var gate = document.getElementById("authGate");
 var gateTitle = document.getElementById("gateTitle");
