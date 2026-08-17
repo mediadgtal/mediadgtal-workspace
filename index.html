@@ -9458,19 +9458,30 @@ function flushClientOpsBackupPush(){
     platnosciRows.push([p.id,nameOf(p.clientId),p.ym,p.oplacony]);
   });
 
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchUpdate", {
+  // 2026-08-17 — czyścimy pełne kolumny PRZED zapisem: batchUpdate z zakresem "!A1" i
+  // tablicą values nadpisuje tylko tyle wierszy ile jest w tablicy, nie kasuje nic poniżej.
+  // Gdy lokalny zbiór kiedyś się skurczy (np. po naprawie błędu dublującego zadania),
+  // stare wiersze zostawały w arkuszu na zawsze — stąd zduplikowane/nieaktualne wiersze
+  // znalezione w kontroli 17.08. Czyszczenie całych kolumn przed każdym zapisem to eliminuje.
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchClear", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({
-      valueInputOption:"RAW",
-      data:[
-        {range:"KLIENCI!A1", values: klienciRows},
-        {range:"ZADANIA!A1", values: zadaniaRows},
-        {range:"HISTORIA!A1", values: historiaRows},
-        {range:"WYNIKI!A1", values: wynikiRows},
-        {range:"PLATNOSCI!A1", values: platnosciRows}
-      ]
-    })
+    body: JSON.stringify({ranges:["KLIENCI!A:Y","ZADANIA!A:J","HISTORIA!A:E","WYNIKI!A:T","PLATNOSCI!A:D"]})
+  }).then(function(){
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({
+        valueInputOption:"RAW",
+        data:[
+          {range:"KLIENCI!A1", values: klienciRows},
+          {range:"ZADANIA!A1", values: zadaniaRows},
+          {range:"HISTORIA!A1", values: historiaRows},
+          {range:"WYNIKI!A1", values: wynikiRows},
+          {range:"PLATNOSCI!A1", values: platnosciRows}
+        ]
+      })
+    });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     clientOpsBackupStatus = r.ok ? "ok" : "error";
@@ -9488,8 +9499,17 @@ function renderClientOpsBackupStatus(){
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.clientOpsBackupSheetId, sheetUrl: state.clientOpsBackupSheetUrl,
     error: clientOpsBackupStatus==="error",
-    actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: clientOpsVerifyStatus==="loading", onclick:"clientOpsVerify1to1()", danger: mismatch, result: resultTxt}]
+    actions: [
+      {icon:"🔍", title:"Sprawdź 1:1", disabled: clientOpsVerifyStatus==="loading", onclick:"clientOpsVerify1to1()", danger: mismatch, result: resultTxt},
+      {icon:"🧹", title:"Wyczyść i zapisz od nowa (usuwa stare/zdublowane wiersze z arkusza)", onclick:"forceClientOpsBackupPush()"}
+    ]
   });
+}
+// 2026-08-17 — ręczne wymuszenie pełnego resynca (czyszczenie kolumn + zapis), żeby od
+// razu wyczyścić wiersze-widma nagromadzone przed naprawą flushClientOpsBackupPush.
+function forceClientOpsBackupPush(){
+  clientOpsBackupPending = true;
+  flushClientOpsBackupPush();
 }
 
 /* ================= Kopia zapasowa Zadań i Drogi (2026-07-28) =================
@@ -9762,10 +9782,20 @@ function flushPostyBackupPush(){
   if(!postyBackupPending) return;
   postyBackupPending = false;
   if(!window.__gcalToken || !state.postyBackupSheetId) return;
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values:batchUpdate", {
+  // 2026-08-17 — czyścimy pełną kolumnę PRZED zapisem, z tego samego powodu co w
+  // flushClientOpsBackupPush: "!A1" + values nadpisuje tylko tyle wierszy ile jest w
+  // tablicy, więc gdy zbiór lokalny się skurczy, stare wiersze zostają w arkuszu
+  // na zawsze (stąd sprzeczny status posta "AI zabierze Ci pracę" w kontroli 17.08).
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values:batchClear", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({valueInputOption:"RAW", data:[{range:"POSTY!A1", values: postyBackupRows()}]})
+    body: JSON.stringify({ranges:["POSTY!A:Q"]})
+  }).then(function(){
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"POSTY!A1", values: postyBackupRows()}]})
+    });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     postyBackupStatus = r.ok ? "ok" : "error";
@@ -9799,8 +9829,17 @@ function renderPostyBackupStatus(){
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.postyBackupSheetId, sheetUrl: state.postyBackupSheetUrl,
     error: postyBackupStatus==="error",
-    actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: postyVerifyStatus==="loading", onclick:"postyVerify1to1()", danger: danger, result: resultTxt}]
+    actions: [
+      {icon:"🔍", title:"Sprawdź 1:1", disabled: postyVerifyStatus==="loading", onclick:"postyVerify1to1()", danger: danger, result: resultTxt},
+      {icon:"🧹", title:"Wyczyść i zapisz od nowa (usuwa stare/zdublowane wiersze z arkusza)", onclick:"forcePostyBackupPush()"}
+    ]
   });
+}
+// 2026-08-17 — ręczne wymuszenie pełnego resynca (czyszczenie kolumny + zapis), żeby od
+// razu wyczyścić wiersze-widma nagromadzone przed naprawą flushPostyBackupPush.
+function forcePostyBackupPush(){
+  postyBackupPending = true;
+  flushPostyBackupPush();
 }
 
 /* ---- Dashboard modułu (sekcja 5.1) ---- */
