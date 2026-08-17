@@ -6125,9 +6125,9 @@ function renderSocial(el, platform){
   html += '<button class="btn secondary small" onclick="refreshAcc(\''+platform+'\')">⟳ Odśwież</button></div>';
 
   if(window.__fbToken){
-    html += '<div class="stub-note">Połączono z Facebook/Instagram API — dane odświeżają się automatycznie raz dziennie przy pierwszym wejściu. Kliknij „⟳ Odśwież”, żeby zaktualizować od razu. Jeśli dostałeś nowe uprawnienia (np. do publikowania) i chcesz je zatwierdzić: <a href="#" onclick="window.reconnectFb(); return false;" style="color:var(--accent)">Połącz ponownie z Facebookiem</a>.</div>';
+    html += '<div class="stub-note" style="color:var(--success); font-weight:700">Połączono</div>';
   } else {
-    html += '<div class="stub-note">To dane wprowadzane ręcznie, albo pobierane automatycznie z prawdziwego Instagram/Facebook API. <a href="#" onclick="window.reconnectFb(); return false;" style="color:var(--accent)">Połącz z Facebookiem</a>, żeby włączyć.</div>';
+    html += '<div class="stub-note" style="color:var(--danger); font-weight:700">Rozłączono <button class="btn small" onclick="window.reconnectFb()" style="margin-left:8px">Połącz z Facebookiem</button></div>';
   }
 
   var last = acc.stats[acc.stats.length-1].followers;
