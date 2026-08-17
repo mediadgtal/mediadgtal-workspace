@@ -16562,8 +16562,16 @@ function flushPush(){
 // zapis dotarł, i zwrócić "Nie znaleziono posta." mimo że post istniał lokalnie cały czas.
 // waitForPendingPush() domyka każdy oczekujący zapis PRZED wywołaniem funkcji, które czytają
 // posty po ID z tego dokumentu (publishPost, scheduleIgPublish, cancelIgSchedule, cancelFbSchedule).
+// 2026-08-17 — luka znaleziona po tym, jak błąd "Nie znaleziono posta." wrócił mimo tej
+// naprawy: dla posta utworzonego chwilę wcześniej i opublikowanego "od razu" (np. z gotowego
+// szablonu), zdarzało się że pendingPush było jeszcze false w momencie kliknięcia "Publikuj
+// teraz" — zapis lokalny(save()) i to sprawdzenie ścigały się o to, kto pierwszy ustawi flagę.
+// Zamiast polegać na tym, że coś inne już wywołało save()/scheduleFirestorePush() wcześniej,
+// wywołujemy save() tutaj wprost — jest bezkosztowe gdy nic się nie zmieniło, a gwarantuje że
+// pendingPush jest już true zanim flushPush() sprawdzi tę flagę.
 function waitForPendingPush(){
-  return pendingPush ? flushPush() : Promise.resolve();
+  if(typeof window.save === "function") window.save();
+  return flushPush();
 }
 window.waitForPendingPush = waitForPendingPush;
 function scheduleCrmFirestorePush(){
