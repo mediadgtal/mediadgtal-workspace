@@ -4388,8 +4388,13 @@ function triggerPublishPost(id, target){
     if(entry && entry.ok && !entry.scheduled){
       ceoAwardXpEvent(p.video ? "reelPublished" : "postPublished");
     }
-    if(p.fbPublishStatus && p.fbPublishStatus.ok && !p.fbPublishStatus.scheduled &&
-       p.igPublishStatus && p.igPublishStatus.ok){
+    // Konto MediaDGtal ma sekcję Facebooka celowo wyłączoną (patrz renderPublishSection,
+    // "brand!=='MediaDGtal'") — dla niego fbPublishStatus NIGDY się nie ustawia, więc warunek
+    // z fbPublishStatus.ok nigdy by się nie spełnił i stage zostawałby na "zaplanowany" na
+    // zawsze, mimo realnej, udanej publikacji na Instagramie (znaleziono 2026-08-19).
+    var fbOk = p.brand==="MediaDGtal" || (p.fbPublishStatus && p.fbPublishStatus.ok && !p.fbPublishStatus.scheduled);
+    var igOk = p.igPublishStatus && p.igPublishStatus.ok;
+    if(fbOk && igOk){
       p.stage = "opublikowany";
       p.publishedAt = todayStr();
       syncContentCalendarFromPost(p);
