@@ -4330,7 +4330,13 @@ function triggerPublishPost(id, target){
     renderPostPreviewModal();
     window.waitForPendingPush().then(function(){ return window.cancelFbScheduleFn({postId:id}); }).then(function(){
       delete __publishingIds[key];
-      p.fbPublishStatus = null;
+      // Nie mutuj `p` z zamknięcia — między kliknięciem a odpowiedzią serwera onSnapshot
+      // (wyzwolony własnym zapisem Cloud Function do tego samego dokumentu) mógł już
+      // podmienić window.state.posts na nową tablicę, odrywając `p` od żywego stanu
+      // (mutacja przechodziła w próżnię, save() nie miał czego wypchnąć). Zawsze pobieraj
+      // świeży element po id tuż przed zapisem (znalezione 2026-08-19 dla planowania FB).
+      var live = state.posts.filter(function(x){return x.id===id;})[0];
+      if(live) live.fbPublishStatus = null;
       save();
       renderAll(); renderPostPreviewModal();
     }).catch(function(err){
@@ -4352,8 +4358,8 @@ function triggerPublishPost(id, target){
       renderPostPreviewModal();
       window.waitForPendingPush().then(function(){ return window.cancelIgScheduleFn({postId:id}); }).then(function(){
         delete __publishingIds[key];
-        p.igScheduleRequested = false;
-        p.igTaskName = null;
+        var live = state.posts.filter(function(x){return x.id===id;})[0];
+        if(live){ live.igScheduleRequested = false; live.igTaskName = null; }
         save();
         renderAll(); renderPostPreviewModal();
       }).catch(function(err){
@@ -4367,7 +4373,8 @@ function triggerPublishPost(id, target){
       renderPostPreviewModal();
       window.waitForPendingPush().then(function(){ return window.scheduleIgPublishFn({postId:id}); }).then(function(){
         delete __publishingIds[key];
-        p.igScheduleRequested = true;
+        var live = state.posts.filter(function(x){return x.id===id;})[0];
+        if(live) live.igScheduleRequested = true;
         save();
         renderAll(); renderPostPreviewModal();
       }).catch(function(err){
@@ -4387,20 +4394,29 @@ function triggerPublishPost(id, target){
     delete __publishingIds[key];
     var data = res.data || {};
     var entry = data.result;
-    if(target==="fb") p.fbPublishStatus = entry; else p.igPublishStatus = entry;
+    // Nie mutuj `p` z zamknięcia — między kliknięciem a odpowiedzią serwera onSnapshot
+    // (wyzwolony własnym zapisem Cloud Function do tego samego dokumentu workspace/damian)
+    // mógł już podmienić window.state.posts na nową tablicę z Firestore, odrywając `p` od
+    // żywego stanu. Mutacja starego `p` przechodziła wtedy w próżnię — serwer realnie
+    // publikował/planował post (potwierdzone w logach Cloud Run i bezpośrednią odpowiedzią
+    // funkcji, ok:true), ale apka pokazywała dalej przycisk "Zaplanuj teraz", jakby nic się
+    // nie stało (znalezione 2026-08-19, planowanie FB dla tool4arts). Zawsze pobierz świeży
+    // element po id tuż przed zapisem.
+    var live = state.posts.filter(function(x){return x.id===id;})[0] || p;
+    if(target==="fb") live.fbPublishStatus = entry; else live.igPublishStatus = entry;
     if(entry && entry.ok && !entry.scheduled){
-      ceoAwardXpEvent(p.video ? "reelPublished" : "postPublished");
+      ceoAwardXpEvent(live.video ? "reelPublished" : "postPublished");
     }
     // Konto MediaDGtal ma sekcję Facebooka celowo wyłączoną (patrz renderPublishSection,
     // "brand!=='MediaDGtal'") — dla niego fbPublishStatus NIGDY się nie ustawia, więc warunek
     // z fbPublishStatus.ok nigdy by się nie spełnił i stage zostawałby na "zaplanowany" na
     // zawsze, mimo realnej, udanej publikacji na Instagramie (znaleziono 2026-08-19).
-    var fbOk = p.brand==="MediaDGtal" || (p.fbPublishStatus && p.fbPublishStatus.ok && !p.fbPublishStatus.scheduled);
-    var igOk = p.igPublishStatus && p.igPublishStatus.ok;
+    var fbOk = live.brand==="MediaDGtal" || (live.fbPublishStatus && live.fbPublishStatus.ok && !live.fbPublishStatus.scheduled);
+    var igOk = live.igPublishStatus && live.igPublishStatus.ok;
     if(fbOk && igOk){
-      p.stage = "opublikowany";
-      p.publishedAt = todayStr();
-      syncContentCalendarFromPost(p);
+      live.stage = "opublikowany";
+      live.publishedAt = todayStr();
+      syncContentCalendarFromPost(live);
     }
     save();
     renderAll();
@@ -4414,7 +4430,8 @@ function triggerPublishPost(id, target){
     // niepowodzeniu zwróconym normalnie przez funkcję), żeby zawsze zostawała informacja.
     var msg = (err && err.message) ? err.message : String(err);
     var entry = {ok:false, error:msg, attemptedAt:new Date().toISOString()};
-    if(target==="fb") p.fbPublishStatus = entry; else p.igPublishStatus = entry;
+    var live = state.posts.filter(function(x){return x.id===id;})[0] || p;
+    if(target==="fb") live.fbPublishStatus = entry; else live.igPublishStatus = entry;
     save();
     alert("Publikacja nie powiodła się: "+msg);
     renderAll();
