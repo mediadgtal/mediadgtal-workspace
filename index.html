@@ -4331,6 +4331,7 @@ function triggerPublishPost(id, target){
     window.waitForPendingPush().then(function(){ return window.cancelFbScheduleFn({postId:id}); }).then(function(){
       delete __publishingIds[key];
       p.fbPublishStatus = null;
+      save();
       renderAll(); renderPostPreviewModal();
     }).catch(function(err){
       delete __publishingIds[key];
@@ -4353,6 +4354,7 @@ function triggerPublishPost(id, target){
         delete __publishingIds[key];
         p.igScheduleRequested = false;
         p.igTaskName = null;
+        save();
         renderAll(); renderPostPreviewModal();
       }).catch(function(err){
         delete __publishingIds[key];
@@ -4366,6 +4368,7 @@ function triggerPublishPost(id, target){
       window.waitForPendingPush().then(function(){ return window.scheduleIgPublishFn({postId:id}); }).then(function(){
         delete __publishingIds[key];
         p.igScheduleRequested = true;
+        save();
         renderAll(); renderPostPreviewModal();
       }).catch(function(err){
         delete __publishingIds[key];
