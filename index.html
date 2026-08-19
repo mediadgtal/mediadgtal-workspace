@@ -16223,6 +16223,12 @@ function tryStoredFbAuth(retries){
   if(!auth || !auth.accessToken || !auth.expiresAt || auth.expiresAt <= Date.now()) return false;
   window.__fbToken = auth.accessToken;
   maybeAutoSyncSocial();
+  // Token jest odzyskiwany asynchronicznie (czeka na `state`), zwykle już PO pierwszym
+  // renderze strony — bez tego strona Social/Instagram/Facebook zostaje wyrenderowana
+  // wcześniej z pustym window.__fbToken i pokazuje "Rozłączono", mimo że połączenie w tle
+  // już działa. maybeAutoSyncSocial() sam w sobie nie gwarantuje odświeżenia widoku (nic
+  // nie robi, jeśli auto-sync już dziś raz przebiegł), więc re-render trzeba wymusić tutaj.
+  if(typeof renderAll === "function") renderAll();
   return true;
 }
 
