@@ -16748,12 +16748,22 @@ function ensureFbPages(cb){
   if(!window.__fbToken){ if(cb) cb(); return; }
   if(fbPagesLoading) return;
   fbPagesLoading = true;
+  // 2026-08-20 — Damian: "rozłączyło się połączenie z FB i IG" zaraz po tym, jak
+  // ponowne "Połącz z Facebookiem" zadziałało. Przyczyna: doFbSignIn() woła tę
+  // funkcję RÓWNOLEGLE z persistLongLivedFbToken(), krótkożyjącym tokenem z
+  // FB.login — zanim wymiana na długożyjący (~60 dni) się zakończy. Nowo nadane
+  // uprawnienia bywają propagowane przez Facebooka z opóźnieniem, więc TO
+  // konkretne zapytanie (na starym, krótkożyjącym tokenie) potrafi dostać 401 tuż
+  // po udanym logowaniu — a poprzedni kod ślepo czyścił state.fbAuth przy KAŻDYM
+  // 401, kasując dopiero co poprawnie zapisany długożyjący token. Teraz czyścimy
+  // tylko jeśli to faktycznie ten sam token, który właśnie dostał 401.
+  var usedToken = window.__fbToken;
   fetch("https://graph.facebook.com/"+FB_GRAPH_VERSION+"/me/accounts?fields=name,id,fan_count,about,picture{url},instagram_business_account{id,username,followers_count,follows_count,media_count,biography,profile_picture_url}", {
-    headers:{Authorization:"Bearer "+window.__fbToken}
+    headers:{Authorization:"Bearer "+usedToken}
   }).then(function(r){
     if(r.status===401){
-      window.__fbToken=null;
-      if(typeof state !== "undefined" && state && state.fbAuth){ state.fbAuth = null; save(); }
+      if(window.__fbToken===usedToken) window.__fbToken=null;
+      if(typeof state !== "undefined" && state && state.fbAuth && state.fbAuth.accessToken===usedToken){ state.fbAuth = null; save(); }
       throw new Error("401");
     }
     return r.json();
