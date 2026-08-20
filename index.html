@@ -1501,6 +1501,7 @@ function migrateState(s){
   if(!s.crmMeta) s.crmMeta = {reviewIndex:0, filter:"all"};
   if(!s.geoCache) s.geoCache = {};
   if(!s.clientMapPins) s.clientMapPins = [];
+  if(!s.debts) s.debts = [];
   if(!s._clientMapPinsSeededV2){
     CLIENT_MAP_IMPORT_SEED.forEach(function(imp){ registerClientMapPin(imp.name, imp.city, imp.category, "import", s); });
     Object.keys(s.clientsMonthly||{}).forEach(function(ym){
@@ -2982,9 +2983,43 @@ function renderDashboard(el){
   html += renderDashClientOpsTile();
   html += renderDashSocialPanel();
   html += renderDashContentPanel();
+  html += renderDashBackupHealthCard();
 
   el.innerHTML = html;
   loadWeather();
+}
+// 2026-08-20 — jedno miejsce do sprawdzenia stanu wszystkich 8 backupów naraz, zamiast
+// otwierania każdej zakładki osobno i zgadywania z pojedynczego badge'a. "Ostatni sync"
+// to czas w TEJ sesji przeglądarki (backupLastSyncAt żyje tylko w pamięci JS, nie jest
+// zapisywany do Firestore) — jeśli badge jest zielony, ale tu nic nie widać, to backup
+// po prostu jeszcze się nie uruchamiał od ostatniego odświeżenia strony.
+var BACKUP_MODULE_LABELS = {finance:"Finanse", habits:"Nawyki", clientOps:"Obsługa Klientów", tasks:"Zadania", droga:"Droga", posty:"Posty", clients:"Klienci", crm:"Baza kontaktów"};
+var BACKUP_MODULE_STATUS_GETTERS = {
+  finance: function(){ return financeBackupStatus; },
+  habits: function(){ return habitsBackupStatus; },
+  clientOps: function(){ return clientOpsBackupStatus; },
+  tasks: function(){ return tasksBackupStatus; },
+  droga: function(){ return drogaBackupStatus; },
+  posty: function(){ return postyBackupStatus; },
+  clients: function(){ return clientsBackupStatus; },
+  crm: function(){ return crmBackupStatus; }
+};
+function renderDashBackupHealthCard(){
+  var html = '<div class="card" style="margin-top:16px">';
+  html += '<h3 style="margin-bottom:4px">Stan backupów (8 modułów)</h3>';
+  html += '<div class="stat-sub" style="margin-bottom:10px">'+(window.__gcalToken ? "Połączono z Google." : "Nie połączono z Google — kliknij dowolny badge \"Backup\", żeby połączyć.")+'</div>';
+  BACKUP_MODULE_KEYS.forEach(function(key){
+    var status = BACKUP_MODULE_STATUS_GETTERS[key]();
+    var label = BACKUP_MODULE_LABELS[key];
+    var dot = (!window.__gcalToken) ? "⚪" : (status==="error" ? "🔴" : (status==="ok" ? "🟢" : "⚪"));
+    var syncLabel = backupLastSyncAt[key] ? backupLastSyncLabel(key).replace(/^ — /,"") : "jeszcze nie zsynchronizowano w tej sesji";
+    html += '<div class="row" style="justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border)">'+
+      '<span>'+dot+' '+label+'</span>'+
+      '<span class="stat-sub">'+escapeHtml(syncLabel)+'</span>'+
+      '</div>';
+  });
+  html += '</div>';
+  return html;
 }
 /* ================= Imieniny (polski kalendarz imion) ================= */
 var IMIENINY_DATA = {
@@ -6377,6 +6412,7 @@ var financeTab = null; // "YYYY-MM" albo "TOTAL"
 var financeYear = null;
 var financeSortCol = "createdAt";
 var financeSortDir = "desc";
+var dlugiShowSplacone = false; // zwinięta domyślnie sekcja spłaconych długów w zakładce "Długi"
 function financeSetSort(col){
   if(financeSortCol===col){ financeSortDir = (financeSortDir==="asc") ? "desc" : "asc"; }
   else { financeSortCol = col; financeSortDir = col==="createdAt" ? "desc" : "asc"; }
@@ -6419,14 +6455,27 @@ function ensureRecurringFirmoweEntries(){
   }
   save();
 }
+// Suma spłat długów (state.debts[].repayments) o dacie w danym miesiącu — spłaty liczą
+// się jako wydatek w miesięcznym zysku (ustalone z Damianem 2026-08-20), ale dług sam w
+// sobie (kwota główna) nie jest ani przychodem ani wydatkiem, więc nie wchodzi tutaj.
+function financeMonthDebtRepaymentsSum(ym){
+  var sum = 0;
+  (state.debts||[]).forEach(function(d){
+    (d.repayments||[]).forEach(function(r){
+      if((r.date||"").slice(0,7)===ym) sum += (+r.amount||0);
+    });
+  });
+  return sum;
+}
 function financeMonthSummary(ym){
   var byCategory = {};
   FINANCE_CATEGORIES.forEach(function(c){ byCategory[c[0]] = 0; });
   state.financeEntries.filter(function(e){ return e.month===ym; }).forEach(function(e){
     byCategory[e.category] = (byCategory[e.category]||0) + (+e.amount||0);
   });
-  var zysk = (byCategory.przychody||0) - (byCategory.firmowe||0) - (byCategory.osobiste||0);
-  return {byCategory:byCategory, zysk:zysk};
+  var debtRepayments = financeMonthDebtRepaymentsSum(ym);
+  var zysk = (byCategory.przychody||0) - (byCategory.firmowe||0) - (byCategory.osobiste||0) - debtRepayments;
+  return {byCategory:byCategory, zysk:zysk, debtRepayments:debtRepayments};
 }
 function setFinanceSubview(v){ financeSubview=v; renderAll(); }
 function setFinanceTab(v){ financeTab=v; renderAll(); }
@@ -6434,6 +6483,39 @@ function changeFinanceYear(delta){
   financeYear = (financeYear||new Date().getFullYear()) + delta;
   if(financeTab && financeTab!=="TOTAL"){ financeTab = financeYear+"-"+financeTab.split("-")[1]; }
   renderAll();
+}
+// 2026-08-20 — Backupy: retry + widoczność ostatniego udanego sync. Damian dwa razy z
+// rzędu zgłosił "backupy nie działają" (19 i 20 sierpnia), ale live-check obu razy
+// pokazał same zielone badge'e — przejściowy błąd (sieć/401) wcześniej zostawiał badge
+// czerwonym AŻ DO kolejnej edycji, bez żadnej próby ponowienia. Teraz: 3 automatyczne
+// próby w narastających odstępach zanim badge pokaże się jako trwale czerwony, plus
+// timestamp ostatniego udanego sync w tooltipie, żeby stan dało się zweryfikować zamiast
+// zgadywać. BACKUP_MODULE_KEYS = klucze używane przez wszystkie 8 modułów z backupem.
+var BACKUP_MODULE_KEYS = ["finance","habits","clientOps","tasks","droga","posty","clients","crm"];
+var BACKUP_RETRY_DELAYS_MS = [5000, 20000, 60000];
+var backupRetryCounts = {};
+var backupLastSyncAt = {};
+function backupSyncSucceeded(key){
+  backupRetryCounts[key] = 0;
+  backupLastSyncAt[key] = new Date().toISOString();
+}
+function backupSyncFailed(key, retryFn, markPending, markError){
+  var n = backupRetryCounts[key] || 0;
+  if(n < BACKUP_RETRY_DELAYS_MS.length){
+    backupRetryCounts[key] = n + 1;
+    markPending();
+    setTimeout(retryFn, BACKUP_RETRY_DELAYS_MS[n]);
+  } else {
+    backupRetryCounts[key] = 0;
+    markError();
+    renderAll();
+  }
+}
+function backupLastSyncLabel(key){
+  var iso = backupLastSyncAt[key];
+  if(!iso) return "";
+  var d = new Date(iso);
+  return " — ostatni udany sync: "+d.toLocaleDateString("pl-PL")+" "+d.toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"});
 }
 // 2026-07-31 — Kompaktowy wskaźnik kopii zapasowej, obok zakładek modułu zamiast
 // pełnowidocznego banera zajmującego osobną linię (Damian: "to jest tylko informacja").
@@ -6448,7 +6530,8 @@ function renderBackupBadge(cfg){
   if(!cfg.sheetId){
     return '<div style="display:flex; align-items:center; flex:0 0 auto"><span style="font-size:11px; color:var(--muted); white-space:nowrap">Tworzę kopię…</span></div>';
   }
-  var html = '<a href="'+escapeHtml(cfg.sheetUrl||"#")+'" target="_blank" class="linklike" style="font-size:11px; color:'+(cfg.error?"var(--danger)":"#8fce8f")+'; white-space:nowrap" title="'+(cfg.error?"Ostatnia synchronizacja nie powiodła się, spróbuję ponownie":"Kopia zapasowa aktywna")+' — kliknij, aby otworzyć arkusz">'+(cfg.error?"⚠":"✓")+' Backup</a>';
+  var lastSync = cfg.lastSyncKey ? backupLastSyncLabel(cfg.lastSyncKey) : "";
+  var html = '<a href="'+escapeHtml(cfg.sheetUrl||"#")+'" target="_blank" class="linklike" style="font-size:11px; color:'+(cfg.error?"var(--danger)":"#8fce8f")+'; white-space:nowrap" title="'+(cfg.error?"Ostatnia synchronizacja nie powiodła się, ponawiam automatycznie":"Kopia zapasowa aktywna")+escapeHtml(lastSync)+' — kliknij, aby otworzyć arkusz">'+(cfg.error?"⚠":"✓")+' Backup</a>';
   (cfg.actions||[]).forEach(function(a){
     var title = a.title + (a.result ? " — "+a.result : "");
     html += '<button type="button" class="linklike" style="font-size:11px; margin-left:8px'+(a.danger?"; color:var(--danger)":"")+'" title="'+escapeHtml(title)+'" '+(a.disabled?"disabled":"")+' onclick="'+a.onclick+'">'+a.icon+'</button>';
@@ -6471,15 +6554,25 @@ function renderFinanse(el){
   FINANCE_CATEGORIES.forEach(function(c){
     html += '<button class="'+(financeSubview===c[0]?"active":"")+'" onclick="setFinanceSubview(\''+c[0]+'\')">'+c[1]+'</button>';
   });
+  html += '<button class="'+(financeSubview==="dlugi"?"active":"")+'" onclick="setFinanceSubview(\'dlugi\')">Długi</button>';
   html += '</div>';
   html += renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.financeBackupSheetId, sheetUrl: state.financeBackupSheetUrl,
-    error: financeBackupStatus==="error",
+    error: financeBackupStatus==="error", lastSyncKey: "finance",
     actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: financeVerifyStatus==="loading", onclick:"financeVerify1to1()",
       danger: !!(financeVerifyResult && financeVerifyResult.sheetTotal!==financeVerifyResult.localTotal),
       result: financeVerifyResult ? ("arkusz: "+financeVerifyResult.sheetTotal+", lokalnie: "+financeVerifyResult.localTotal) : null}]
   });
   html += '</div>';
+
+  // "Długi" to inny kształt danych niż reszta kategorii (kwota główna + lista spłat +
+  // wyliczane saldo, nie płaski wpis miesięczny) — własny render, bez nawigacji rok/miesiąc
+  // poniżej, bo długi nie są przypisane do jednego miesiąca.
+  if(financeSubview==="dlugi"){
+    html += renderFinanseDlugi();
+    el.innerHTML = html;
+    return;
+  }
 
   html += '<div class="row" style="margin-bottom:10px; gap:10px">'+
     '<span style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Rok</span>'+
@@ -6555,9 +6648,9 @@ function renderFinanseTotal(yr){
   var html = '<div class="card"><div style="overflow-x:auto"><table class="nawyki-grid" style="width:100%"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Miesiąc</th>';
   FINANCE_CATEGORIES.forEach(function(c){ html += '<th style="text-align:right">'+c[1]+'</th>'; });
-  html += '<th style="text-align:right">Zysk</th></tr></thead><tbody>';
+  html += '<th style="text-align:right">Spłaty długów</th><th style="text-align:right">Zysk</th></tr></thead><tbody>';
   var yearSums = {}; FINANCE_CATEGORIES.forEach(function(c){ yearSums[c[0]]=0; });
-  var yearZysk = 0;
+  var yearZysk = 0, yearDebtRepayments = 0;
   for(var m=1;m<=12;m++){
     var ym = yr+"-"+String(m).padStart(2,"0");
     var s = financeMonthSummary(ym);
@@ -6567,13 +6660,185 @@ function renderFinanseTotal(yr){
       html += '<td style="text-align:right">'+fmtPln(s.byCategory[c[0]])+'</td>';
     });
     yearZysk += s.zysk;
+    yearDebtRepayments += s.debtRepayments;
+    html += '<td style="text-align:right; color:var(--muted)">'+fmtPln(s.debtRepayments)+'</td>';
     html += '<td style="text-align:right; font-weight:700; color:'+(s.zysk>=0?"var(--success)":"var(--danger)")+'">'+fmtPln(s.zysk)+'</td></tr>';
   }
   html += '<tr style="font-weight:700"><td style="position:sticky; left:0; background:var(--bg)">Rok '+yr+'</td>';
   FINANCE_CATEGORIES.forEach(function(c){ html += '<td style="text-align:right; color:var(--accent)">'+fmtPln(yearSums[c[0]])+'</td>'; });
+  html += '<td style="text-align:right; color:var(--muted)">'+fmtPln(yearDebtRepayments)+'</td>';
   html += '<td style="text-align:right; color:'+(yearZysk>=0?"var(--success)":"var(--danger)")+'">'+fmtPln(yearZysk)+'</td></tr>';
   html += '</tbody></table></div></div>';
   return html;
+}
+/* ---- Długi: kwota początkowa + lista spłat, saldo zawsze liczone na bieżąco (2026-08-20) ---- */
+function debtPaidSum(d){
+  return (d.repayments||[]).reduce(function(s,r){ return s+(+r.amount||0); }, 0);
+}
+function debtRemaining(d){
+  return (+d.principal||0) - debtPaidSum(d);
+}
+function debtLastRepaymentDate(d){
+  var dates = (d.repayments||[]).map(function(r){ return r.date; }).filter(Boolean).sort();
+  return dates.length ? dates[dates.length-1] : null;
+}
+function renderFinanseDlugi(){
+  var debts = state.debts||[];
+  var active = debts.filter(function(d){ return debtRemaining(d) > 0.004; });
+  var splacone = debts.filter(function(d){ return debtRemaining(d) <= 0.004; });
+  var totalPrincipal = debts.reduce(function(s,d){ return s+(+d.principal||0); }, 0);
+  var totalPaid = debts.reduce(function(s,d){ return s+debtPaidSum(d); }, 0);
+  var totalRemaining = totalPrincipal - totalPaid;
+
+  var html = '<div class="row" style="justify-content:flex-end; margin:10px 0 14px">'+
+    '<button class="btn" onclick="openDebtModal({})">+ Dodaj dług</button>'+
+    '</div>';
+
+  html += '<div class="kpi-row">'+
+    '<div><div class="k-value">'+fmtPln(totalPrincipal)+'</div><div class="k-label">Suma — kwota początkowa</div></div>'+
+    '<div><div class="k-value">'+fmtPln(totalPaid)+'</div><div class="k-label">Spłacono</div></div>'+
+    '<div><div class="k-value" style="color:'+(totalRemaining>0?"var(--danger)":"var(--success)")+'">'+fmtPln(totalRemaining)+'</div><div class="k-label">Pozostało</div></div>'+
+    '</div>';
+
+  function debtTable(list){
+    var TD = 'padding:6px 8px; font-size:12.5px', TH = 'padding:6px 8px; font-size:11px';
+    var t = '<div class="card"><table><tr>'+
+      '<th style="'+TH+'">Nazwa</th><th style="'+TH+'; text-align:right">Kwota początkowa</th>'+
+      '<th style="'+TH+'; text-align:right">Spłacono</th><th style="'+TH+'; text-align:right">Pozostało</th>'+
+      '<th style="'+TH+'">Ostatnia spłata</th><th></th></tr>';
+    list.forEach(function(d){
+      var remaining = debtRemaining(d), paid = debtPaidSum(d), lastDate = debtLastRepaymentDate(d);
+      t += '<tr>'+
+        '<td style="'+TD+'; cursor:pointer" onclick="openDebtModal({id:\''+d.id+'\'})">'+escapeHtml(d.name)+
+        (d.note?'<div style="color:var(--muted); font-size:11px">'+escapeHtml(d.note)+'</div>':'')+'</td>'+
+        '<td style="'+TD+'; text-align:right">'+fmtPln(d.principal)+'</td>'+
+        '<td style="'+TD+'; text-align:right">'+fmtPln(paid)+'</td>'+
+        '<td style="'+TD+'; text-align:right; font-weight:700; color:'+(remaining>0?"var(--danger)":"var(--success)")+'">'+fmtPln(remaining)+'</td>'+
+        '<td style="'+TD+'; color:var(--muted)">'+(lastDate?fmtDate(lastDate):'—')+'</td>'+
+        '<td style="'+TD+'; text-align:right; white-space:nowrap">'+
+        (remaining>0.004 ? '<button class="linklike" onclick="event.stopPropagation(); openRepaymentModal(\''+d.id+'\')">➕ Spłata</button> ' : '')+
+        '<button class="linklike" onclick="event.stopPropagation(); openDebtModal({id:\''+d.id+'\'})">Edytuj</button> '+
+        '<button class="btn danger small" onclick="event.stopPropagation(); deleteDebt(\''+d.id+'\')">Usuń</button>'+
+        '</td></tr>';
+    });
+    t += '</table></div>';
+    return t;
+  }
+
+  if(!debts.length){
+    html += '<div class="empty">Brak długów — kliknij "+ Dodaj dług", żeby dodać pierwszy.</div>';
+  } else {
+    html += active.length ? debtTable(active) : '<div class="empty">Brak aktywnych długów.</div>';
+  }
+
+  if(splacone.length){
+    html += '<div class="row" style="margin-top:16px; cursor:pointer; align-items:center" onclick="toggleDlugiSplacone()">'+
+      '<h3 style="margin:0">'+(dlugiShowSplacone?"▾":"▸")+' Spłacone ('+splacone.length+')</h3></div>';
+    if(dlugiShowSplacone) html += debtTable(splacone);
+  }
+  return html;
+}
+function toggleDlugiSplacone(){ dlugiShowSplacone = !dlugiShowSplacone; renderAll(); }
+function openDebtModal(opts){
+  opts = opts || {};
+  var isEdit = !!opts.id;
+  var debt = isEdit ? (state.debts||[]).filter(function(d){ return d.id===opts.id; })[0] : null;
+  var repaymentsHtml = '';
+  if(isEdit && debt && (debt.repayments||[]).length){
+    repaymentsHtml = '<div class="field"><label>Historia spłat</label><div style="max-height:140px; overflow-y:auto">';
+    debt.repayments.slice().sort(function(a,b){ return (a.date||"")<(b.date||"") ? 1 : -1; }).forEach(function(r){
+      repaymentsHtml += '<div class="row" style="justify-content:space-between; padding:3px 0; font-size:12.5px">'+
+        '<span>'+(r.date?fmtDate(r.date):'—')+' — '+fmtPln(r.amount)+'</span>'+
+        '<button class="linklike" style="color:var(--danger)" onclick="deleteRepayment(\''+debt.id+'\',\''+r.id+'\')">✕</button>'+
+        '</div>';
+    });
+    repaymentsHtml += '</div></div>';
+  }
+  var html = '<div class="modal-overlay" id="debtModal" data-close="closeDebtModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj dług":"Nowy dług")+'</h3>'+
+    '<div class="field"><label>Nazwa</label><input type="text" id="dmName" value="'+escapeHtml(debt?debt.name:"")+'"></div>'+
+    '<div class="field"><label>Kwota początkowa</label><input type="number" step="0.01" id="dmPrincipal" value="'+(debt?debt.principal:"")+'"></div>'+
+    '<div class="field"><label>Data rozpoczęcia</label><input type="date" id="dmStartDate" value="'+(debt?(debt.startDate||""):todayStr())+'"></div>'+
+    '<div class="field"><label>Notatka</label><input type="text" id="dmNote" value="'+escapeHtml(debt?(debt.note||""):"")+'"></div>'+
+    repaymentsHtml+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteDebt(\''+debt.id+'\')">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeDebtModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveDebtModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__debtModalCtx = {id: opts.id||null};
+}
+function closeDebtModal(){
+  var el = document.getElementById("debtModal");
+  if(el) el.remove();
+}
+function saveDebtModal(){
+  var name = document.getElementById("dmName").value.trim();
+  var principal = parseFloat(document.getElementById("dmPrincipal").value);
+  if(!name || isNaN(principal)) return;
+  var startDate = document.getElementById("dmStartDate").value || todayStr();
+  var note = document.getElementById("dmNote").value.trim();
+  var ctx = window.__debtModalCtx || {};
+  if(!state.debts) state.debts = [];
+  if(ctx.id){
+    var d = state.debts.filter(function(x){ return x.id===ctx.id; })[0];
+    if(d){ d.name=name; d.principal=principal; d.startDate=startDate; d.note=note; }
+  } else {
+    state.debts.push({id:uid("debt"), name:name, principal:principal, startDate:startDate, note:note, repayments:[]});
+  }
+  closeDebtModal();
+  save(); renderAll();
+}
+function deleteDebt(id){
+  if(!confirm("Usunąć ten dług razem z historią spłat?")) return;
+  state.debts = (state.debts||[]).filter(function(x){ return x.id!==id; });
+  closeDebtModal();
+  save(); renderAll();
+}
+function openRepaymentModal(debtId){
+  var debt = (state.debts||[]).filter(function(d){ return d.id===debtId; })[0];
+  if(!debt) return;
+  var html = '<div class="modal-overlay" id="repaymentModal" data-close="closeRepaymentModal">'+
+    '<div class="modal-box card">'+
+    '<h3>Nowa spłata — '+escapeHtml(debt.name)+'</h3>'+
+    '<div style="color:var(--muted); font-size:12.5px; margin-bottom:10px">Pozostało do spłaty: '+fmtPln(debtRemaining(debt))+'</div>'+
+    '<div class="field"><label>Data</label><input type="date" id="rmDate" value="'+todayStr()+'"></div>'+
+    '<div class="field"><label>Kwota</label><input type="number" step="0.01" id="rmAmount" value=""></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    '<button class="btn secondary small" onclick="closeRepaymentModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveRepaymentModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__repaymentModalCtx = {debtId: debtId};
+}
+function closeRepaymentModal(){
+  var el = document.getElementById("repaymentModal");
+  if(el) el.remove();
+}
+function saveRepaymentModal(){
+  var date = document.getElementById("rmDate").value || todayStr();
+  var amount = parseFloat(document.getElementById("rmAmount").value);
+  if(isNaN(amount) || amount<=0) return;
+  var ctx = window.__repaymentModalCtx || {};
+  var debt = (state.debts||[]).filter(function(d){ return d.id===ctx.debtId; })[0];
+  if(!debt) return;
+  if(!debt.repayments) debt.repayments = [];
+  debt.repayments.push({id:uid("repay"), date:date, amount:amount});
+  closeRepaymentModal();
+  save(); renderAll();
+}
+function deleteRepayment(debtId, repaymentId){
+  var debt = (state.debts||[]).filter(function(d){ return d.id===debtId; })[0];
+  if(!debt) return;
+  if(!confirm("Usunąć tę spłatę?")) return;
+  debt.repayments = (debt.repayments||[]).filter(function(r){ return r.id!==repaymentId; });
+  save(); renderAll();
+  // modal jest doklejony do body poza cyklem renderAll() (tak samo jak reszta modali w
+  // tym pliku) — trzeba go ręcznie odświeżyć, inaczej pokazywałby usuniętą spłatę dalej.
+  closeDebtModal();
+  openDebtModal({id: debtId});
 }
 function openFinanceModal(opts){
   opts = opts || {};
@@ -6772,6 +7037,22 @@ function flushFinanceBackupPush(){
       });
     return rows;
   }
+  // "Długi" dokłada się do tego samego arkusza backupowego Finansów (jedna dodatkowa
+  // zakładka), zamiast zakładać osobny badge/moduł backupu — jeden wiersz na dług +
+  // jeden na każdą spłatę (spłaszczone), z saldem po każdej spłacie dla kontroli.
+  function financeDebtsGrid(){
+    var rows = [["Dług","Kwota początkowa","Data rozpoczęcia","Notatka","Data spłaty","Kwota spłaty","Pozostało po tej spłacie"]];
+    (state.debts||[]).forEach(function(d){
+      var running = +d.principal||0;
+      var reps = (d.repayments||[]).slice().sort(function(a,b){ return (a.date||"")<(b.date||"") ? -1 : 1; });
+      if(!reps.length){ rows.push([d.name, d.principal, d.startDate||"", d.note||"", "", "", running]); return; }
+      reps.forEach(function(r, i){
+        running -= (+r.amount||0);
+        rows.push([i===0?d.name:"", i===0?d.principal:"", i===0?(d.startDate||""):"", i===0?(d.note||""):"", r.date||"", r.amount, running]);
+      });
+    });
+    return rows;
+  }
 
   fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId, {
     headers:{Authorization:"Bearer "+window.__gcalToken}
@@ -6785,6 +7066,7 @@ function flushFinanceBackupPush(){
       var tabName = financeBackupMonthTabName(ym);
       if(existingTitles.indexOf(tabName)===-1){ structRequests.push({addSheet:{properties:{title:tabName}}}); }
     });
+    if(existingTitles.indexOf("DŁUGI")===-1){ structRequests.push({addSheet:{properties:{title:"DŁUGI"}}}); }
     if(!structRequests.length) return Promise.resolve();
     return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+":batchUpdate", {
       method:"POST",
@@ -6792,7 +7074,16 @@ function flushFinanceBackupPush(){
       body: JSON.stringify({requests:structRequests})
     });
   }).then(function(){
-    var valuesData = [{range:"TOTAL!A1", values: totalRows}];
+    // DŁUGI się kurczy, gdy Damian usunie dług albo spłatę (poprawka błędu) — czyścimy
+    // pełną kolumnę przed zapisem, tym samym sposobem co naprawiony 2026-08-17 bug w
+    // Obsłudze Klientów/Posty, żeby stare wiersze nie zostawały w arkuszu na zawsze.
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchClear", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({ranges:["DŁUGI!A:G"]})
+    });
+  }).then(function(){
+    var valuesData = [{range:"TOTAL!A1", values: totalRows}, {range:"DŁUGI!A1", values: financeDebtsGrid()}];
     monthsPresent.forEach(function(ym){
       valuesData.push({range:"'"+financeBackupMonthTabName(ym)+"'!A1", values: financeMonthGrid(ym)});
     });
@@ -6803,8 +7094,9 @@ function flushFinanceBackupPush(){
     });
   }).then(function(r){
     if(r && r.status===401){ window.__gcalToken=null; }
-    financeBackupStatus = (r && r.ok) ? "ok" : "error";
-  }).catch(function(){ financeBackupStatus = "error"; });
+    if(r && r.ok){ financeBackupStatus = "ok"; backupSyncSucceeded("finance"); renderAll(); }
+    else { backupSyncFailed("finance", flushFinanceBackupPush, function(){ financeBackupPending = true; }, function(){ financeBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("finance", flushFinanceBackupPush, function(){ financeBackupPending = true; }, function(){ financeBackupStatus = "error"; }); });
 }
 
 /* ================= ZADANIA ================= */
@@ -7797,7 +8089,7 @@ function renderNawyki(el){
     '</div>'+
     renderBackupBadge({
       connected: !!window.__gcalToken, sheetId: state.habitsBackupSheetId, sheetUrl: state.habitsBackupSheetUrl,
-      error: habitsBackupStatus==="error",
+      error: habitsBackupStatus==="error", lastSyncKey: "habits",
       actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", disabled: nawykiRestoreStatus==="loading", onclick:"nawykiRestoreFromBackup()",
         danger: nawykiRestoreStatus==="error",
         result: nawykiRestoreResult ? ("uzupełniono "+nawykiRestoreResult.restored+" zaznaczeń") : (nawykiRestoreStatus==="error" ? "nie udało się odczytać arkusza" : null)}]
@@ -8207,8 +8499,9 @@ function flushHabitsBackupPush(){
     });
   }).then(function(r){
     if(r && r.status===401){ window.__gcalToken=null; }
-    habitsBackupStatus = (r && r.ok) ? "ok" : "error";
-  }).catch(function(){ habitsBackupStatus = "error"; });
+    if(r && r.ok){ habitsBackupStatus = "ok"; backupSyncSucceeded("habits"); renderAll(); }
+    else { backupSyncFailed("habits", flushHabitsBackupPush, function(){ habitsBackupPending = true; }, function(){ habitsBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("habits", flushHabitsBackupPush, function(){ habitsBackupPending = true; }, function(){ habitsBackupStatus = "error"; }); });
 }
 
 /* ================= KLIENCI ================= */
@@ -9509,8 +9802,9 @@ function flushClientOpsBackupPush(){
     });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    clientOpsBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ clientOpsBackupStatus = "error"; });
+    if(r.ok){ clientOpsBackupStatus = "ok"; backupSyncSucceeded("clientOps"); renderAll(); }
+    else { backupSyncFailed("clientOps", flushClientOpsBackupPush, function(){ clientOpsBackupPending = true; }, function(){ clientOpsBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("clientOps", flushClientOpsBackupPush, function(){ clientOpsBackupPending = true; }, function(){ clientOpsBackupStatus = "error"; }); });
 }
 function renderClientOpsBackupStatus(){
   if(window.__gcalToken && !state.clientOpsBackupSheetId) ensureClientOpsBackupSheet();
@@ -9523,7 +9817,7 @@ function renderClientOpsBackupStatus(){
   }
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.clientOpsBackupSheetId, sheetUrl: state.clientOpsBackupSheetUrl,
-    error: clientOpsBackupStatus==="error",
+    error: clientOpsBackupStatus==="error", lastSyncKey: "clientOps",
     actions: [
       {icon:"🔍", title:"Sprawdź 1:1", disabled: clientOpsVerifyStatus==="loading", onclick:"clientOpsVerify1to1()", danger: mismatch, result: resultTxt},
       {icon:"🧹", title:"Wyczyść i zapisz od nowa (usuwa stare/zdublowane wiersze z arkusza)", onclick:"forceClientOpsBackupPush()"}
@@ -9591,8 +9885,9 @@ function flushTasksBackupPush(){
     body: JSON.stringify({valueInputOption:"RAW", data:[{range:"ZADANIA!A1", values: tasksBackupRows()}]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    tasksBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ tasksBackupStatus = "error"; });
+    if(r.ok){ tasksBackupStatus = "ok"; backupSyncSucceeded("tasks"); renderAll(); }
+    else { backupSyncFailed("tasks", flushTasksBackupPush, function(){ tasksBackupPending = true; }, function(){ tasksBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("tasks", flushTasksBackupPush, function(){ tasksBackupPending = true; }, function(){ tasksBackupStatus = "error"; }); });
 }
 // "Sprawdź 1:1" — porównuje arkusz z lokalnym stanem bez niczego zmieniać, tylko
 // pokazuje ile zadań brakuje po jednej i po drugiej stronie (diagnostyka).
@@ -9652,7 +9947,7 @@ function renderTasksBackupStatus(){
   }
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.tasksBackupSheetId, sheetUrl: state.tasksBackupSheetUrl,
-    error: tasksBackupStatus==="error",
+    error: tasksBackupStatus==="error", lastSyncKey: "tasks",
     actions: [
       {icon:"🔍", title:"Sprawdź 1:1", disabled: tasksVerifyStatus==="loading", onclick:"tasksVerify1to1()", danger: danger, result: resultTxt},
       {icon:"🔄", title:"Wymuś synchronizację", disabled: tasksVerifyStatus==="loading", onclick:"tasksForceSyncTwoWay()"}
@@ -9710,8 +10005,9 @@ function flushDrogaBackupPush(){
     body: JSON.stringify({valueInputOption:"RAW", data:[{range:"DROGA!A1", values: drogaBackupRows()}]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    drogaBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ drogaBackupStatus = "error"; });
+    if(r.ok){ drogaBackupStatus = "ok"; backupSyncSucceeded("droga"); renderAll(); }
+    else { backupSyncFailed("droga", flushDrogaBackupPush, function(){ drogaBackupPending = true; }, function(){ drogaBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("droga", flushDrogaBackupPush, function(){ drogaBackupPending = true; }, function(){ drogaBackupStatus = "error"; }); });
 }
 // Przywraca WYŁĄCZNIE pola, które lokalnie są puste/domyślne (fill-only) — dla map
 // (fronty/bramka/rytuał*) łączy klucze, nigdy nie kasuje istniejącego wpisu; dla
@@ -9751,7 +10047,7 @@ function renderDrogaBackupStatus(){
   if(window.__gcalToken && !state.drogaBackupSheetId) ensureDrogaBackupSheet();
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.drogaBackupSheetId, sheetUrl: state.drogaBackupSheetUrl,
-    error: drogaBackupStatus==="error",
+    error: drogaBackupStatus==="error", lastSyncKey: "droga",
     actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", onclick:"drogaRestoreFromBackup()",
       result: drogaBackupResult ? ("uzupełniono "+drogaBackupResult.restored+" pól") : null}]
   });
@@ -9823,8 +10119,9 @@ function flushPostyBackupPush(){
     });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    postyBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ postyBackupStatus = "error"; });
+    if(r.ok){ postyBackupStatus = "ok"; backupSyncSucceeded("posty"); renderAll(); }
+    else { backupSyncFailed("posty", flushPostyBackupPush, function(){ postyBackupPending = true; }, function(){ postyBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("posty", flushPostyBackupPush, function(){ postyBackupPending = true; }, function(){ postyBackupStatus = "error"; }); });
 }
 // "Sprawdź 1:1" — porównuje arkusz z lokalnym stanem bez niczego zmieniać, tylko
 // pokazuje ile postów brakuje po jednej i po drugiej stronie (diagnostyka).
@@ -9853,7 +10150,7 @@ function renderPostyBackupStatus(){
   }
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.postyBackupSheetId, sheetUrl: state.postyBackupSheetUrl,
-    error: postyBackupStatus==="error",
+    error: postyBackupStatus==="error", lastSyncKey: "posty",
     actions: [
       {icon:"🔍", title:"Sprawdź 1:1", disabled: postyVerifyStatus==="loading", onclick:"postyVerify1to1()", danger: danger, result: resultTxt},
       {icon:"🧹", title:"Wyczyść i zapisz od nowa (usuwa stare/zdublowane wiersze z arkusza)", onclick:"forcePostyBackupPush()"}
@@ -13227,7 +13524,7 @@ function renderKlienci(el){
     '</div>'+
     renderBackupBadge({
       connected: !!window.__gcalToken, sheetId: state.clientsBackupSheetId, sheetUrl: state.clientsBackupSheetUrl,
-      error: clientsBackupStatus==="error",
+      error: clientsBackupStatus==="error", lastSyncKey: "clients",
       actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: clientsVerifyStatus==="loading", onclick:"clientsVerify1to1()",
         danger: !!(clientsVerifyResult && clientsVerifyResult.sheetTotal!==clientsVerifyResult.localTotal),
         result: clientsVerifyResult ? ("arkusz: "+clientsVerifyResult.sheetTotal+", lokalnie: "+clientsVerifyResult.localTotal) : null}]
@@ -14051,8 +14348,9 @@ function flushClientsBackupPush(){
     })
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    clientsBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ clientsBackupStatus = "error"; });
+    if(r.ok){ clientsBackupStatus = "ok"; backupSyncSucceeded("clients"); renderAll(); }
+    else { backupSyncFailed("clients", flushClientsBackupPush, function(){ clientsBackupPending = true; }, function(){ clientsBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("clients", flushClientsBackupPush, function(){ clientsBackupPending = true; }, function(){ clientsBackupStatus = "error"; }); });
 }
 
 /* ---- Kopia zapasowa Bazy kontaktów w osobnym arkuszu Google Sheets ---- */
@@ -14184,8 +14482,9 @@ function flushCrmBackupPush(){
     })
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    crmBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ crmBackupStatus = "error"; });
+    if(r.ok){ crmBackupStatus = "ok"; backupSyncSucceeded("crm"); renderAll(); }
+    else { backupSyncFailed("crm", flushCrmBackupPush, function(){ crmBackupPending = true; }, function(){ crmBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("crm", flushCrmBackupPush, function(){ crmBackupPending = true; }, function(){ crmBackupStatus = "error"; }); });
 }
 
 /* ================= CRM REAKTYWACJA ================= */
@@ -15483,7 +15782,7 @@ function renderCRM(el){
     '</div>';
   html += renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.crmBackupSheetId, sheetUrl: state.crmBackupSheetUrl,
-    error: crmBackupStatus==="error",
+    error: crmBackupStatus==="error", lastSyncKey: "crm",
     actions: [
       {icon:"🔄", title:"Przywróć braki z kopii zapasowej", disabled: crmOwnRestoreStatus==="loading", onclick:"crmRestoreFromOwnBackup()",
         danger: crmOwnRestoreStatus==="error",
