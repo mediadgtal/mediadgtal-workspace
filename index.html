@@ -1502,6 +1502,8 @@ function migrateState(s){
   if(!s.geoCache) s.geoCache = {};
   if(!s.clientMapPins) s.clientMapPins = [];
   if(!s.debts) s.debts = [];
+  if(!s.creditCard) s.creditCard = {transactions:[]};
+  if(!s.creditCard.transactions) s.creditCard.transactions = [];
   if(!s._clientMapPinsSeededV2){
     CLIENT_MAP_IMPORT_SEED.forEach(function(imp){ registerClientMapPin(imp.name, imp.city, imp.category, "import", s); });
     Object.keys(s.clientsMonthly||{}).forEach(function(ym){
@@ -6413,6 +6415,8 @@ var financeYear = null;
 var financeSortCol = "createdAt";
 var financeSortDir = "desc";
 var dlugiShowSplacone = false; // zwinięta domyślnie sekcja spłaconych długów w zakładce "Długi"
+var dlugiSubtab = "pozostale"; // "pozostale" | "karta" — dwie osobne tabelki w zakładce "Długi" (2026-08-20)
+var dlugiExpandedDebt = null; // id długu, którego historia spłat jest rozwinięta inline
 function financeSetSort(col){
   if(financeSortCol===col){ financeSortDir = (financeSortDir==="asc") ? "desc" : "asc"; }
   else { financeSortCol = col; financeSortDir = col==="createdAt" ? "desc" : "asc"; }
@@ -6458,12 +6462,18 @@ function ensureRecurringFirmoweEntries(){
 // Suma spłat długów (state.debts[].repayments) o dacie w danym miesiącu — spłaty liczą
 // się jako wydatek w miesięcznym zysku (ustalone z Damianem 2026-08-20), ale dług sam w
 // sobie (kwota główna) nie jest ani przychodem ani wydatkiem, więc nie wchodzi tutaj.
+// Karta kredytowa (2026-08-20) traktowana tak samo: tylko "spłata" liczy się jako wydatek —
+// "transakcja"/"odsetki" tylko podnoszą śledzoną zaległość, żeby uniknąć podwójnego
+// liczenia, gdyby Damian wpisywał te same wydatki kartą też ręcznie w innej kategorii.
 function financeMonthDebtRepaymentsSum(ym){
   var sum = 0;
   (state.debts||[]).forEach(function(d){
     (d.repayments||[]).forEach(function(r){
       if((r.date||"").slice(0,7)===ym) sum += (+r.amount||0);
     });
+  });
+  ((state.creditCard&&state.creditCard.transactions)||[]).forEach(function(t){
+    if(t.type==="splata" && (t.date||"").slice(0,7)===ym) sum += (+t.amount||0);
   });
   return sum;
 }
@@ -6682,7 +6692,35 @@ function debtLastRepaymentDate(d){
   var dates = (d.repayments||[]).map(function(r){ return r.date; }).filter(Boolean).sort();
   return dates.length ? dates[dates.length-1] : null;
 }
+// 2026-08-20 — na prośbę Damiana: "Długi" to teraz dwie osobne tabelki (pod-zakładki) —
+// "Karta kredytowa" (bieżący rejestr transakcji/odsetek/spłat z automatycznie przeliczaną
+// zaległością) i "Pozostałe długi" (istniejący model kwota-główna+spłaty). Wcześniej
+// historia spłat była widoczna tylko w modalu edycji długu — teraz jest też rozwijana
+// bezpośrednio w tabeli (Damian: "spłaty są trochę nieczytelne, brakuje historii spłat").
 function renderFinanseDlugi(){
+  var html = '<div class="tabsw" style="margin-bottom:14px">'+
+    '<button class="'+(dlugiSubtab==="pozostale"?"active":"")+'" onclick="setDlugiSubtab(\'pozostale\')">Pozostałe długi</button>'+
+    '<button class="'+(dlugiSubtab==="karta"?"active":"")+'" onclick="setDlugiSubtab(\'karta\')">Karta kredytowa</button>'+
+    '</div>';
+  html += dlugiSubtab==="karta" ? renderKartaKredytowa() : renderPozostaleDlugi();
+  return html;
+}
+function setDlugiSubtab(v){ dlugiSubtab=v; renderAll(); }
+function toggleDlugiHistory(debtId){ dlugiExpandedDebt = (dlugiExpandedDebt===debtId) ? null : debtId; renderAll(); }
+function renderDebtRepaymentHistory(d){
+  var reps = (d.repayments||[]).slice().sort(function(a,b){ return (a.date||"")<(b.date||"") ? 1 : -1; });
+  var html = '<table style="width:100%"><tr>'+
+    '<th style="padding:4px 8px; font-size:10.5px; text-align:left; color:var(--muted)">Data</th>'+
+    '<th style="padding:4px 8px; font-size:10.5px; text-align:right; color:var(--muted)">Kwota</th><th></th></tr>';
+  reps.forEach(function(r){
+    html += '<tr><td style="padding:4px 8px; font-size:12px">'+(r.date?fmtDate(r.date):'—')+'</td>'+
+      '<td style="padding:4px 8px; font-size:12px; text-align:right">'+fmtPln(r.amount)+'</td>'+
+      '<td style="padding:4px 8px; text-align:right"><button class="linklike" style="color:var(--danger)" onclick="deleteRepayment(\''+d.id+'\',\''+r.id+'\')">✕</button></td></tr>';
+  });
+  html += '</table>';
+  return html;
+}
+function renderPozostaleDlugi(){
   var debts = state.debts||[];
   var active = debts.filter(function(d){ return debtRemaining(d) > 0.004; });
   var splacone = debts.filter(function(d){ return debtRemaining(d) <= 0.004; });
@@ -6708,6 +6746,8 @@ function renderFinanseDlugi(){
       '<th style="'+TH+'">Ostatnia spłata</th><th></th></tr>';
     list.forEach(function(d){
       var remaining = debtRemaining(d), paid = debtPaidSum(d), lastDate = debtLastRepaymentDate(d);
+      var repCount = (d.repayments||[]).length;
+      var expanded = dlugiExpandedDebt===d.id;
       t += '<tr>'+
         '<td style="'+TD+'; cursor:pointer" onclick="openDebtModal({id:\''+d.id+'\'})">'+escapeHtml(d.name)+
         (d.note?'<div style="color:var(--muted); font-size:11px">'+escapeHtml(d.note)+'</div>':'')+'</td>'+
@@ -6716,10 +6756,14 @@ function renderFinanseDlugi(){
         '<td style="'+TD+'; text-align:right; font-weight:700; color:'+(remaining>0?"var(--danger)":"var(--success)")+'">'+fmtPln(remaining)+'</td>'+
         '<td style="'+TD+'; color:var(--muted)">'+(lastDate?fmtDate(lastDate):'—')+'</td>'+
         '<td style="'+TD+'; text-align:right; white-space:nowrap">'+
+        (repCount ? '<button class="linklike" onclick="event.stopPropagation(); toggleDlugiHistory(\''+d.id+'\')">'+(expanded?"▾":"▸")+' Historia ('+repCount+')</button> ' : '')+
         (remaining>0.004 ? '<button class="linklike" onclick="event.stopPropagation(); openRepaymentModal(\''+d.id+'\')">➕ Spłata</button> ' : '')+
         '<button class="linklike" onclick="event.stopPropagation(); openDebtModal({id:\''+d.id+'\'})">Edytuj</button> '+
         '<button class="btn danger small" onclick="event.stopPropagation(); deleteDebt(\''+d.id+'\')">Usuń</button>'+
         '</td></tr>';
+      if(expanded && repCount){
+        t += '<tr><td colspan="6" style="padding:0 8px 10px 24px; background:rgba(255,255,255,.02)">'+renderDebtRepaymentHistory(d)+'</td></tr>';
+      }
     });
     t += '</table></div>';
     return t;
@@ -6739,6 +6783,105 @@ function renderFinanseDlugi(){
   return html;
 }
 function toggleDlugiSplacone(){ dlugiShowSplacone = !dlugiShowSplacone; renderAll(); }
+/* ---- Karta kredytowa: rejestr transakcji/odsetek/spłat, zaległość liczona narastająco (2026-08-20) ---- */
+function renderKartaKredytowa(){
+  var cc = state.creditCard || {transactions:[]};
+  var txs = (cc.transactions||[]).slice().sort(function(a,b){ return (a.date||"") < (b.date||"") ? -1 : 1; });
+  var running = 0;
+  var rows = txs.map(function(t){
+    running += (t.type==="splata") ? -(+t.amount||0) : (+t.amount||0);
+    return {t:t, balanceAfter:running};
+  });
+  var currentBalance = running;
+  var sumTx = txs.filter(function(t){ return t.type==="transakcja"; }).reduce(function(s,t){ return s+(+t.amount||0); },0);
+  var sumInterest = txs.filter(function(t){ return t.type==="odsetki"; }).reduce(function(s,t){ return s+(+t.amount||0); },0);
+  var sumPayments = txs.filter(function(t){ return t.type==="splata"; }).reduce(function(s,t){ return s+(+t.amount||0); },0);
+
+  var html = '<div class="row" style="justify-content:flex-end; margin:10px 0 14px">'+
+    '<button class="btn" onclick="openCardTxModal({})">+ Dodaj pozycję</button></div>';
+
+  html += '<div class="kpi-row">'+
+    '<div><div class="k-value" style="color:'+(currentBalance>0.004?"var(--danger)":"var(--success)")+'">'+fmtPln(currentBalance)+'</div><div class="k-label">Aktualna zaległość</div></div>'+
+    '<div><div class="k-value">'+fmtPln(sumTx)+'</div><div class="k-label">Suma transakcji</div></div>'+
+    '<div><div class="k-value">'+fmtPln(sumInterest)+'</div><div class="k-label">Suma odsetek</div></div>'+
+    '<div><div class="k-value">'+fmtPln(sumPayments)+'</div><div class="k-label">Suma spłat</div></div>'+
+    '</div>';
+
+  if(!txs.length){
+    html += '<div class="empty">Brak pozycji — kliknij "+ Dodaj pozycję", żeby dodać pierwszą transakcję, odsetki albo spłatę.</div>';
+    return html;
+  }
+  var TD = 'padding:6px 8px; font-size:12.5px', TH = 'padding:6px 8px; font-size:11px';
+  var CARD_TX_LABEL = {transakcja:"Transakcja", odsetki:"Odsetki", splata:"Spłata"};
+  html += '<div class="card"><table><tr>'+
+    '<th style="'+TH+'">Data</th><th style="'+TH+'">Typ</th><th style="'+TH+'">Opis</th>'+
+    '<th style="'+TH+'; text-align:right">Kwota</th><th style="'+TH+'; text-align:right">Zaległość po</th><th></th></tr>';
+  rows.slice().reverse().forEach(function(row){
+    var t = row.t;
+    var isPayment = t.type==="splata";
+    html += '<tr onclick="openCardTxModal({id:\''+t.id+'\'})" style="cursor:pointer">'+
+      '<td style="'+TD+'">'+(t.date?fmtDate(t.date):'—')+'</td>'+
+      '<td style="'+TD+'">'+CARD_TX_LABEL[t.type]+'</td>'+
+      '<td style="'+TD+'">'+escapeHtml(t.name||"")+'</td>'+
+      '<td style="'+TD+'; text-align:right; color:'+(isPayment?"var(--success)":"var(--danger)")+'">'+(isPayment?"-":"+")+fmtPln(t.amount)+'</td>'+
+      '<td style="'+TD+'; text-align:right; font-weight:700">'+fmtPln(row.balanceAfter)+'</td>'+
+      '<td style="'+TD+'; text-align:right"><button class="btn danger small" onclick="event.stopPropagation(); deleteCardTx(\''+t.id+'\')">Usuń</button></td>'+
+      '</tr>';
+  });
+  html += '</table></div>';
+  return html;
+}
+function openCardTxModal(opts){
+  opts = opts || {};
+  var isEdit = !!opts.id;
+  var tx = isEdit ? ((state.creditCard&&state.creditCard.transactions)||[]).filter(function(t){ return t.id===opts.id; })[0] : null;
+  var html = '<div class="modal-overlay" id="cardTxModal" data-close="closeCardTxModal">'+
+    '<div class="modal-box card">'+
+    '<h3>'+(isEdit?"Edytuj pozycję":"Nowa pozycja — karta kredytowa")+'</h3>'+
+    '<div class="field"><label>Typ</label><select id="ctType">'+
+    '<option value="transakcja"'+(!tx||tx.type==="transakcja"?" selected":"")+'>Transakcja (wydatek kartą)</option>'+
+    '<option value="odsetki"'+(tx&&tx.type==="odsetki"?" selected":"")+'>Odsetki</option>'+
+    '<option value="splata"'+(tx&&tx.type==="splata"?" selected":"")+'>Spłata</option>'+
+    '</select></div>'+
+    '<div class="field"><label>Data</label><input type="date" id="ctDate" value="'+(tx?(tx.date||""):todayStr())+'"></div>'+
+    '<div class="field"><label>Opis</label><input type="text" id="ctName" value="'+escapeHtml(tx?(tx.name||""):"")+'"></div>'+
+    '<div class="field"><label>Kwota</label><input type="number" step="0.01" id="ctAmount" value="'+(tx?tx.amount:"")+'"></div>'+
+    '<div class="row" style="justify-content:flex-end; gap:8px; margin-top:14px">'+
+    (isEdit ? '<button class="btn danger small" onclick="deleteCardTx(\''+tx.id+'\')">Usuń</button>' : '')+
+    '<button class="btn secondary small" onclick="closeCardTxModal()">Anuluj</button>'+
+    '<button class="btn small" onclick="saveCardTxModal()">Zapisz</button>'+
+    '</div></div></div>';
+  document.body.insertAdjacentHTML("beforeend", html);
+  window.__cardTxModalCtx = {id: opts.id||null};
+}
+function closeCardTxModal(){
+  var el = document.getElementById("cardTxModal");
+  if(el) el.remove();
+}
+function saveCardTxModal(){
+  var type = document.getElementById("ctType").value;
+  var date = document.getElementById("ctDate").value || todayStr();
+  var name = document.getElementById("ctName").value.trim();
+  var amount = parseFloat(document.getElementById("ctAmount").value);
+  if(isNaN(amount) || amount<=0) return;
+  if(!state.creditCard) state.creditCard = {transactions:[]};
+  if(!state.creditCard.transactions) state.creditCard.transactions = [];
+  var ctx = window.__cardTxModalCtx || {};
+  if(ctx.id){
+    var t = state.creditCard.transactions.filter(function(x){ return x.id===ctx.id; })[0];
+    if(t){ t.type=type; t.date=date; t.name=name; t.amount=amount; }
+  } else {
+    state.creditCard.transactions.push({id:uid("cctx"), type:type, date:date, name:name, amount:amount});
+  }
+  closeCardTxModal();
+  save(); renderAll();
+}
+function deleteCardTx(id){
+  if(!confirm("Usunąć tę pozycję?")) return;
+  state.creditCard.transactions = (state.creditCard.transactions||[]).filter(function(x){ return x.id!==id; });
+  closeCardTxModal();
+  save(); renderAll();
+}
 function openDebtModal(opts){
   opts = opts || {};
   var isEdit = !!opts.id;
@@ -6833,12 +6976,14 @@ function deleteRepayment(debtId, repaymentId){
   var debt = (state.debts||[]).filter(function(d){ return d.id===debtId; })[0];
   if(!debt) return;
   if(!confirm("Usunąć tę spłatę?")) return;
+  var modalWasOpen = !!document.getElementById("debtModal");
   debt.repayments = (debt.repayments||[]).filter(function(r){ return r.id!==repaymentId; });
   save(); renderAll();
   // modal jest doklejony do body poza cyklem renderAll() (tak samo jak reszta modali w
   // tym pliku) — trzeba go ręcznie odświeżyć, inaczej pokazywałby usuniętą spłatę dalej.
-  closeDebtModal();
-  openDebtModal({id: debtId});
+  // 2026-08-20: teraz wywoływane też z historii rozwijanej wprost w tabeli (bez modala),
+  // więc odświeżamy modal tylko jeśli faktycznie był otwarty.
+  if(modalWasOpen){ closeDebtModal(); openDebtModal({id: debtId}); }
 }
 function openFinanceModal(opts){
   opts = opts || {};
@@ -7053,6 +7198,17 @@ function flushFinanceBackupPush(){
     });
     return rows;
   }
+  function financeCreditCardGrid(){
+    var rows = [["Data","Typ","Opis","Kwota","Zaległość po"]];
+    var CARD_TX_LABEL = {transakcja:"Transakcja", odsetki:"Odsetki", splata:"Spłata"};
+    var txs = ((state.creditCard&&state.creditCard.transactions)||[]).slice().sort(function(a,b){ return (a.date||"")<(b.date||"") ? -1 : 1; });
+    var running = 0;
+    txs.forEach(function(t){
+      running += (t.type==="splata") ? -(+t.amount||0) : (+t.amount||0);
+      rows.push([t.date||"", CARD_TX_LABEL[t.type]||t.type, t.name||"", t.amount, running]);
+    });
+    return rows;
+  }
 
   fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId, {
     headers:{Authorization:"Bearer "+window.__gcalToken}
@@ -7067,6 +7223,7 @@ function flushFinanceBackupPush(){
       if(existingTitles.indexOf(tabName)===-1){ structRequests.push({addSheet:{properties:{title:tabName}}}); }
     });
     if(existingTitles.indexOf("DŁUGI")===-1){ structRequests.push({addSheet:{properties:{title:"DŁUGI"}}}); }
+    if(existingTitles.indexOf("KARTA KREDYTOWA")===-1){ structRequests.push({addSheet:{properties:{title:"KARTA KREDYTOWA"}}}); }
     if(!structRequests.length) return Promise.resolve();
     return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+":batchUpdate", {
       method:"POST",
@@ -7080,10 +7237,11 @@ function flushFinanceBackupPush(){
     return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchClear", {
       method:"POST",
       headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-      body: JSON.stringify({ranges:["DŁUGI!A:G"]})
+      body: JSON.stringify({ranges:["DŁUGI!A:G","'KARTA KREDYTOWA'!A:E"]})
     });
   }).then(function(){
-    var valuesData = [{range:"TOTAL!A1", values: totalRows}, {range:"DŁUGI!A1", values: financeDebtsGrid()}];
+    var valuesData = [{range:"TOTAL!A1", values: totalRows}, {range:"DŁUGI!A1", values: financeDebtsGrid()},
+      {range:"'KARTA KREDYTOWA'!A1", values: financeCreditCardGrid()}];
     monthsPresent.forEach(function(ym){
       valuesData.push({range:"'"+financeBackupMonthTabName(ym)+"'!A1", values: financeMonthGrid(ym)});
     });
