@@ -2982,9 +2982,43 @@ function renderDashboard(el){
   html += renderDashClientOpsTile();
   html += renderDashSocialPanel();
   html += renderDashContentPanel();
+  html += renderDashBackupHealthCard();
 
   el.innerHTML = html;
   loadWeather();
+}
+// 2026-08-20 — jedno miejsce do sprawdzenia stanu wszystkich 8 backupów naraz, zamiast
+// otwierania każdej zakładki osobno i zgadywania z pojedynczego badge'a. "Ostatni sync"
+// to czas w TEJ sesji przeglądarki (backupLastSyncAt żyje tylko w pamięci JS, nie jest
+// zapisywany do Firestore) — jeśli badge jest zielony, ale tu nic nie widać, to backup
+// po prostu jeszcze się nie uruchamiał od ostatniego odświeżenia strony.
+var BACKUP_MODULE_LABELS = {finance:"Finanse", habits:"Nawyki", clientOps:"Obsługa Klientów", tasks:"Zadania", droga:"Droga", posty:"Posty", clients:"Klienci", crm:"Baza kontaktów"};
+var BACKUP_MODULE_STATUS_GETTERS = {
+  finance: function(){ return financeBackupStatus; },
+  habits: function(){ return habitsBackupStatus; },
+  clientOps: function(){ return clientOpsBackupStatus; },
+  tasks: function(){ return tasksBackupStatus; },
+  droga: function(){ return drogaBackupStatus; },
+  posty: function(){ return postyBackupStatus; },
+  clients: function(){ return clientsBackupStatus; },
+  crm: function(){ return crmBackupStatus; }
+};
+function renderDashBackupHealthCard(){
+  var html = '<div class="card" style="margin-top:16px">';
+  html += '<h3 style="margin-bottom:4px">Stan backupów (8 modułów)</h3>';
+  html += '<div class="stat-sub" style="margin-bottom:10px">'+(window.__gcalToken ? "Połączono z Google." : "Nie połączono z Google — kliknij dowolny badge \"Backup\", żeby połączyć.")+'</div>';
+  BACKUP_MODULE_KEYS.forEach(function(key){
+    var status = BACKUP_MODULE_STATUS_GETTERS[key]();
+    var label = BACKUP_MODULE_LABELS[key];
+    var dot = (!window.__gcalToken) ? "⚪" : (status==="error" ? "🔴" : (status==="ok" ? "🟢" : "⚪"));
+    var syncLabel = backupLastSyncAt[key] ? backupLastSyncLabel(key).replace(/^ — /,"") : "jeszcze nie zsynchronizowano w tej sesji";
+    html += '<div class="row" style="justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border)">'+
+      '<span>'+dot+' '+label+'</span>'+
+      '<span class="stat-sub">'+escapeHtml(syncLabel)+'</span>'+
+      '</div>';
+  });
+  html += '</div>';
+  return html;
 }
 /* ================= Imieniny (polski kalendarz imion) ================= */
 var IMIENINY_DATA = {
@@ -6435,6 +6469,39 @@ function changeFinanceYear(delta){
   if(financeTab && financeTab!=="TOTAL"){ financeTab = financeYear+"-"+financeTab.split("-")[1]; }
   renderAll();
 }
+// 2026-08-20 — Backupy: retry + widoczność ostatniego udanego sync. Damian dwa razy z
+// rzędu zgłosił "backupy nie działają" (19 i 20 sierpnia), ale live-check obu razy
+// pokazał same zielone badge'e — przejściowy błąd (sieć/401) wcześniej zostawiał badge
+// czerwonym AŻ DO kolejnej edycji, bez żadnej próby ponowienia. Teraz: 3 automatyczne
+// próby w narastających odstępach zanim badge pokaże się jako trwale czerwony, plus
+// timestamp ostatniego udanego sync w tooltipie, żeby stan dało się zweryfikować zamiast
+// zgadywać. BACKUP_MODULE_KEYS = klucze używane przez wszystkie 8 modułów z backupem.
+var BACKUP_MODULE_KEYS = ["finance","habits","clientOps","tasks","droga","posty","clients","crm"];
+var BACKUP_RETRY_DELAYS_MS = [5000, 20000, 60000];
+var backupRetryCounts = {};
+var backupLastSyncAt = {};
+function backupSyncSucceeded(key){
+  backupRetryCounts[key] = 0;
+  backupLastSyncAt[key] = new Date().toISOString();
+}
+function backupSyncFailed(key, retryFn, markPending, markError){
+  var n = backupRetryCounts[key] || 0;
+  if(n < BACKUP_RETRY_DELAYS_MS.length){
+    backupRetryCounts[key] = n + 1;
+    markPending();
+    setTimeout(retryFn, BACKUP_RETRY_DELAYS_MS[n]);
+  } else {
+    backupRetryCounts[key] = 0;
+    markError();
+    renderAll();
+  }
+}
+function backupLastSyncLabel(key){
+  var iso = backupLastSyncAt[key];
+  if(!iso) return "";
+  var d = new Date(iso);
+  return " — ostatni udany sync: "+d.toLocaleDateString("pl-PL")+" "+d.toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"});
+}
 // 2026-07-31 — Kompaktowy wskaźnik kopii zapasowej, obok zakładek modułu zamiast
 // pełnowidocznego banera zajmującego osobną linię (Damian: "to jest tylko informacja").
 // Ten sam kształt danych używany we wszystkich modułach z backupem (Nawyki/Zadania/
@@ -6448,7 +6515,8 @@ function renderBackupBadge(cfg){
   if(!cfg.sheetId){
     return '<div style="display:flex; align-items:center; flex:0 0 auto"><span style="font-size:11px; color:var(--muted); white-space:nowrap">Tworzę kopię…</span></div>';
   }
-  var html = '<a href="'+escapeHtml(cfg.sheetUrl||"#")+'" target="_blank" class="linklike" style="font-size:11px; color:'+(cfg.error?"var(--danger)":"#8fce8f")+'; white-space:nowrap" title="'+(cfg.error?"Ostatnia synchronizacja nie powiodła się, spróbuję ponownie":"Kopia zapasowa aktywna")+' — kliknij, aby otworzyć arkusz">'+(cfg.error?"⚠":"✓")+' Backup</a>';
+  var lastSync = cfg.lastSyncKey ? backupLastSyncLabel(cfg.lastSyncKey) : "";
+  var html = '<a href="'+escapeHtml(cfg.sheetUrl||"#")+'" target="_blank" class="linklike" style="font-size:11px; color:'+(cfg.error?"var(--danger)":"#8fce8f")+'; white-space:nowrap" title="'+(cfg.error?"Ostatnia synchronizacja nie powiodła się, ponawiam automatycznie":"Kopia zapasowa aktywna")+escapeHtml(lastSync)+' — kliknij, aby otworzyć arkusz">'+(cfg.error?"⚠":"✓")+' Backup</a>';
   (cfg.actions||[]).forEach(function(a){
     var title = a.title + (a.result ? " — "+a.result : "");
     html += '<button type="button" class="linklike" style="font-size:11px; margin-left:8px'+(a.danger?"; color:var(--danger)":"")+'" title="'+escapeHtml(title)+'" '+(a.disabled?"disabled":"")+' onclick="'+a.onclick+'">'+a.icon+'</button>';
@@ -6474,7 +6542,7 @@ function renderFinanse(el){
   html += '</div>';
   html += renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.financeBackupSheetId, sheetUrl: state.financeBackupSheetUrl,
-    error: financeBackupStatus==="error",
+    error: financeBackupStatus==="error", lastSyncKey: "finance",
     actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: financeVerifyStatus==="loading", onclick:"financeVerify1to1()",
       danger: !!(financeVerifyResult && financeVerifyResult.sheetTotal!==financeVerifyResult.localTotal),
       result: financeVerifyResult ? ("arkusz: "+financeVerifyResult.sheetTotal+", lokalnie: "+financeVerifyResult.localTotal) : null}]
@@ -6803,8 +6871,9 @@ function flushFinanceBackupPush(){
     });
   }).then(function(r){
     if(r && r.status===401){ window.__gcalToken=null; }
-    financeBackupStatus = (r && r.ok) ? "ok" : "error";
-  }).catch(function(){ financeBackupStatus = "error"; });
+    if(r && r.ok){ financeBackupStatus = "ok"; backupSyncSucceeded("finance"); renderAll(); }
+    else { backupSyncFailed("finance", flushFinanceBackupPush, function(){ financeBackupPending = true; }, function(){ financeBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("finance", flushFinanceBackupPush, function(){ financeBackupPending = true; }, function(){ financeBackupStatus = "error"; }); });
 }
 
 /* ================= ZADANIA ================= */
@@ -7797,7 +7866,7 @@ function renderNawyki(el){
     '</div>'+
     renderBackupBadge({
       connected: !!window.__gcalToken, sheetId: state.habitsBackupSheetId, sheetUrl: state.habitsBackupSheetUrl,
-      error: habitsBackupStatus==="error",
+      error: habitsBackupStatus==="error", lastSyncKey: "habits",
       actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", disabled: nawykiRestoreStatus==="loading", onclick:"nawykiRestoreFromBackup()",
         danger: nawykiRestoreStatus==="error",
         result: nawykiRestoreResult ? ("uzupełniono "+nawykiRestoreResult.restored+" zaznaczeń") : (nawykiRestoreStatus==="error" ? "nie udało się odczytać arkusza" : null)}]
@@ -8207,8 +8276,9 @@ function flushHabitsBackupPush(){
     });
   }).then(function(r){
     if(r && r.status===401){ window.__gcalToken=null; }
-    habitsBackupStatus = (r && r.ok) ? "ok" : "error";
-  }).catch(function(){ habitsBackupStatus = "error"; });
+    if(r && r.ok){ habitsBackupStatus = "ok"; backupSyncSucceeded("habits"); renderAll(); }
+    else { backupSyncFailed("habits", flushHabitsBackupPush, function(){ habitsBackupPending = true; }, function(){ habitsBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("habits", flushHabitsBackupPush, function(){ habitsBackupPending = true; }, function(){ habitsBackupStatus = "error"; }); });
 }
 
 /* ================= KLIENCI ================= */
@@ -9509,8 +9579,9 @@ function flushClientOpsBackupPush(){
     });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    clientOpsBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ clientOpsBackupStatus = "error"; });
+    if(r.ok){ clientOpsBackupStatus = "ok"; backupSyncSucceeded("clientOps"); renderAll(); }
+    else { backupSyncFailed("clientOps", flushClientOpsBackupPush, function(){ clientOpsBackupPending = true; }, function(){ clientOpsBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("clientOps", flushClientOpsBackupPush, function(){ clientOpsBackupPending = true; }, function(){ clientOpsBackupStatus = "error"; }); });
 }
 function renderClientOpsBackupStatus(){
   if(window.__gcalToken && !state.clientOpsBackupSheetId) ensureClientOpsBackupSheet();
@@ -9523,7 +9594,7 @@ function renderClientOpsBackupStatus(){
   }
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.clientOpsBackupSheetId, sheetUrl: state.clientOpsBackupSheetUrl,
-    error: clientOpsBackupStatus==="error",
+    error: clientOpsBackupStatus==="error", lastSyncKey: "clientOps",
     actions: [
       {icon:"🔍", title:"Sprawdź 1:1", disabled: clientOpsVerifyStatus==="loading", onclick:"clientOpsVerify1to1()", danger: mismatch, result: resultTxt},
       {icon:"🧹", title:"Wyczyść i zapisz od nowa (usuwa stare/zdublowane wiersze z arkusza)", onclick:"forceClientOpsBackupPush()"}
@@ -9591,8 +9662,9 @@ function flushTasksBackupPush(){
     body: JSON.stringify({valueInputOption:"RAW", data:[{range:"ZADANIA!A1", values: tasksBackupRows()}]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    tasksBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ tasksBackupStatus = "error"; });
+    if(r.ok){ tasksBackupStatus = "ok"; backupSyncSucceeded("tasks"); renderAll(); }
+    else { backupSyncFailed("tasks", flushTasksBackupPush, function(){ tasksBackupPending = true; }, function(){ tasksBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("tasks", flushTasksBackupPush, function(){ tasksBackupPending = true; }, function(){ tasksBackupStatus = "error"; }); });
 }
 // "Sprawdź 1:1" — porównuje arkusz z lokalnym stanem bez niczego zmieniać, tylko
 // pokazuje ile zadań brakuje po jednej i po drugiej stronie (diagnostyka).
@@ -9652,7 +9724,7 @@ function renderTasksBackupStatus(){
   }
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.tasksBackupSheetId, sheetUrl: state.tasksBackupSheetUrl,
-    error: tasksBackupStatus==="error",
+    error: tasksBackupStatus==="error", lastSyncKey: "tasks",
     actions: [
       {icon:"🔍", title:"Sprawdź 1:1", disabled: tasksVerifyStatus==="loading", onclick:"tasksVerify1to1()", danger: danger, result: resultTxt},
       {icon:"🔄", title:"Wymuś synchronizację", disabled: tasksVerifyStatus==="loading", onclick:"tasksForceSyncTwoWay()"}
@@ -9710,8 +9782,9 @@ function flushDrogaBackupPush(){
     body: JSON.stringify({valueInputOption:"RAW", data:[{range:"DROGA!A1", values: drogaBackupRows()}]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    drogaBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ drogaBackupStatus = "error"; });
+    if(r.ok){ drogaBackupStatus = "ok"; backupSyncSucceeded("droga"); renderAll(); }
+    else { backupSyncFailed("droga", flushDrogaBackupPush, function(){ drogaBackupPending = true; }, function(){ drogaBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("droga", flushDrogaBackupPush, function(){ drogaBackupPending = true; }, function(){ drogaBackupStatus = "error"; }); });
 }
 // Przywraca WYŁĄCZNIE pola, które lokalnie są puste/domyślne (fill-only) — dla map
 // (fronty/bramka/rytuał*) łączy klucze, nigdy nie kasuje istniejącego wpisu; dla
@@ -9751,7 +9824,7 @@ function renderDrogaBackupStatus(){
   if(window.__gcalToken && !state.drogaBackupSheetId) ensureDrogaBackupSheet();
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.drogaBackupSheetId, sheetUrl: state.drogaBackupSheetUrl,
-    error: drogaBackupStatus==="error",
+    error: drogaBackupStatus==="error", lastSyncKey: "droga",
     actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", onclick:"drogaRestoreFromBackup()",
       result: drogaBackupResult ? ("uzupełniono "+drogaBackupResult.restored+" pól") : null}]
   });
@@ -9823,8 +9896,9 @@ function flushPostyBackupPush(){
     });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    postyBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ postyBackupStatus = "error"; });
+    if(r.ok){ postyBackupStatus = "ok"; backupSyncSucceeded("posty"); renderAll(); }
+    else { backupSyncFailed("posty", flushPostyBackupPush, function(){ postyBackupPending = true; }, function(){ postyBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("posty", flushPostyBackupPush, function(){ postyBackupPending = true; }, function(){ postyBackupStatus = "error"; }); });
 }
 // "Sprawdź 1:1" — porównuje arkusz z lokalnym stanem bez niczego zmieniać, tylko
 // pokazuje ile postów brakuje po jednej i po drugiej stronie (diagnostyka).
@@ -9853,7 +9927,7 @@ function renderPostyBackupStatus(){
   }
   return renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.postyBackupSheetId, sheetUrl: state.postyBackupSheetUrl,
-    error: postyBackupStatus==="error",
+    error: postyBackupStatus==="error", lastSyncKey: "posty",
     actions: [
       {icon:"🔍", title:"Sprawdź 1:1", disabled: postyVerifyStatus==="loading", onclick:"postyVerify1to1()", danger: danger, result: resultTxt},
       {icon:"🧹", title:"Wyczyść i zapisz od nowa (usuwa stare/zdublowane wiersze z arkusza)", onclick:"forcePostyBackupPush()"}
@@ -13227,7 +13301,7 @@ function renderKlienci(el){
     '</div>'+
     renderBackupBadge({
       connected: !!window.__gcalToken, sheetId: state.clientsBackupSheetId, sheetUrl: state.clientsBackupSheetUrl,
-      error: clientsBackupStatus==="error",
+      error: clientsBackupStatus==="error", lastSyncKey: "clients",
       actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: clientsVerifyStatus==="loading", onclick:"clientsVerify1to1()",
         danger: !!(clientsVerifyResult && clientsVerifyResult.sheetTotal!==clientsVerifyResult.localTotal),
         result: clientsVerifyResult ? ("arkusz: "+clientsVerifyResult.sheetTotal+", lokalnie: "+clientsVerifyResult.localTotal) : null}]
@@ -14051,8 +14125,9 @@ function flushClientsBackupPush(){
     })
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    clientsBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ clientsBackupStatus = "error"; });
+    if(r.ok){ clientsBackupStatus = "ok"; backupSyncSucceeded("clients"); renderAll(); }
+    else { backupSyncFailed("clients", flushClientsBackupPush, function(){ clientsBackupPending = true; }, function(){ clientsBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("clients", flushClientsBackupPush, function(){ clientsBackupPending = true; }, function(){ clientsBackupStatus = "error"; }); });
 }
 
 /* ---- Kopia zapasowa Bazy kontaktów w osobnym arkuszu Google Sheets ---- */
@@ -14184,8 +14259,9 @@ function flushCrmBackupPush(){
     })
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
-    crmBackupStatus = r.ok ? "ok" : "error";
-  }).catch(function(){ crmBackupStatus = "error"; });
+    if(r.ok){ crmBackupStatus = "ok"; backupSyncSucceeded("crm"); renderAll(); }
+    else { backupSyncFailed("crm", flushCrmBackupPush, function(){ crmBackupPending = true; }, function(){ crmBackupStatus = "error"; }); }
+  }).catch(function(){ backupSyncFailed("crm", flushCrmBackupPush, function(){ crmBackupPending = true; }, function(){ crmBackupStatus = "error"; }); });
 }
 
 /* ================= CRM REAKTYWACJA ================= */
@@ -15483,7 +15559,7 @@ function renderCRM(el){
     '</div>';
   html += renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.crmBackupSheetId, sheetUrl: state.crmBackupSheetUrl,
-    error: crmBackupStatus==="error",
+    error: crmBackupStatus==="error", lastSyncKey: "crm",
     actions: [
       {icon:"🔄", title:"Przywróć braki z kopii zapasowej", disabled: crmOwnRestoreStatus==="loading", onclick:"crmRestoreFromOwnBackup()",
         danger: crmOwnRestoreStatus==="error",
