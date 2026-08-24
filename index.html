@@ -16959,6 +16959,7 @@ window.reconnectGCal = doSignIn;
 
 var unsubscribeSnapshot = null;
 var unsubscribeCrmSnapshot = null;
+var unsubscribeTasksSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
 var crmPushTimer = null;
@@ -16970,6 +16971,7 @@ var pendingCrmPush = false;
 function mainStateForPush(){
   var copy = Object.assign({}, window.state);
   delete copy.crmContacts;
+  delete copy.tasks;
   return copy;
 }
 
@@ -17034,12 +17036,102 @@ function crmMigrateOldDocIfNeeded(){
   }).catch(function(err){ console.error("Migracja CRM nie powiodła się:", err); });
 }
 
+// 2026-08-24 — GOTCHA POWAŻNY (ten sam gatunek co CRM z 2026-07-28, ale bez przekroczenia
+// limitu rozmiaru): flushPush() robi setDoc BEZ merge — każdy zapis nadpisuje CAŁY
+// dokument workspace/damian tym, co dana karta/telefon ma akurat w pamięci. Jeśli telefon
+// był chwilę "uśpiony" w tle (onSnapshot mógł nie dostać jeszcze świeżych zadań dodanych
+// na komputerze) i ktoś w tym oknie zmieni na telefonie COKOLWIEK — nawet nawyk niezwiązany
+// z zadaniami — cały dokument, łącznie z nieaktualną tablicą tasks, wraca do Firestore i
+// po cichu kasuje to, co przyszło z drugiego urządzenia. _updatedAt broni tylko przed
+// nadpisaniem się świeżego stanu lokalnego starszym stanem z serwera (onSnapshot), nie
+// broni przed odwrotną sytuacją — że to LOKALNY stan jest przestarzały w momencie zapisu.
+// Naprawione tak samo jak CRM: jeden dokument per zadanie w kolekcji workspace_tasks
+// (dokument o ID = t.id) zamiast jednej tablicy w jednym dokumencie — dwa urządzenia mogą
+// teraz edytować różne zadania równocześnie bez ryzyka nadpisania się nawzajem, i zapis
+// do zadań przestaje zależeć od tego, czy reszta stanu (habits/droga/finance…) jest świeża.
+var tasksCol = collection(db, "workspace_tasks");
+var tasksLastPushed = {}; // id -> JSON.stringify ostatniej wersji faktycznie zapisanej w Firestore
+var tasksPushTimer = null;
+var pendingTasksPush = false;
+function tasksDirtyIds(){
+  var ids = [];
+  (window.state.tasks||[]).forEach(function(t){
+    if(!t || !t.id) return;
+    var json = JSON.stringify(t);
+    if(tasksLastPushed[t.id] !== json) ids.push(t.id);
+  });
+  return ids;
+}
+function tasksRemovedIds(){
+  var current = {};
+  (window.state.tasks||[]).forEach(function(t){ if(t && t.id) current[t.id] = true; });
+  return Object.keys(tasksLastPushed).filter(function(id){ return !current[id]; });
+}
+function tasksCommitInChunks(ops){
+  var chunks = [];
+  for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+  var chain = Promise.resolve();
+  chunks.forEach(function(chunk){
+    chain = chain.then(function(){
+      var batch = writeBatch(db);
+      chunk.forEach(function(op){
+        var ref = doc(tasksCol, op.id);
+        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+      });
+      return batch.commit();
+    });
+  });
+  return chain;
+}
+// Migracja jednorazowa: przepisuje starą tablicę workspace/damian.tasks do kolekcji
+// workspace_tasks. WAŻNE: tasks brane jest z argumentu (surowy snapshot doc, złapany
+// SYNCHRONICZNIE w onSnapshot zanim cokolwiek zdąży cokolwiek dopchnąć) — nie robimy tu
+// osobnego getDoc() później, bo w międzyczasie flushPush() mógł już zdążyć usunąć pole
+// tasks z dokumentu (mainStateForPush je pomija) i taki spóźniony odczyt zwróciłby pustkę.
+// getDocs(tasksCol) niżej służy tylko do idempotencji (nie migruj drugi raz) — samo
+// batch.set jest i tak bezpieczne do powtórzenia (ten sam ID nadpisuje samego siebie).
+var tasksMigrationChecked = false;
+function maybeMigrateTasksFromRemote(oldTasks){
+  oldTasks = oldTasks||[];
+  if(!oldTasks.length) return;
+  getDocs(tasksCol).then(function(snap){
+    if(!snap.empty) return;
+    console.log("Migracja Zadań: przenoszę "+oldTasks.length+" zadań do workspace_tasks…");
+    return tasksCommitInChunks(oldTasks.filter(function(t){return t&&t.id;}).map(function(t){ return {type:"set", id:t.id, data:t}; }))
+      .then(function(){ console.log("Migracja Zadań zakończona ("+oldTasks.length+" zadań)."); });
+  }).catch(function(err){ console.error("Migracja Zadań nie powiodła się:", err); });
+}
+function scheduleTasksFirestorePush(){
+  pendingTasksPush = true;
+  if(tasksPushTimer) clearTimeout(tasksPushTimer);
+  tasksPushTimer = setTimeout(flushTasksFirestorePush, 500);
+}
+function flushTasksFirestorePush(){
+  if(!pendingTasksPush) return;
+  if(tasksPushTimer){ clearTimeout(tasksPushTimer); tasksPushTimer = null; }
+  pendingTasksPush = false;
+  var dirtyIds = tasksDirtyIds();
+  var removedIds = tasksRemovedIds();
+  if(!dirtyIds.length && !removedIds.length) return;
+  var byId = {};
+  (window.state.tasks||[]).forEach(function(t){ if(t&&t.id) byId[t.id] = t; });
+  var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
+    .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
+  tasksCommitInChunks(ops).then(function(){
+    dirtyIds.forEach(function(id){ tasksLastPushed[id] = JSON.stringify(byId[id]); });
+    removedIds.forEach(function(id){ delete tasksLastPushed[id]; });
+  }).catch(function(err){
+    console.error("Firestore batch push (workspace_tasks) nie powiódł się:", err);
+  });
+}
+
 function scheduleFirestorePush(){
   pendingPush = true;
   setSyncStatus("Zapisywanie…");
   if(pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(flushPush, 500);
   scheduleCrmFirestorePush();
+  scheduleTasksFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -17109,7 +17201,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -17124,7 +17216,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -17136,6 +17228,10 @@ function startSync(){
   unsubscribeSnapshot = onSnapshot(docRef, function(snap){
     if(snap.exists()){
       var remote = snap.data();
+      if(!tasksMigrationChecked){
+        tasksMigrationChecked = true;
+        maybeMigrateTasksFromRemote(remote.tasks);
+      }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -17144,10 +17240,12 @@ function startSync(){
         return;
       }
       var keepCrm = window.state.crmContacts;
+      var keepTasks = window.state.tasks;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
       window.state.crmContacts = keepCrm||[];
+      window.state.tasks = keepTasks||[];
       originalSave();
       window.renderAll();
       setSyncStatus("Zsynchronizowano");
@@ -17176,6 +17274,20 @@ function startSync(){
     console.error("Firestore onSnapshot (workspace_crm_contacts) error:", err);
   });
 
+  unsubscribeTasksSnapshot = onSnapshot(tasksCol, function(snap){
+    var arr = [];
+    snap.forEach(function(d){
+      var data = d.data();
+      arr.push(data);
+      tasksLastPushed[d.id] = JSON.stringify(data);
+    });
+    window.state.tasks = arr;
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace_tasks) error:", err);
+  });
+
   // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
   // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
   // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
@@ -17191,10 +17303,12 @@ function startSync(){
       var remote = snap.data();
       if((remote._updatedAt||0) > (window.state._updatedAt||0)){
         var keepCrm = window.state.crmContacts;
+        var keepTasks = window.state.tasks;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
         window.state.crmContacts = keepCrm||[];
+        window.state.tasks = keepTasks||[];
         originalSave();
         window.renderAll();
       }
