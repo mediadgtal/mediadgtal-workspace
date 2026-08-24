@@ -16960,6 +16960,7 @@ window.reconnectGCal = doSignIn;
 var unsubscribeSnapshot = null;
 var unsubscribeCrmSnapshot = null;
 var unsubscribeTasksSnapshot = null;
+var unsubscribeFinanceSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
 var crmPushTimer = null;
@@ -16972,6 +16973,7 @@ function mainStateForPush(){
   var copy = Object.assign({}, window.state);
   delete copy.crmContacts;
   delete copy.tasks;
+  delete copy.financeEntries;
   return copy;
 }
 
@@ -17125,6 +17127,82 @@ function flushTasksFirestorePush(){
   });
 }
 
+// 2026-08-24 — ten sam mechanizm co wyżej (tasksCol), tym razem dla financeEntries: przy
+// weryfikacji "1:1" arkusz-vs-lokalnie w KAŻDYM miesiącu 2026 brakowało kilku wpisów
+// lokalnie (nie tylko znany duplikat "Oszczędności PKO" w Sierpniu) — to nie szum
+// historyczny tylko ten sam wyścig co przy zadaniach, tylko że tu trwał od miesięcy po
+// cichu. Ta sama naprawa: jeden dokument per wpis w kolekcji workspace_finance_entries.
+var financeCol = collection(db, "workspace_finance_entries");
+var financeLastPushed = {};
+var financePushTimer = null;
+var pendingFinancePush = false;
+function financeDirtyIds(){
+  var ids = [];
+  (window.state.financeEntries||[]).forEach(function(e){
+    if(!e || !e.id) return;
+    var json = JSON.stringify(e);
+    if(financeLastPushed[e.id] !== json) ids.push(e.id);
+  });
+  return ids;
+}
+function financeRemovedIds(){
+  var current = {};
+  (window.state.financeEntries||[]).forEach(function(e){ if(e && e.id) current[e.id] = true; });
+  return Object.keys(financeLastPushed).filter(function(id){ return !current[id]; });
+}
+function financeCommitInChunks(ops){
+  var chunks = [];
+  for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+  var chain = Promise.resolve();
+  chunks.forEach(function(chunk){
+    chain = chain.then(function(){
+      var batch = writeBatch(db);
+      chunk.forEach(function(op){
+        var ref = doc(financeCol, op.id);
+        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+      });
+      return batch.commit();
+    });
+  });
+  return chain;
+}
+// Patrz komentarz przy maybeMigrateTasksFromRemote — ten sam powód: bierzemy financeEntries
+// z argumentu złapanego SYNCHRONICZNIE w onSnapshot, nie robimy osobnego getDoc później.
+var financeMigrationChecked = false;
+function maybeMigrateFinanceFromRemote(oldEntries){
+  oldEntries = oldEntries||[];
+  if(!oldEntries.length) return;
+  getDocs(financeCol).then(function(snap){
+    if(!snap.empty) return;
+    console.log("Migracja Finansów: przenoszę "+oldEntries.length+" wpisów do workspace_finance_entries…");
+    return financeCommitInChunks(oldEntries.filter(function(e){return e&&e.id;}).map(function(e){ return {type:"set", id:e.id, data:e}; }))
+      .then(function(){ console.log("Migracja Finansów zakończona ("+oldEntries.length+" wpisów)."); });
+  }).catch(function(err){ console.error("Migracja Finansów nie powiodła się:", err); });
+}
+function scheduleFinanceFirestorePush(){
+  pendingFinancePush = true;
+  if(financePushTimer) clearTimeout(financePushTimer);
+  financePushTimer = setTimeout(flushFinanceFirestorePush, 500);
+}
+function flushFinanceFirestorePush(){
+  if(!pendingFinancePush) return;
+  if(financePushTimer){ clearTimeout(financePushTimer); financePushTimer = null; }
+  pendingFinancePush = false;
+  var dirtyIds = financeDirtyIds();
+  var removedIds = financeRemovedIds();
+  if(!dirtyIds.length && !removedIds.length) return;
+  var byId = {};
+  (window.state.financeEntries||[]).forEach(function(e){ if(e&&e.id) byId[e.id] = e; });
+  var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
+    .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
+  financeCommitInChunks(ops).then(function(){
+    dirtyIds.forEach(function(id){ financeLastPushed[id] = JSON.stringify(byId[id]); });
+    removedIds.forEach(function(id){ delete financeLastPushed[id]; });
+  }).catch(function(err){
+    console.error("Firestore batch push (workspace_finance_entries) nie powiódł się:", err);
+  });
+}
+
 function scheduleFirestorePush(){
   pendingPush = true;
   setSyncStatus("Zapisywanie…");
@@ -17132,6 +17210,7 @@ function scheduleFirestorePush(){
   pushTimer = setTimeout(flushPush, 500);
   scheduleCrmFirestorePush();
   scheduleTasksFirestorePush();
+  scheduleFinanceFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -17201,7 +17280,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -17216,7 +17295,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -17232,6 +17311,10 @@ function startSync(){
         tasksMigrationChecked = true;
         maybeMigrateTasksFromRemote(remote.tasks);
       }
+      if(!financeMigrationChecked){
+        financeMigrationChecked = true;
+        maybeMigrateFinanceFromRemote(remote.financeEntries);
+      }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -17241,11 +17324,13 @@ function startSync(){
       }
       var keepCrm = window.state.crmContacts;
       var keepTasks = window.state.tasks;
+      var keepFinance = window.state.financeEntries;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
       window.state.crmContacts = keepCrm||[];
       window.state.tasks = keepTasks||[];
+      window.state.financeEntries = keepFinance||[];
       originalSave();
       window.renderAll();
       setSyncStatus("Zsynchronizowano");
@@ -17288,6 +17373,20 @@ function startSync(){
     console.error("Firestore onSnapshot (workspace_tasks) error:", err);
   });
 
+  unsubscribeFinanceSnapshot = onSnapshot(financeCol, function(snap){
+    var arr = [];
+    snap.forEach(function(d){
+      var data = d.data();
+      arr.push(data);
+      financeLastPushed[d.id] = JSON.stringify(data);
+    });
+    window.state.financeEntries = arr;
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace_finance_entries) error:", err);
+  });
+
   // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
   // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
   // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
@@ -17304,11 +17403,13 @@ function startSync(){
       if((remote._updatedAt||0) > (window.state._updatedAt||0)){
         var keepCrm = window.state.crmContacts;
         var keepTasks = window.state.tasks;
+        var keepFinance = window.state.financeEntries;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
         window.state.crmContacts = keepCrm||[];
         window.state.tasks = keepTasks||[];
+        window.state.financeEntries = keepFinance||[];
         originalSave();
         window.renderAll();
       }
