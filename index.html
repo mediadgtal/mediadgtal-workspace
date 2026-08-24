@@ -6569,9 +6569,12 @@ function renderFinanse(el){
   html += renderBackupBadge({
     connected: !!window.__gcalToken, sheetId: state.financeBackupSheetId, sheetUrl: state.financeBackupSheetUrl,
     error: financeBackupStatus==="error", lastSyncKey: "finance",
-    actions: [{icon:"🔍", title:"Sprawdź 1:1", disabled: financeVerifyStatus==="loading", onclick:"financeVerify1to1()",
-      danger: !!(financeVerifyResult && financeVerifyResult.sheetTotal!==financeVerifyResult.localTotal),
-      result: financeVerifyResult ? ("arkusz: "+financeVerifyResult.sheetTotal+", lokalnie: "+financeVerifyResult.localTotal) : null}]
+    actions: [
+      {icon:"🔍", title:"Sprawdź 1:1", disabled: financeVerifyStatus==="loading", onclick:"financeVerify1to1()",
+        danger: !!(financeVerifyResult && financeVerifyResult.sheetTotal!==financeVerifyResult.localTotal),
+        result: financeVerifyResult ? (financeVerifyResult.restoredFromSheet!=null ? ("dopisano "+financeVerifyResult.restoredFromSheet+" z arkusza; arkusz: "+financeVerifyResult.sheetTotal+", lokalnie: "+financeVerifyResult.localTotal) : ("arkusz: "+financeVerifyResult.sheetTotal+", lokalnie: "+financeVerifyResult.localTotal)) : null},
+      {icon:"🔄", title:"Wymuś synchronizację", disabled: financeVerifyStatus==="loading", onclick:"financeForceSyncTwoWay()"}
+    ]
   });
   html += '</div>';
 
@@ -7085,6 +7088,57 @@ function financeVerify1to1(){
           (data.valueRanges||[]).forEach(function(vr){ sheetTotal += Math.max(0, (vr.values||[]).length-1); });
           financeVerifyStatus = "done";
           financeVerifyResult = {sheetTotal: sheetTotal, localTotal: state.financeEntries.length};
+          renderAll();
+        });
+    }).catch(function(){ financeVerifyStatus="error"; renderAll(); });
+}
+var FINANCE_CATEGORY_LABEL_REV = {"Przychody":"przychody","Wydatki firmowe":"firmowe","Moje wydatki":"osobiste","Oszczędności":"oszczednosci","Inwestycje":"inwestycje"};
+var FINANCE_MONTH_TAB_TO_YM = {"Styczeń":"01","Luty":"02","Marzec":"03","Kwiecień":"04","Maj":"05","Czerwiec":"06","Lipiec":"07","Sierpień":"08","Wrzesień":"09","Październik":"10","Listopad":"11","Grudzień":"12"};
+// Wymuszona synchronizacja dwukierunkowa dla Finansów — analogiczna do
+// tasksForceSyncTwoWay, ale arkusz nie ma kolumny id (tylko Kategoria/Nazwa/Kwota/Sposób
+// płatności/Data), więc dopasowanie robimy po TREŚCI (miesiąc+kategoria+nazwa+kwota+sposób
+// płatności) jako multizbiór, nie po id. Dopisuje WYŁĄCZNIE brakujące lokalnie wpisy —
+// nigdy nic nie usuwa ani nie nadpisuje istniejącego wpisu.
+function financeForceSyncTwoWay(){
+  if(!window.__gcalToken || !state.financeBackupSheetId){ alert('Połącz się z Google, żeby wymusić synchronizację.'); return; }
+  financeVerifyStatus = "loading"; financeVerifyResult = null; renderAll();
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"?fields=sheets.properties", {headers:{Authorization:"Bearer "+window.__gcalToken}})
+    .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+    .then(function(meta){
+      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL"; });
+      if(!monthTabs.length){ financeVerifyStatus="done"; financeVerifyResult={sheetTotal:0, localTotal:state.financeEntries.length, restoredFromSheet:0}; renderAll(); return; }
+      var ranges = monthTabs.map(function(t){ return "ranges="+encodeURIComponent("'"+t+"'!A1:E"); }).join("&");
+      return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchGet?"+ranges, {headers:{Authorization:"Bearer "+window.__gcalToken}})
+        .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
+        .then(function(data){
+          var currentKeys = {};
+          state.financeEntries.forEach(function(e){
+            var amt = String(e.amount).replace(".",",");
+            var k = e.month+"|"+e.category+"|"+e.name+"|"+amt+"|"+e.method;
+            currentKeys[k] = (currentKeys[k]||0)+1;
+          });
+          var sheetTotal = 0, restoredFromSheet = 0;
+          (data.valueRanges||[]).forEach(function(vr, idx){
+            var tab = monthTabs[idx];
+            var parts = tab.split(" "); var ym = parts[1]+"-"+(FINANCE_MONTH_TAB_TO_YM[parts[0]]||"01");
+            var rows = (vr.values||[]).slice(1).filter(function(r){ return r && r.length>=3; });
+            sheetTotal += rows.length;
+            rows.forEach(function(r){
+              var cat = FINANCE_CATEGORY_LABEL_REV[r[0]]||r[0];
+              var name = r[1]||""; var amtStr = r[2]||"0"; var method = (r[3]||"").toLowerCase();
+              var k = ym+"|"+cat+"|"+name+"|"+amtStr+"|"+method;
+              if(currentKeys[k] > 0){ currentKeys[k]--; }
+              else {
+                var entry = {id:uid("fin"), month:ym, category:cat, name:name, amount:parseFloat(String(amtStr).replace(",",".")), method:method};
+                if(r[4]) entry.createdAt = r[4];
+                state.financeEntries.push(entry);
+                restoredFromSheet++;
+              }
+            });
+          });
+          if(restoredFromSheet) save();
+          financeVerifyStatus = "done";
+          financeVerifyResult = {sheetTotal: sheetTotal, localTotal: state.financeEntries.length, restoredFromSheet: restoredFromSheet};
           renderAll();
         });
     }).catch(function(){ financeVerifyStatus="error"; renderAll(); });
