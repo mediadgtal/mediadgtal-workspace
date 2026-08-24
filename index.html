@@ -17015,6 +17015,8 @@ var unsubscribeSnapshot = null;
 var unsubscribeCrmSnapshot = null;
 var unsubscribeTasksSnapshot = null;
 var unsubscribeFinanceSnapshot = null;
+var unsubscribeHabitsSnapshot = null;
+var unsubscribePostsSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
 var crmPushTimer = null;
@@ -17028,6 +17030,8 @@ function mainStateForPush(){
   delete copy.crmContacts;
   delete copy.tasks;
   delete copy.financeEntries;
+  delete copy.habits;
+  delete copy.posts;
   return copy;
 }
 
@@ -17257,6 +17261,148 @@ function flushFinanceFirestorePush(){
   });
 }
 
+// 2026-08-24 — te same dwa moduły co tasks/financeEntries, tym samym wzorcem: jeden
+// dokument per pozycja w osobnej kolekcji zamiast jednej tablicy w workspace/damian.
+// Nawyki mają już za sobą realny incydent (10.08 — wyzerowanie danych właśnie przez ten
+// mechanizm), Posty to spora, często edytowana tablica z tym samym ryzykiem.
+var habitsCol = collection(db, "workspace_habits");
+var habitsLastPushed = {};
+var habitsPushTimer = null;
+var pendingHabitsPush = false;
+function habitsDirtyIds(){
+  var ids = [];
+  (window.state.habits||[]).forEach(function(h){
+    if(!h || !h.id) return;
+    var json = JSON.stringify(h);
+    if(habitsLastPushed[h.id] !== json) ids.push(h.id);
+  });
+  return ids;
+}
+function habitsRemovedIds(){
+  var current = {};
+  (window.state.habits||[]).forEach(function(h){ if(h && h.id) current[h.id] = true; });
+  return Object.keys(habitsLastPushed).filter(function(id){ return !current[id]; });
+}
+function habitsCommitInChunks(ops){
+  var chunks = [];
+  for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+  var chain = Promise.resolve();
+  chunks.forEach(function(chunk){
+    chain = chain.then(function(){
+      var batch = writeBatch(db);
+      chunk.forEach(function(op){
+        var ref = doc(habitsCol, op.id);
+        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+      });
+      return batch.commit();
+    });
+  });
+  return chain;
+}
+var habitsMigrationChecked = false;
+function maybeMigrateHabitsFromRemote(oldHabits){
+  oldHabits = oldHabits||[];
+  if(!oldHabits.length) return;
+  getDocs(habitsCol).then(function(snap){
+    if(!snap.empty) return;
+    console.log("Migracja Nawyków: przenoszę "+oldHabits.length+" nawyków do workspace_habits…");
+    return habitsCommitInChunks(oldHabits.filter(function(h){return h&&h.id;}).map(function(h){ return {type:"set", id:h.id, data:h}; }))
+      .then(function(){ console.log("Migracja Nawyków zakończona ("+oldHabits.length+" nawyków)."); });
+  }).catch(function(err){ console.error("Migracja Nawyków nie powiodła się:", err); });
+}
+function scheduleHabitsFirestorePush(){
+  pendingHabitsPush = true;
+  if(habitsPushTimer) clearTimeout(habitsPushTimer);
+  habitsPushTimer = setTimeout(flushHabitsFirestorePush, 500);
+}
+function flushHabitsFirestorePush(){
+  if(!pendingHabitsPush) return;
+  if(habitsPushTimer){ clearTimeout(habitsPushTimer); habitsPushTimer = null; }
+  pendingHabitsPush = false;
+  var dirtyIds = habitsDirtyIds();
+  var removedIds = habitsRemovedIds();
+  if(!dirtyIds.length && !removedIds.length) return;
+  var byId = {};
+  (window.state.habits||[]).forEach(function(h){ if(h&&h.id) byId[h.id] = h; });
+  var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
+    .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
+  habitsCommitInChunks(ops).then(function(){
+    dirtyIds.forEach(function(id){ habitsLastPushed[id] = JSON.stringify(byId[id]); });
+    removedIds.forEach(function(id){ delete habitsLastPushed[id]; });
+  }).catch(function(err){
+    console.error("Firestore batch push (workspace_habits) nie powiódł się:", err);
+  });
+}
+
+var postsCol = collection(db, "workspace_posts");
+var postsLastPushed = {};
+var postsPushTimer = null;
+var pendingPostsPush = false;
+function postsDirtyIds(){
+  var ids = [];
+  (window.state.posts||[]).forEach(function(p){
+    if(!p || !p.id) return;
+    var json = JSON.stringify(p);
+    if(postsLastPushed[p.id] !== json) ids.push(p.id);
+  });
+  return ids;
+}
+function postsRemovedIds(){
+  var current = {};
+  (window.state.posts||[]).forEach(function(p){ if(p && p.id) current[p.id] = true; });
+  return Object.keys(postsLastPushed).filter(function(id){ return !current[id]; });
+}
+function postsCommitInChunks(ops){
+  var chunks = [];
+  for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+  var chain = Promise.resolve();
+  chunks.forEach(function(chunk){
+    chain = chain.then(function(){
+      var batch = writeBatch(db);
+      chunk.forEach(function(op){
+        var ref = doc(postsCol, op.id);
+        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+      });
+      return batch.commit();
+    });
+  });
+  return chain;
+}
+var postsMigrationChecked = false;
+function maybeMigratePostsFromRemote(oldPosts){
+  oldPosts = oldPosts||[];
+  if(!oldPosts.length) return;
+  getDocs(postsCol).then(function(snap){
+    if(!snap.empty) return;
+    console.log("Migracja Postów: przenoszę "+oldPosts.length+" postów do workspace_posts…");
+    return postsCommitInChunks(oldPosts.filter(function(p){return p&&p.id;}).map(function(p){ return {type:"set", id:p.id, data:p}; }))
+      .then(function(){ console.log("Migracja Postów zakończona ("+oldPosts.length+" postów)."); });
+  }).catch(function(err){ console.error("Migracja Postów nie powiodła się:", err); });
+}
+function schedulePostsFirestorePush(){
+  pendingPostsPush = true;
+  if(postsPushTimer) clearTimeout(postsPushTimer);
+  postsPushTimer = setTimeout(flushPostsFirestorePush, 500);
+}
+function flushPostsFirestorePush(){
+  if(!pendingPostsPush) return;
+  if(postsPushTimer){ clearTimeout(postsPushTimer); postsPushTimer = null; }
+  pendingPostsPush = false;
+  var dirtyIds = postsDirtyIds();
+  var removedIds = postsRemovedIds();
+  if(!dirtyIds.length && !removedIds.length) return;
+  var byId = {};
+  (window.state.posts||[]).forEach(function(p){ if(p&&p.id) byId[p.id] = p; });
+  var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
+    .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
+  postsCommitInChunks(ops).then(function(){
+    dirtyIds.forEach(function(id){ postsLastPushed[id] = JSON.stringify(byId[id]); });
+    removedIds.forEach(function(id){ delete postsLastPushed[id]; });
+  }).catch(function(err){
+    console.error("Firestore batch push (workspace_posts) nie powiódł się:", err);
+  });
+}
+
 function scheduleFirestorePush(){
   pendingPush = true;
   setSyncStatus("Zapisywanie…");
@@ -17265,6 +17411,8 @@ function scheduleFirestorePush(){
   scheduleCrmFirestorePush();
   scheduleTasksFirestorePush();
   scheduleFinanceFirestorePush();
+  scheduleHabitsFirestorePush();
+  schedulePostsFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -17334,7 +17482,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -17349,7 +17497,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -17369,6 +17517,14 @@ function startSync(){
         financeMigrationChecked = true;
         maybeMigrateFinanceFromRemote(remote.financeEntries);
       }
+      if(!habitsMigrationChecked){
+        habitsMigrationChecked = true;
+        maybeMigrateHabitsFromRemote(remote.habits);
+      }
+      if(!postsMigrationChecked){
+        postsMigrationChecked = true;
+        maybeMigratePostsFromRemote(remote.posts);
+      }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -17379,12 +17535,16 @@ function startSync(){
       var keepCrm = window.state.crmContacts;
       var keepTasks = window.state.tasks;
       var keepFinance = window.state.financeEntries;
+      var keepHabits = window.state.habits;
+      var keepPosts = window.state.posts;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
       window.state.crmContacts = keepCrm||[];
       window.state.tasks = keepTasks||[];
       window.state.financeEntries = keepFinance||[];
+      window.state.habits = keepHabits||[];
+      window.state.posts = keepPosts||[];
       originalSave();
       window.renderAll();
       setSyncStatus("Zsynchronizowano");
@@ -17449,6 +17609,34 @@ function startSync(){
     console.error("Firestore onSnapshot (workspace_finance_entries) error:", err);
   });
 
+  unsubscribeHabitsSnapshot = onSnapshot(habitsCol, function(snap){
+    var arr = [];
+    snap.forEach(function(d){
+      var data = d.data();
+      arr.push(data);
+      habitsLastPushed[d.id] = JSON.stringify(data);
+    });
+    window.state.habits = arr;
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace_habits) error:", err);
+  });
+
+  unsubscribePostsSnapshot = onSnapshot(postsCol, function(snap){
+    var arr = [];
+    snap.forEach(function(d){
+      var data = d.data();
+      arr.push(data);
+      postsLastPushed[d.id] = JSON.stringify(data);
+    });
+    window.state.posts = arr;
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace_posts) error:", err);
+  });
+
   // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
   // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
   // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
@@ -17466,12 +17654,16 @@ function startSync(){
         var keepCrm = window.state.crmContacts;
         var keepTasks = window.state.tasks;
         var keepFinance = window.state.financeEntries;
+        var keepHabits = window.state.habits;
+        var keepPosts = window.state.posts;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
         window.state.crmContacts = keepCrm||[];
         window.state.tasks = keepTasks||[];
         window.state.financeEntries = keepFinance||[];
+        window.state.habits = keepHabits||[];
+        window.state.posts = keepPosts||[];
         originalSave();
         window.renderAll();
       }
