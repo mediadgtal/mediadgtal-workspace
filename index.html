@@ -17113,6 +17113,7 @@ var tasksCol = collection(db, "workspace_tasks");
 var tasksLastPushed = {}; // id -> JSON.stringify ostatniej wersji faktycznie zapisanej w Firestore
 var tasksPushTimer = null;
 var pendingTasksPush = false;
+var tasksHasSyncedOnce = false;
 function tasksDirtyIds(){
   var ids = [];
   (window.state.tasks||[]).forEach(function(t){
@@ -17168,6 +17169,7 @@ function scheduleTasksFirestorePush(){
 }
 function flushTasksFirestorePush(){
   if(!pendingTasksPush) return;
+  if(!tasksHasSyncedOnce) return; // 2026-08-24: nigdy nie nadpisuj/kasuj zanim ta karta realnie zobaczyła kolekcję choć raz
   if(tasksPushTimer){ clearTimeout(tasksPushTimer); tasksPushTimer = null; }
   pendingTasksPush = false;
   var dirtyIds = tasksDirtyIds();
@@ -17194,6 +17196,7 @@ var financeCol = collection(db, "workspace_finance_entries");
 var financeLastPushed = {};
 var financePushTimer = null;
 var pendingFinancePush = false;
+var financeHasSyncedOnce = false;
 function financeDirtyIds(){
   var ids = [];
   (window.state.financeEntries||[]).forEach(function(e){
@@ -17244,6 +17247,7 @@ function scheduleFinanceFirestorePush(){
 }
 function flushFinanceFirestorePush(){
   if(!pendingFinancePush) return;
+  if(!financeHasSyncedOnce) return;
   if(financePushTimer){ clearTimeout(financePushTimer); financePushTimer = null; }
   pendingFinancePush = false;
   var dirtyIds = financeDirtyIds();
@@ -17269,6 +17273,7 @@ var habitsCol = collection(db, "workspace_habits");
 var habitsLastPushed = {};
 var habitsPushTimer = null;
 var pendingHabitsPush = false;
+var habitsHasSyncedOnce = false;
 function habitsDirtyIds(){
   var ids = [];
   (window.state.habits||[]).forEach(function(h){
@@ -17317,6 +17322,7 @@ function scheduleHabitsFirestorePush(){
 }
 function flushHabitsFirestorePush(){
   if(!pendingHabitsPush) return;
+  if(!habitsHasSyncedOnce) return;
   if(habitsPushTimer){ clearTimeout(habitsPushTimer); habitsPushTimer = null; }
   pendingHabitsPush = false;
   var dirtyIds = habitsDirtyIds();
@@ -17338,6 +17344,7 @@ var postsCol = collection(db, "workspace_posts");
 var postsLastPushed = {};
 var postsPushTimer = null;
 var pendingPostsPush = false;
+var postsHasSyncedOnce = false;
 function postsDirtyIds(){
   var ids = [];
   (window.state.posts||[]).forEach(function(p){
@@ -17386,6 +17393,7 @@ function schedulePostsFirestorePush(){
 }
 function flushPostsFirestorePush(){
   if(!pendingPostsPush) return;
+  if(!postsHasSyncedOnce) return;
   if(postsPushTimer){ clearTimeout(postsPushTimer); postsPushTimer = null; }
   pendingPostsPush = false;
   var dirtyIds = postsDirtyIds();
@@ -17624,6 +17632,7 @@ function startSync(){
       tasksLastPushed[d.id] = JSON.stringify(data);
     });
     window.state.tasks = arr;
+    tasksHasSyncedOnce = true;
     fixupTaskSeedContamination20260824();
     originalSave();
     if(window.renderAll) window.renderAll();
@@ -17639,6 +17648,7 @@ function startSync(){
       financeLastPushed[d.id] = JSON.stringify(data);
     });
     window.state.financeEntries = arr;
+    financeHasSyncedOnce = true;
     // 2026-08-24 — sprzątanie jednorazowe: pierwsze uruchomienie financeForceSyncTwoWay
     // (zanim wykluczało zakładki DŁUGI/KARTA KREDYTOWA z arkusza Finansów) wciągnęło z nich
     // 2 błędne wpisy (month:"undefined-01", kategoria = nazwa długu). Usuń je, jeśli się
@@ -17661,6 +17671,7 @@ function startSync(){
       habitsLastPushed[d.id] = JSON.stringify(data);
     });
     window.state.habits = arr;
+    habitsHasSyncedOnce = true;
     originalSave();
     if(window.renderAll) window.renderAll();
   }, function(err){
@@ -17675,6 +17686,7 @@ function startSync(){
       postsLastPushed[d.id] = JSON.stringify(data);
     });
     window.state.posts = arr;
+    postsHasSyncedOnce = true;
     originalSave();
     if(window.renderAll) window.renderAll();
   }, function(err){
