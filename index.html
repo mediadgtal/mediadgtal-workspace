@@ -7078,7 +7078,7 @@ function financeVerify1to1(){
   fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"?fields=sheets.properties", {headers:{Authorization:"Bearer "+window.__gcalToken}})
     .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
     .then(function(meta){
-      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL"; });
+      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL" && t!=="DŁUGI" && t!=="KARTA KREDYTOWA"; });
       if(!monthTabs.length){ financeVerifyStatus="done"; financeVerifyResult={sheetTotal:0, localTotal:state.financeEntries.length}; renderAll(); return; }
       var ranges = monthTabs.map(function(t){ return "ranges="+encodeURIComponent("'"+t+"'!A1:E"); }).join("&");
       return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchGet?"+ranges, {headers:{Authorization:"Bearer "+window.__gcalToken}})
@@ -7105,7 +7105,7 @@ function financeForceSyncTwoWay(){
   fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"?fields=sheets.properties", {headers:{Authorization:"Bearer "+window.__gcalToken}})
     .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
     .then(function(meta){
-      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL"; });
+      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL" && t!=="DŁUGI" && t!=="KARTA KREDYTOWA"; });
       if(!monthTabs.length){ financeVerifyStatus="done"; financeVerifyResult={sheetTotal:0, localTotal:state.financeEntries.length, restoredFromSheet:0}; renderAll(); return; }
       var ranges = monthTabs.map(function(t){ return "ranges="+encodeURIComponent("'"+t+"'!A1:E"); }).join("&");
       return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchGet?"+ranges, {headers:{Authorization:"Bearer "+window.__gcalToken}})
@@ -17435,6 +17435,14 @@ function startSync(){
       financeLastPushed[d.id] = JSON.stringify(data);
     });
     window.state.financeEntries = arr;
+    // 2026-08-24 — sprzątanie jednorazowe: pierwsze uruchomienie financeForceSyncTwoWay
+    // (zanim wykluczało zakładki DŁUGI/KARTA KREDYTOWA z arkusza Finansów) wciągnęło z nich
+    // 2 błędne wpisy (month:"undefined-01", kategoria = nazwa długu). Usuń je, jeśli się
+    // pojawią — nieszkodliwe, ale brudzą dane. scheduleFinanceFirestorePush usunie je też
+    // z Firestore (financeRemovedIds wykryje brak w state.financeEntries).
+    var before = window.state.financeEntries.length;
+    window.state.financeEntries = window.state.financeEntries.filter(function(e){ return /^\d{4}-\d{2}$/.test(e.month||""); });
+    if(window.state.financeEntries.length !== before) scheduleFinanceFirestorePush();
     originalSave();
     if(window.renderAll) window.renderAll();
   }, function(err){
