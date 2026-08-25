@@ -16836,12 +16836,17 @@ function persistLongLivedFbToken(shortLivedToken){
   if(!window.exchangeFbLongLivedTokenFn){ console.error("exchangeFbLongLivedTokenFn niedostępne"); return; }
   window.exchangeFbLongLivedTokenFn({shortLivedToken: shortLivedToken}).then(function(res){
     var data = res.data || {};
-    console.log("[fbAuth DEBUG] exchange response:", JSON.stringify(data));
-    if(!data.accessToken || !data.expiresIn){ console.log("[fbAuth DEBUG] brak accessToken/expiresIn, przerywam"); return; }
-    state.fbAuth = { accessToken: data.accessToken, expiresAt: Date.now() + data.expiresIn*1000 };
-    console.log("[fbAuth DEBUG] state.fbAuth ustawione, wołam save()");
+    if(!data.accessToken) return;
+    // 2026-08-25 — znaleziony na żywo prawdziwy powód, dla którego trwały token NIGDY się
+    // nie zapisywał (od zawsze, nie tylko od dzisiejszej migracji): Facebook w odpowiedzi
+    // fb_exchange_token potrafi zwrócić expires_in jako null (token bezterminowy/nie
+    // podano), a kod wymagał OBU wartości, więc cichutko przerywał zanim cokolwiek zapisał
+    // — stąd wieczne "musisz łączyć ręcznie po każdym restarcie". Facebookowe długożyjące
+    // tokeny userowe trwają ~60 dni, więc gdy expiresIn brakuje, zakładamy to bezpiecznie
+    // zamiast rezygnować z zapisu.
+    var expiresInSec = data.expiresIn || (60*24*60*60);
+    state.fbAuth = { accessToken: data.accessToken, expiresAt: Date.now() + expiresInSec*1000 };
     save();
-    console.log("[fbAuth DEBUG] save() zwrócone");
   }).catch(function(err){
     console.error("Wymiana tokenu FB na długożyjący nie powiodła się (nieblokujące):", err);
   });
@@ -17661,26 +17666,22 @@ var pendingFbAuthPush = false;
 var fbAuthHasSyncedOnce = false;
 var fbAuthLastPushedJson = null;
 function scheduleFbAuthFirestorePush(){
-  console.log("[fbAuth DEBUG] scheduleFbAuthFirestorePush wywołane, hasSyncedOnce=", fbAuthHasSyncedOnce);
   pendingFbAuthPush = true;
   if(fbAuthPushTimer) clearTimeout(fbAuthPushTimer);
   fbAuthPushTimer = setTimeout(flushFbAuthFirestorePush, 500);
 }
 function flushFbAuthFirestorePush(){
-  console.log("[fbAuth DEBUG] flushFbAuthFirestorePush start, pending=", pendingFbAuthPush, "hasSyncedOnce=", fbAuthHasSyncedOnce, "fbAuth=", JSON.stringify(window.state.fbAuth));
-  if(!pendingFbAuthPush){ console.log("[fbAuth DEBUG] brak pending, wychodzę"); return; }
-  if(!fbAuthHasSyncedOnce){ console.log("[fbAuth DEBUG] jeszcze nie zsynchronizowane, wychodzę BEZ czyszczenia pending"); return; }
+  if(!pendingFbAuthPush) return;
+  if(!fbAuthHasSyncedOnce) return;
   if(fbAuthPushTimer){ clearTimeout(fbAuthPushTimer); fbAuthPushTimer = null; }
   pendingFbAuthPush = false;
   var json = JSON.stringify(window.state.fbAuth||null);
-  if(json === fbAuthLastPushedJson){ console.log("[fbAuth DEBUG] identyczne z ostatnio wypchniętym, pomijam zapis"); return; }
-  console.log("[fbAuth DEBUG] zapisuję do Firestore:", json);
+  if(json === fbAuthLastPushedJson) return;
   var write = window.state.fbAuth ? setDoc(fbAuthDocRef, window.state.fbAuth) : setDoc(fbAuthDocRef, {accessToken:null, expiresAt:null});
   write.then(function(){
-    console.log("[fbAuth DEBUG] zapis do Firestore UDANY");
     fbAuthLastPushedJson = json;
   }).catch(function(err){
-    console.error("[fbAuth DEBUG] Firestore push (workspace_fb_auth) nie powiódł się:", err);
+    console.error("Firestore push (workspace_fb_auth) nie powiódł się:", err);
   });
 }
 var fbAuthMigrationChecked = false;
@@ -18082,7 +18083,6 @@ function startSync(){
   }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_screenshots) error:", err); });
 
   unsubscribeFbAuthSnapshot = onSnapshot(fbAuthDocRef, function(snap){
-    console.log("[fbAuth DEBUG] onSnapshot(fbAuthDocRef) odpalone, exists=", snap.exists(), "pendingFbAuthPush=", pendingFbAuthPush);
     var data = snap.exists() ? snap.data() : null;
     var remoteFbAuth = (data && data.accessToken) ? data : null;
     // 2026-08-25 — znaleziony na żywo wyścig: to pierwsze zdarzenie onSnapshot (dokument
