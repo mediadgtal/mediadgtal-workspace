@@ -17061,6 +17061,13 @@ var unsubscribeTasksSnapshot = null;
 var unsubscribeFinanceSnapshot = null;
 var unsubscribeHabitsSnapshot = null;
 var unsubscribePostsSnapshot = null;
+var unsubscribeDrogaSnapshot = null;
+var unsubscribeClientOpsClientsSnapshot = null;
+var unsubscribeClientOpsTasksSnapshot = null;
+var unsubscribeClientOpsHistoriaSnapshot = null;
+var unsubscribeClientOpsWynikiSnapshot = null;
+var unsubscribeClientOpsPlatnosciSnapshot = null;
+var unsubscribeClientOpsScreenshotsSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
 var crmPushTimer = null;
@@ -17076,6 +17083,8 @@ function mainStateForPush(){
   delete copy.financeEntries;
   delete copy.habits;
   delete copy.posts;
+  delete copy.droga;
+  delete copy.clientOps;
   return copy;
 }
 
@@ -17455,6 +17464,200 @@ function flushPostsFirestorePush(){
   });
 }
 
+// 2026-08-25 — ten sam wzorzec co tasksCol/financeCol/habitsCol/postsCol (patrz komentarz
+// przy tasksCol): droga i clientOps to ostatnie dwa pola, które wciąż żyły w jednym
+// współdzielonym dokumencie workspace/damian, więc dowolna zmiana w nich (albo w
+// czymkolwiek innym w tym dokumencie) mogła po cichu nadpisać drugie urządzenie tym samym
+// mechanizmem, który już realnie ukradł dane w Zadaniach/Finansach/Nawykach/Postach. Droga
+// to mapy/liczniki pod kluczami nazwanymi (nie tablica z id) — jeden dokument per klucz
+// najwyższego poziomu, dokładnie jak w kopii zapasowej (drogaBackupRows).
+var drogaCol = collection(db, "workspace_droga");
+var drogaLastPushed = {};
+var drogaPushTimer = null;
+var pendingDrogaPush = false;
+var drogaHasSyncedOnce = false;
+function drogaDirtyKeys(){
+  var keys = [];
+  Object.keys(window.state.droga||{}).forEach(function(k){
+    var json = JSON.stringify(window.state.droga[k]);
+    if(drogaLastPushed[k] !== json) keys.push(k);
+  });
+  return keys;
+}
+function drogaRemovedKeys(){
+  var current = Object.keys(window.state.droga||{});
+  return Object.keys(drogaLastPushed).filter(function(k){ return current.indexOf(k)===-1; });
+}
+function drogaCommitInChunks(ops){
+  var chunks = [];
+  for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+  var chain = Promise.resolve();
+  chunks.forEach(function(chunk){
+    chain = chain.then(function(){
+      var batch = writeBatch(db);
+      chunk.forEach(function(op){
+        var ref = doc(drogaCol, op.id);
+        if(op.type==="set") batch.set(ref, {value: op.data}); else batch.delete(ref);
+      });
+      return batch.commit();
+    });
+  });
+  return chain;
+}
+var drogaMigrationChecked = false;
+function maybeMigrateDrogaFromRemote(oldDroga){
+  oldDroga = oldDroga||{};
+  var keys = Object.keys(oldDroga);
+  if(!keys.length) return;
+  getDocs(drogaCol).then(function(snap){
+    if(!snap.empty) return;
+    console.log("Migracja Drogi: przenoszę "+keys.length+" pól do workspace_droga…");
+    return drogaCommitInChunks(keys.map(function(k){ return {type:"set", id:k, data:oldDroga[k]}; }))
+      .then(function(){ console.log("Migracja Drogi zakończona ("+keys.length+" pól)."); });
+  }).catch(function(err){ console.error("Migracja Drogi nie powiodła się:", err); });
+}
+function scheduleDrogaFirestorePush(){
+  pendingDrogaPush = true;
+  if(drogaPushTimer) clearTimeout(drogaPushTimer);
+  drogaPushTimer = setTimeout(flushDrogaFirestorePush, 500);
+}
+function flushDrogaFirestorePush(){
+  if(!pendingDrogaPush) return;
+  if(!drogaHasSyncedOnce) return;
+  if(drogaPushTimer){ clearTimeout(drogaPushTimer); drogaPushTimer = null; }
+  pendingDrogaPush = false;
+  var dirtyKeys = drogaDirtyKeys();
+  var removedKeys = drogaRemovedKeys();
+  if(!dirtyKeys.length && !removedKeys.length) return;
+  var ops = dirtyKeys.map(function(k){ return {type:"set", id:k, data:window.state.droga[k]}; })
+    .concat(removedKeys.map(function(k){ return {type:"delete", id:k}; }));
+  drogaCommitInChunks(ops).then(function(){
+    dirtyKeys.forEach(function(k){ drogaLastPushed[k] = JSON.stringify(window.state.droga[k]); });
+    removedKeys.forEach(function(k){ delete drogaLastPushed[k]; });
+  }).catch(function(err){
+    console.error("Firestore batch push (workspace_droga) nie powiódł się:", err);
+  });
+}
+
+// clientOps (Obsługa Klientów) ma pięć list rekordów (clients/tasks/historia/wyniki/
+// platnosci/screenshots), każda z .id — dokładnie ten sam kształt co tasks/finance/habits/
+// posts. Zamiast pisać ten sam blok pięć razy z ryzykiem literówki przy kopiowaniu,
+// jedna fabryka (identyczna logika co tasksCol) zainstancjonowana pięć razy.
+function makeIdListFirestoreSync(collectionName, getArray, setArray){
+  var col = collection(db, collectionName);
+  var lastPushed = {};
+  var pushTimer = null;
+  var pending = false;
+  var hasSyncedOnce = false;
+  function dirtyIds(){
+    var ids = [];
+    (getArray()||[]).forEach(function(item){
+      if(!item || !item.id) return;
+      var json = JSON.stringify(item);
+      if(lastPushed[item.id] !== json) ids.push(item.id);
+    });
+    return ids;
+  }
+  function removedIds(){
+    var current = {};
+    (getArray()||[]).forEach(function(item){ if(item && item.id) current[item.id] = true; });
+    return Object.keys(lastPushed).filter(function(id){ return !current[id]; });
+  }
+  function commitInChunks(ops){
+    var chunks = [];
+    for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+    var chain = Promise.resolve();
+    chunks.forEach(function(chunk){
+      chain = chain.then(function(){
+        var batch = writeBatch(db);
+        chunk.forEach(function(op){
+          var ref = doc(col, op.id);
+          if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+        });
+        return batch.commit();
+      });
+    });
+    return chain;
+  }
+  function maybeMigrateFromRemote(oldItems){
+    oldItems = oldItems||[];
+    if(!oldItems.length) return;
+    getDocs(col).then(function(snap){
+      if(!snap.empty) return;
+      console.log("Migracja "+collectionName+": przenoszę "+oldItems.length+" rekordów…");
+      return commitInChunks(oldItems.filter(function(it){return it&&it.id;}).map(function(it){ return {type:"set", id:it.id, data:it}; }))
+        .then(function(){ console.log("Migracja "+collectionName+" zakończona ("+oldItems.length+")."); });
+    }).catch(function(err){ console.error("Migracja "+collectionName+" nie powiodła się:", err); });
+  }
+  function schedule(){
+    pending = true;
+    if(pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(flush, 500);
+  }
+  function flush(){
+    if(!pending) return;
+    if(!hasSyncedOnce) return;
+    if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+    pending = false;
+    var dirty = dirtyIds();
+    var removed = removedIds();
+    if(!dirty.length && !removed.length) return;
+    var byId = {};
+    (getArray()||[]).forEach(function(item){ if(item&&item.id) byId[item.id] = item; });
+    var ops = dirty.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
+      .concat(removed.map(function(id){ return {type:"delete", id:id}; }));
+    commitInChunks(ops).then(function(){
+      dirty.forEach(function(id){ lastPushed[id] = JSON.stringify(byId[id]); });
+      removed.forEach(function(id){ delete lastPushed[id]; });
+    }).catch(function(err){
+      console.error("Firestore batch push ("+collectionName+") nie powiódł się:", err);
+    });
+  }
+  function onSnapshotSync(snap){
+    var arr = [];
+    snap.forEach(function(d){
+      var data = d.data();
+      arr.push(data);
+      lastPushed[d.id] = JSON.stringify(data);
+    });
+    setArray(arr);
+    hasSyncedOnce = true;
+  }
+  return { col: col, maybeMigrateFromRemote: maybeMigrateFromRemote, schedule: schedule, flush: flush, onSnapshotSync: onSnapshotSync };
+}
+var clientOpsClientsSync = makeIdListFirestoreSync("workspace_client_ops_clients", function(){ return window.state.clientOps.clients; }, function(arr){ window.state.clientOps.clients = arr; });
+var clientOpsTasksSync = makeIdListFirestoreSync("workspace_client_ops_tasks", function(){ return window.state.clientOps.tasks; }, function(arr){ window.state.clientOps.tasks = arr; });
+var clientOpsHistoriaSync = makeIdListFirestoreSync("workspace_client_ops_historia", function(){ return window.state.clientOps.historia; }, function(arr){ window.state.clientOps.historia = arr; });
+var clientOpsWynikiSync = makeIdListFirestoreSync("workspace_client_ops_wyniki", function(){ return window.state.clientOps.wyniki; }, function(arr){ window.state.clientOps.wyniki = arr; });
+var clientOpsPlatnosciSync = makeIdListFirestoreSync("workspace_client_ops_platnosci", function(){ return window.state.clientOps.platnosci; }, function(arr){ window.state.clientOps.platnosci = arr; });
+var clientOpsScreenshotsSync = makeIdListFirestoreSync("workspace_client_ops_screenshots", function(){ return window.state.clientOps.screenshots; }, function(arr){ window.state.clientOps.screenshots = arr; });
+var clientOpsMigrationChecked = false;
+function maybeMigrateClientOpsFromRemote(oldClientOps){
+  oldClientOps = oldClientOps || {};
+  clientOpsClientsSync.maybeMigrateFromRemote(oldClientOps.clients);
+  clientOpsTasksSync.maybeMigrateFromRemote(oldClientOps.tasks);
+  clientOpsHistoriaSync.maybeMigrateFromRemote(oldClientOps.historia);
+  clientOpsWynikiSync.maybeMigrateFromRemote(oldClientOps.wyniki);
+  clientOpsPlatnosciSync.maybeMigrateFromRemote(oldClientOps.platnosci);
+  clientOpsScreenshotsSync.maybeMigrateFromRemote(oldClientOps.screenshots);
+}
+function scheduleClientOpsFirestorePush(){
+  clientOpsClientsSync.schedule();
+  clientOpsTasksSync.schedule();
+  clientOpsHistoriaSync.schedule();
+  clientOpsWynikiSync.schedule();
+  clientOpsPlatnosciSync.schedule();
+  clientOpsScreenshotsSync.schedule();
+}
+function flushClientOpsFirestorePush(){
+  clientOpsClientsSync.flush();
+  clientOpsTasksSync.flush();
+  clientOpsHistoriaSync.flush();
+  clientOpsWynikiSync.flush();
+  clientOpsPlatnosciSync.flush();
+  clientOpsScreenshotsSync.flush();
+}
+
 // 2026-08-24 — sprzątanie jednorazowe po realnym incydencie: jedna z kart w trakcie
 // dzisiejszej migracji miała w pamięci przykładowe zadania z defaultState() (nigdy
 // nie zapisane przez Damiana) i przy zapisie skasowała 21 prawdziwych zadań, wstawiając
@@ -17508,6 +17711,8 @@ function scheduleFirestorePush(){
   scheduleFinanceFirestorePush();
   scheduleHabitsFirestorePush();
   schedulePostsFirestorePush();
+  scheduleDrogaFirestorePush();
+  scheduleClientOpsFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -17577,7 +17782,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -17592,7 +17797,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -17620,6 +17825,14 @@ function startSync(){
         postsMigrationChecked = true;
         maybeMigratePostsFromRemote(remote.posts);
       }
+      if(!drogaMigrationChecked){
+        drogaMigrationChecked = true;
+        maybeMigrateDrogaFromRemote(remote.droga);
+      }
+      if(!clientOpsMigrationChecked){
+        clientOpsMigrationChecked = true;
+        maybeMigrateClientOpsFromRemote(remote.clientOps);
+      }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -17632,6 +17845,8 @@ function startSync(){
       var keepFinance = window.state.financeEntries;
       var keepHabits = window.state.habits;
       var keepPosts = window.state.posts;
+      var keepDroga = window.state.droga;
+      var keepClientOps = window.state.clientOps;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
@@ -17640,6 +17855,8 @@ function startSync(){
       window.state.financeEntries = keepFinance||[];
       window.state.habits = keepHabits||[];
       window.state.posts = keepPosts||[];
+      window.state.droga = keepDroga||def.droga;
+      window.state.clientOps = keepClientOps||def.clientOps;
       originalSave();
       window.renderAll();
       setSyncStatus("Zsynchronizowano");
@@ -17737,6 +17954,57 @@ function startSync(){
     console.error("Firestore onSnapshot (workspace_posts) error:", err);
   });
 
+  unsubscribeDrogaSnapshot = onSnapshot(drogaCol, function(snap){
+    var obj = {};
+    snap.forEach(function(d){
+      var data = d.data();
+      obj[d.id] = data.value;
+      drogaLastPushed[d.id] = JSON.stringify(data.value);
+    });
+    window.state.droga = obj;
+    drogaHasSyncedOnce = true;
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace_droga) error:", err);
+  });
+
+  unsubscribeClientOpsClientsSnapshot = onSnapshot(clientOpsClientsSync.col, function(snap){
+    clientOpsClientsSync.onSnapshotSync(snap);
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_clients) error:", err); });
+
+  unsubscribeClientOpsTasksSnapshot = onSnapshot(clientOpsTasksSync.col, function(snap){
+    clientOpsTasksSync.onSnapshotSync(snap);
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_tasks) error:", err); });
+
+  unsubscribeClientOpsHistoriaSnapshot = onSnapshot(clientOpsHistoriaSync.col, function(snap){
+    clientOpsHistoriaSync.onSnapshotSync(snap);
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_historia) error:", err); });
+
+  unsubscribeClientOpsWynikiSnapshot = onSnapshot(clientOpsWynikiSync.col, function(snap){
+    clientOpsWynikiSync.onSnapshotSync(snap);
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_wyniki) error:", err); });
+
+  unsubscribeClientOpsPlatnosciSnapshot = onSnapshot(clientOpsPlatnosciSync.col, function(snap){
+    clientOpsPlatnosciSync.onSnapshotSync(snap);
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_platnosci) error:", err); });
+
+  unsubscribeClientOpsScreenshotsSnapshot = onSnapshot(clientOpsScreenshotsSync.col, function(snap){
+    clientOpsScreenshotsSync.onSnapshotSync(snap);
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_screenshots) error:", err); });
+
   // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
   // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
   // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
@@ -17756,6 +18024,8 @@ function startSync(){
         var keepFinance = window.state.financeEntries;
         var keepHabits = window.state.habits;
         var keepPosts = window.state.posts;
+        var keepDroga = window.state.droga;
+        var keepClientOps = window.state.clientOps;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
@@ -17764,6 +18034,8 @@ function startSync(){
         window.state.financeEntries = keepFinance||[];
         window.state.habits = keepHabits||[];
         window.state.posts = keepPosts||[];
+        window.state.droga = keepDroga||def.droga;
+        window.state.clientOps = keepClientOps||def.clientOps;
         originalSave();
         window.renderAll();
       }
