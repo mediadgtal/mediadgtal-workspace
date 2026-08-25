@@ -8697,6 +8697,18 @@ function flushHabitsBackupPush(){
       body: JSON.stringify({requests:structRequests})
     });
   }).then(function(){
+    // 2026-08-25 — ten sam gotcha co przy clientOps/posty (80c18c8, 2026-08-17): batchUpdate
+    // na "!A1" nadpisuje tylko tyle wierszy ile jest w tablicy, nie kasuje nic poniżej. Gdy
+    // nawyk zmienia nazwę (np. "Bicki" -> "Bicki 💪") albo lista się skurczy, stary wiersz
+    // zostaje w arkuszu na zawsze (znaleziono: wiersz-widmo "Bicki" w TOTAL, kontrola 25.08).
+    // Czyścimy całe zakładki przed każdym zapisem, tak samo jak w innych modułach.
+    var clearRanges = ["TOTAL","RAPORTY"].concat(monthList.map(function(ym){ return "'"+habitMonthTabName(ym)+"'"; }));
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.habitsBackupSheetId+"/values:batchClear", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({ranges: clearRanges})
+    });
+  }).then(function(){
     var valuesData = [
       {range:"TOTAL!A1", values: totalRows},
       {range:"RAPORTY!A1", values: reportRows}
@@ -10091,10 +10103,18 @@ function flushTasksBackupPush(){
   if(!tasksBackupPending) return;
   tasksBackupPending = false;
   if(!window.__gcalToken || !state.tasksBackupSheetId) return;
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values:batchUpdate", {
+  // 2026-08-25 — ten sam gotcha co clientOps/posty (80c18c8): czyścimy pełną kolumnę przed
+  // zapisem, żeby usunięte/zmienione zadania nie zostawiały wiersza-widma w arkuszu.
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values:batchClear", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({valueInputOption:"RAW", data:[{range:"ZADANIA!A1", values: tasksBackupRows()}]})
+    body: JSON.stringify({ranges:["ZADANIA!A:I"]})
+  }).then(function(){
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"ZADANIA!A1", values: tasksBackupRows()}]})
+    });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ tasksBackupStatus = "ok"; backupSyncSucceeded("tasks"); renderAll(); }
@@ -10211,10 +10231,18 @@ function flushDrogaBackupPush(){
   if(!drogaBackupPending) return;
   drogaBackupPending = false;
   if(!window.__gcalToken || !state.drogaBackupSheetId) return;
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values:batchUpdate", {
+  // 2026-08-25 — ten sam gotcha co clientOps/posty (80c18c8): czyścimy pełną kolumnę przed
+  // zapisem, żeby usunięte klucze state.droga nie zostawiały wiersza-widma w arkuszu.
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values:batchClear", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({valueInputOption:"RAW", data:[{range:"DROGA!A1", values: drogaBackupRows()}]})
+    body: JSON.stringify({ranges:["DROGA!A:B"]})
+  }).then(function(){
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"DROGA!A1", values: drogaBackupRows()}]})
+    });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ drogaBackupStatus = "ok"; backupSyncSucceeded("droga"); renderAll(); }
@@ -14551,13 +14579,21 @@ function flushClientsBackupPush(){
     });
   });
 
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientsBackupSheetId+"/values:batchUpdate", {
+  // 2026-08-25 — ten sam gotcha co clientOps/posty (80c18c8): czyścimy pełne kolumny przed
+  // zapisem, żeby usunięty/przeniesiony wpis klienta nie zostawiał wiersza-widma w arkuszu.
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientsBackupSheetId+"/values:batchClear", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({
-      valueInputOption:"RAW",
-      data:[{range:"TOTAL!A1", values: totalRows},{range:"RAW!A1", values: rawRows}]
-    })
+    body: JSON.stringify({ranges:["TOTAL!A:F","RAW!A:P"]})
+  }).then(function(){
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientsBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({
+        valueInputOption:"RAW",
+        data:[{range:"TOTAL!A1", values: totalRows},{range:"RAW!A1", values: rawRows}]
+      })
+    });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ clientsBackupStatus = "ok"; backupSyncSucceeded("clients"); renderAll(); }
@@ -14685,13 +14721,21 @@ function flushCrmBackupPush(){
     ]);
   });
 
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.crmBackupSheetId+"/values:batchUpdate", {
+  // 2026-08-25 — ten sam gotcha co clientOps/posty (80c18c8): czyścimy pełną kolumnę przed
+  // zapisem, żeby twardo usunięty kontakt nie zostawiał wiersza-widma w arkuszu.
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.crmBackupSheetId+"/values:batchClear", {
     method:"POST",
     headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({
-      valueInputOption:"RAW",
-      data:[{range:"RAW!A1", values: rawRows}]
-    })
+    body: JSON.stringify({ranges:["RAW!A:S"]})
+  }).then(function(){
+    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.crmBackupSheetId+"/values:batchUpdate", {
+      method:"POST",
+      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
+      body: JSON.stringify({
+        valueInputOption:"RAW",
+        data:[{range:"RAW!A1", values: rawRows}]
+      })
+    });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ crmBackupStatus = "ok"; backupSyncSucceeded("crm"); renderAll(); }
