@@ -8488,7 +8488,9 @@ function setHabitReps(id){
 function addHabit(){
   var name = prompt("Nazwa nawyku:");
   if(!name) return;
-  var newHabit = {id:uid("hab"), name:name, log:{}};
+  var maxOrder = -1;
+  state.habits.forEach(function(h){ if(typeof h.order==="number" && h.order>maxOrder) maxOrder = h.order; });
+  var newHabit = {id:uid("hab"), name:name, log:{}, order: maxOrder+1};
   state.habits.push(newHabit);
   pushNawykiUndo({type:"add", habitId:newHabit.id});
   save(); renderAll();
@@ -17068,6 +17070,7 @@ var unsubscribeClientOpsHistoriaSnapshot = null;
 var unsubscribeClientOpsWynikiSnapshot = null;
 var unsubscribeClientOpsPlatnosciSnapshot = null;
 var unsubscribeClientOpsScreenshotsSnapshot = null;
+var unsubscribeFbAuthSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
 var crmPushTimer = null;
@@ -17085,6 +17088,7 @@ function mainStateForPush(){
   delete copy.posts;
   delete copy.droga;
   delete copy.clientOps;
+  delete copy.fbAuth;
   return copy;
 }
 
@@ -17445,18 +17449,18 @@ function schedulePostsFirestorePush(){
   postsPushTimer = setTimeout(flushPostsFirestorePush, 500);
 }
 function flushPostsFirestorePush(){
-  if(!pendingPostsPush) return;
-  if(!postsHasSyncedOnce) return;
+  if(!pendingPostsPush) return Promise.resolve();
+  if(!postsHasSyncedOnce) return Promise.resolve();
   if(postsPushTimer){ clearTimeout(postsPushTimer); postsPushTimer = null; }
   pendingPostsPush = false;
   var dirtyIds = postsDirtyIds();
   var removedIds = postsRemovedIds();
-  if(!dirtyIds.length && !removedIds.length) return;
+  if(!dirtyIds.length && !removedIds.length) return Promise.resolve();
   var byId = {};
   (window.state.posts||[]).forEach(function(p){ if(p&&p.id) byId[p.id] = p; });
   var ops = dirtyIds.map(function(id){ return {type:"set", id:id, data:byId[id]}; })
     .concat(removedIds.map(function(id){ return {type:"delete", id:id}; }));
-  postsCommitInChunks(ops).then(function(){
+  return postsCommitInChunks(ops).then(function(){
     dirtyIds.forEach(function(id){ postsLastPushed[id] = JSON.stringify(byId[id]); });
     removedIds.forEach(function(id){ delete postsLastPushed[id]; });
   }).catch(function(err){
@@ -17641,6 +17645,47 @@ function maybeMigrateClientOpsFromRemote(oldClientOps){
   clientOpsPlatnosciSync.maybeMigrateFromRemote(oldClientOps.platnosci);
   clientOpsScreenshotsSync.maybeMigrateFromRemote(oldClientOps.screenshots);
 }
+// 2026-08-25 — fbAuth (długożyjący token Facebooka) też żył w workspace/damian, więc było
+// podatne na dokładnie ten sam wyścig co reszta pól tam trzymanych: dowolny zapis z karty,
+// która akurat miała fbAuth=null w pamięci (np. świeżo otwarta karta, zanim tryStoredFbAuth
+// zdążyło coś wczytać), po cichu kasował realny token zapisany przez inną kartę/urządzenie.
+// Dokładnie to się stało 25.08 podczas niepowiązanych testów migracji Drogi/clientOps.
+// Jeden dedykowany dokument (nie cała kolekcja — to zawsze dokładnie jedna wartość, nie
+// lista rekordów) w workspace_fb_auth, tym samym prostym wzorcem co workspace_droga.
+var fbAuthDocRef = doc(db, "workspace_fb_auth", "damian");
+var fbAuthPushTimer = null;
+var pendingFbAuthPush = false;
+var fbAuthHasSyncedOnce = false;
+var fbAuthLastPushedJson = null;
+function scheduleFbAuthFirestorePush(){
+  pendingFbAuthPush = true;
+  if(fbAuthPushTimer) clearTimeout(fbAuthPushTimer);
+  fbAuthPushTimer = setTimeout(flushFbAuthFirestorePush, 500);
+}
+function flushFbAuthFirestorePush(){
+  if(!pendingFbAuthPush) return;
+  if(!fbAuthHasSyncedOnce) return;
+  if(fbAuthPushTimer){ clearTimeout(fbAuthPushTimer); fbAuthPushTimer = null; }
+  pendingFbAuthPush = false;
+  var json = JSON.stringify(window.state.fbAuth||null);
+  if(json === fbAuthLastPushedJson) return;
+  var write = window.state.fbAuth ? setDoc(fbAuthDocRef, window.state.fbAuth) : setDoc(fbAuthDocRef, {accessToken:null, expiresAt:null});
+  write.then(function(){
+    fbAuthLastPushedJson = json;
+  }).catch(function(err){
+    console.error("Firestore push (workspace_fb_auth) nie powiódł się:", err);
+  });
+}
+var fbAuthMigrationChecked = false;
+function maybeMigrateFbAuthFromRemote(oldFbAuth){
+  if(!oldFbAuth || !oldFbAuth.accessToken) return;
+  getDoc(fbAuthDocRef).then(function(snap){
+    if(snap.exists()) return;
+    console.log("Migracja fbAuth: przenoszę do workspace_fb_auth…");
+    return setDoc(fbAuthDocRef, oldFbAuth);
+  }).catch(function(err){ console.error("Migracja fbAuth nie powiodła się:", err); });
+}
+
 function scheduleClientOpsFirestorePush(){
   clientOpsClientsSync.schedule();
   clientOpsTasksSync.schedule();
@@ -17713,6 +17758,7 @@ function scheduleFirestorePush(){
   schedulePostsFirestorePush();
   scheduleDrogaFirestorePush();
   scheduleClientOpsFirestorePush();
+  scheduleFbAuthFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -17740,9 +17786,16 @@ function flushPush(){
 // Zamiast polegać na tym, że coś inne już wywołało save()/scheduleFirestorePush() wcześniej,
 // wywołujemy save() tutaj wprost — jest bezkosztowe gdy nic się nie zmieniło, a gwarantuje że
 // pendingPush jest już true zanim flushPush() sprawdzi tę flagę.
+// 2026-08-25 — luka wróciła po migracji Postów z workspace/damian do własnej kolekcji
+// workspace_posts (352e74f, 2026-08-24): flushPush() zapisuje już tylko resztę dokumentu
+// (posts jest z niego wykluczone przez mainStateForPush), więc czekanie tylko na flushPush()
+// nic już nie gwarantuje dla postów — publishPost/scheduleIgPublish czytają post z
+// workspace_posts, a to nadal mogło nie zdążyć się zapisać. Doczekujemy się też jawnie
+// flushPostsFirestorePush() (który wcześniej nie zwracał swojego Promise'a — poprawione
+// wyżej, inaczej to czekanie i tak byłoby pozorne).
 function waitForPendingPush(){
   if(typeof window.save === "function") window.save();
-  return flushPush();
+  return Promise.all([flushPush(), flushPostsFirestorePush()]);
 }
 window.waitForPendingPush = waitForPendingPush;
 function scheduleCrmFirestorePush(){
@@ -17782,7 +17835,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushFbAuthFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -17797,7 +17850,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushFbAuthFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -17833,6 +17886,10 @@ function startSync(){
         clientOpsMigrationChecked = true;
         maybeMigrateClientOpsFromRemote(remote.clientOps);
       }
+      if(!fbAuthMigrationChecked){
+        fbAuthMigrationChecked = true;
+        maybeMigrateFbAuthFromRemote(remote.fbAuth);
+      }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -17847,6 +17904,7 @@ function startSync(){
       var keepPosts = window.state.posts;
       var keepDroga = window.state.droga;
       var keepClientOps = window.state.clientOps;
+      var keepFbAuth = window.state.fbAuth;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
@@ -17857,6 +17915,7 @@ function startSync(){
       window.state.posts = keepPosts||[];
       window.state.droga = keepDroga||def.droga;
       window.state.clientOps = keepClientOps||def.clientOps;
+      window.state.fbAuth = keepFbAuth||null;
       originalSave();
       window.renderAll();
       setSyncStatus("Zsynchronizowano");
@@ -17930,6 +17989,16 @@ function startSync(){
       var data = d.data();
       arr.push(data);
       habitsLastPushed[d.id] = JSON.stringify(data);
+    });
+    // 2026-08-25 — od migracji na workspace_habits (352e74f) kolejność wynikała z tego, jak
+    // Firestore akurat zwrócił dokumenty (efektywnie po ID), nie z tego, w jakiej kolejności
+    // Damian je kiedyś ułożył — stąd zauważona "przypadkowa" kolejność w widoku Nawyki.
+    // Sortujemy jawnie po polu order (nowe nawyki dostają je w addHabit(); istniejące
+    // dostały wartości ustawione ręcznie po zgłoszeniu, patrz notatka w pamięci).
+    arr.sort(function(a,b){
+      var ao = typeof a.order==="number" ? a.order : 999;
+      var bo = typeof b.order==="number" ? b.order : 999;
+      return ao-bo;
     });
     window.state.habits = arr;
     habitsHasSyncedOnce = true;
@@ -18005,6 +18074,18 @@ function startSync(){
     if(window.renderAll) window.renderAll();
   }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_screenshots) error:", err); });
 
+  unsubscribeFbAuthSnapshot = onSnapshot(fbAuthDocRef, function(snap){
+    var data = snap.exists() ? snap.data() : null;
+    window.state.fbAuth = (data && data.accessToken) ? data : null;
+    fbAuthLastPushedJson = JSON.stringify(window.state.fbAuth);
+    fbAuthHasSyncedOnce = true;
+    originalSave();
+    if(window.renderAll) window.renderAll();
+    if(typeof window.tryStoredFbAuth === "function") window.tryStoredFbAuth();
+  }, function(err){
+    console.error("Firestore onSnapshot (workspace_fb_auth) error:", err);
+  });
+
   // Zabezpieczenie dodatkowe: gdyby nasłuch onSnapshot ucichł bez błędu (np. komputer
   // uśpiony z otwartą, cały czas "widoczną" kartą — usypianie/budzenie nie zawsze
   // wywołuje visibilitychange), co 3 minuty sprawdzamy realny stan w Firestore wprost
@@ -18026,6 +18107,7 @@ function startSync(){
         var keepPosts = window.state.posts;
         var keepDroga = window.state.droga;
         var keepClientOps = window.state.clientOps;
+        var keepFbAuth = window.state.fbAuth;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
@@ -18036,6 +18118,7 @@ function startSync(){
         window.state.posts = keepPosts||[];
         window.state.droga = keepDroga||def.droga;
         window.state.clientOps = keepClientOps||def.clientOps;
+        window.state.fbAuth = keepFbAuth||null;
         originalSave();
         window.renderAll();
       }
