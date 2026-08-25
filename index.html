@@ -17744,48 +17744,12 @@ function flushClientOpsFirestorePush(){
   clientOpsScreenshotsSync.flush();
 }
 
-// 2026-08-24 — sprzątanie jednorazowe po realnym incydencie: jedna z kart w trakcie
-// dzisiejszej migracji miała w pamięci przykładowe zadania z defaultState() (nigdy
-// nie zapisane przez Damiana) i przy zapisie skasowała 21 prawdziwych zadań, wstawiając
-// w ich miejsce te przykładowe. Usuwa wszystko z createdAt dzisiejszej daty (żadna z
-// prawdziwych rekonstrukcji poniżej nie ma dzisiejszej daty, więc to bezpieczne i nie
-// dotknie niczego, co Damian faktycznie doda dziś PO tym poprawczym zapisie) i dopisuje
-// z powrotem to, co udało się odtworzyć z tej rozmowy (odczyty sprzed incydentu). Kilka
-// zadań (te bez dopasowanego tytułu) nie dało się odtworzyć — Damian został o tym
-// poinformowany wprost, nic nie jest zmyślone.
-function fixupTaskSeedContamination20260824(){
-  var before = window.state.tasks.length;
-  window.state.tasks = window.state.tasks.filter(function(t){ return t.createdAt !== "2026-08-24"; });
-  var restore = [
-    {id:"task_ce1txd1", title:"przygotować nową ofertę dla Jump", category:"MediaDGtal", scope:"miesiac", done:false, createdAt:"2026-08-14", completedAt:null},
-    {id:"task_q9aexfl", title:"Reklamy dla Marzeny", category:"MediaDGtal", scope:"tydzien", done:true, createdAt:"2026-08-13", completedAt:"2026-08-14"},
-    {id:"task_c4idqc6", title:"napisać nową umowę i wysłać ją Marii", category:"MediaDGtal", scope:"tydzien", done:true, createdAt:"2026-08-13", completedAt:"2026-08-14"},
-    {id:"task_pel5d17", title:"Napisać oświadczenie o uznaniu długu dla Estilo", category:"MediaDGtal", scope:"miesiac", done:false, createdAt:"2026-08-01", completedAt:null},
-    {id:"task_s0nikq7", title:"faktura na Arta", category:"MediaDGtal", scope:"dzien", done:true, createdAt:"2026-07-29", completedAt:"2026-07-29"},
-    {id:"task_wkjfgbs", title:"post na dziś", category:"tool4arts", scope:"dzien", done:true, createdAt:"2026-07-29", completedAt:"2026-07-29"},
-    {id:"task_7kbivtr", title:"Zadzwonić do taty na urodziny", category:"Admin", scope:"dzien", done:true, createdAt:"2026-07-29", completedAt:"2026-07-29"},
-    {id:"task_8yby8aq", title:"Wznowić kampanie Marzenie z Polektywu", category:"MediaDGtal", scope:"tydzien", done:false, createdAt:"2026-08-01", completedAt:null},
-    {id:"task_2446i6t", title:"Skontaktować się z Marzeną z Polektywu jak wróci z urlopu  1.08.", category:"MediaDGtal", scope:"tydzien", done:false, createdAt:"2026-08-01", completedAt:null},
-    {id:"task_y1f3ny0", title:"Nowa oferta dla Venus od połowy sierpnia", category:"MediaDGtal", scope:"miesiac", done:true, createdAt:"2026-08-01", completedAt:"2026-08-12"},
-    {id:"task_4g56ibn", title:"Zrobić plan działania dla Institute na wrzesień", category:"MediaDGtal", scope:"miesiac", done:false, createdAt:"2026-08-01", completedAt:null},
-    {id:"task_2jb1odb", title:"Umówić się do rodzinnego na badania krew, mocz, dermatolog.", category:"Admin", scope:"miesiac", done:false, createdAt:"2026-08-01", completedAt:null},
-    {id:"task_3yo7hzc", title:"zapytać Agnes czy mogą być też grafiki AI i zmiana opisu", category:"MediaDGtal", scope:"tydzien", done:false, createdAt:"2026-08-05", completedAt:null},
-    {id:"task_2arstuy", title:"grafiki AI dla Estilo + opisy", category:"MediaDGtal", scope:"tydzien", done:false, createdAt:"2026-08-05", completedAt:null},
-    {id:"task_rec20260824a", title:"Zadzwonić do Marzeny", category:"MediaDGtal", scope:"tydzien", done:true, createdAt:"2026-08-13", completedAt:"2026-08-14"},
-    {id:"task_rec20260824b", title:"Reklamy dla Estilo", category:"MediaDGtal", scope:"tydzien", done:true, createdAt:"2026-08-13", completedAt:"2026-08-14"},
-    {id:"task_rec20260824c", title:"Zapytać Marcina jak tam", category:"MediaDGtal", scope:"tydzien", done:true, createdAt:"2026-08-11", completedAt:"2026-08-12"},
-    {id:"task_rec20260824d", title:"Oferta dla Marii", category:"MediaDGtal", scope:"tydzien", done:true, createdAt:"2026-08-11", completedAt:"2026-08-12"}
-  ];
-  var existingIds = {}; window.state.tasks.forEach(function(t){ existingIds[t.id]=true; });
-  var added = 0;
-  restore.forEach(function(r){
-    if(!existingIds[r.id]){ r.recurWeekday = null; window.state.tasks.push(r); added++; }
-  });
-  if(before !== window.state.tasks.length || added){
-    console.log("Sprzątanie 2026-08-24: usunięto "+(before - (window.state.tasks.length - added))+" przykładowych, dopisano "+added+" odtworzonych zadań.");
-    scheduleTasksFirestorePush();
-  }
-}
+// 2026-08-24 — sprzątanie jednorazowe po realnym incydencie (naprawa demo-seed
+// contamination w tasks przy migracji) tego dnia zakończyła swoją rolę i została usunięta
+// 2026-08-25 — patrz komentarz przy onSnapshot(tasksCol) i [[feedback...]] w pamięci:
+// wywoływana bez zabezpieczenia "tylko raz", bezwarunkowo kasowała KAŻDE zadanie z datą
+// dokładnie "2026-08-24" (w tym nowe, prawdziwe zadania) i podmieniała je z powrotem na
+// coraz bardziej nieaktualną, zahardkodowaną listę sprzed incydentu.
 
 function scheduleFirestorePush(){
   pendingPush = true;
@@ -17994,7 +17958,16 @@ function startSync(){
     });
     window.state.tasks = arr;
     tasksHasSyncedOnce = true;
-    fixupTaskSeedContamination20260824();
+    // 2026-08-25 — fixupTaskSeedContamination20260824() (jednorazowa naprawa z dnia
+    // incydentu) NIGDY nie miała zabezpieczenia "uruchom tylko raz" — odpalała się przy
+    // KAŻDYM onSnapshot, bezwarunkowo kasując każde zadanie z datą DOKŁADNIE "2026-08-24"
+    // i podmieniając je z powrotem na zahardkodowaną, coraz bardziej nieaktualną listę
+    // sprzed dnia incydentu. Kolizja znaleziona na żywo: dzisiejszy autoRolloverWeeklyTasks()
+    // nadaje przywracanym zadaniom tygodniowym datę "2026-08-24" (poniedziałek bieżącego
+    // tygodnia) — więc te 4 zadania były cyklicznie kasowane i przywracane w STAREJ wersji
+    // (odznaczone, ze starą datą) przy każdej synchronizacji, dokładnie to zjawisko
+    // (\"klikam wykonane i po sekundzie wraca\"), które zgłosił Damian. Naprawa z 24.08 była
+    // jednorazowa i już dawno zakończona — nie ma już powodu, żeby w ogóle działać.
     originalSave();
     if(window.renderAll) window.renderAll();
   }, function(err){
