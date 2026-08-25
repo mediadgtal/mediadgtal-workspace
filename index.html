@@ -16897,6 +16897,17 @@ function maybeAutoSyncSocial(retries){
 }
 function autoSyncAllAccounts(){
   if(!window.__fbToken || typeof state === "undefined" || !state) return;
+  // 2026-08-25 — Damian: nie chce co ~60 dni ręcznie klikać "Połącz z Facebookiem" (i nie
+  // będzie o tym pamiętał). Facebook nie daje bezterminowych tokenów użytkownika (60 dni to
+  // twardy maksymalny limit Meta), ALE pozwala wymienić JESZCZE WAŻNY długożyjący token na
+  // świeży, znów ważny ~60 dni od teraz — dowolną liczbę razy, bez żadnego ponownego logowania.
+  // Robimy to przy okazji tego istniejącego, i tak już raz-dziennie odświeżania: dopóki Damian
+  // otwiera appkę choć raz na te 60 dni (a robi to codziennie), token faktycznie nigdy nie
+  // wygasa. Jeśli by jednak minął (np. długa przerwa, zmiana hasła FB, cofnięcie dostępu) —
+  // wraca zwykłe "Rozłączono" i ręczne połączenie, tak jak dotychczas.
+  if(state.fbAuth && state.fbAuth.accessToken && typeof persistLongLivedFbToken === "function"){
+    persistLongLivedFbToken(state.fbAuth.accessToken);
+  }
   ensureFbPages(function(){
     if(!window.__fbPagesData) return;
     state.igAccounts.forEach(function(acc){ applyFbRefreshAcc("instagram", acc, {silent:true}); });
