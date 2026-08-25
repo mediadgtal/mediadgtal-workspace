@@ -18076,9 +18076,23 @@ function startSync(){
 
   unsubscribeFbAuthSnapshot = onSnapshot(fbAuthDocRef, function(snap){
     var data = snap.exists() ? snap.data() : null;
-    window.state.fbAuth = (data && data.accessToken) ? data : null;
-    fbAuthLastPushedJson = JSON.stringify(window.state.fbAuth);
+    var remoteFbAuth = (data && data.accessToken) ? data : null;
+    // 2026-08-25 — znaleziony na żywo wyścig: to pierwsze zdarzenie onSnapshot (dokument
+    // jeszcze nie istnieje) potrafi wystrzelić DOKŁADNIE w momencie, gdy Damian klika
+    // "Połącz z Facebookiem" i persistLongLivedFbToken() właśnie ustawiło świeży token w
+    // window.state.fbAuth, ale jeszcze nie zdążyło go wypchnąć (pendingFbAuthPush=true).
+    // Bezwarunkowe nadpisanie tutaj kasowało ten świeży token na null, zanim w ogóle trafił
+    // do Firestore — appka pokazywała "Połączono" (z window.__fbToken, niezależnego od
+    // tego), ale nic się nie utrwalało i po restarcie znów było "Rozłączono". Nie
+    // nadpisujemy lokalnego stanu, jeśli jest coś czekającego na wypchnięcie — zamiast
+    // tego domykamy ten zaległy zapis od razu, tak jak zrobiłby to zwykły save().
+    if(!pendingFbAuthPush){
+      window.state.fbAuth = remoteFbAuth;
+    }
+    fbAuthLastPushedJson = JSON.stringify(remoteFbAuth);
+    var wasSyncedOnce = fbAuthHasSyncedOnce;
     fbAuthHasSyncedOnce = true;
+    if(!wasSyncedOnce && pendingFbAuthPush) flushFbAuthFirestorePush();
     originalSave();
     if(window.renderAll) window.renderAll();
     if(typeof window.tryStoredFbAuth === "function") window.tryStoredFbAuth();
