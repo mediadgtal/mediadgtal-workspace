@@ -7324,8 +7324,30 @@ function autoRolloverMonthlyTasks(){
   });
   if(changed) save();
 }
+// 2026-08-25 — Damian: zadania tygodniowe niewykonane z poprzedniego tygodnia znikały z
+// widoku (nie były usuwane, tylko odfiltrowywane przez zakres dat bieżącego tygodnia w
+// renderZadania), sprawiając wrażenie że "giną". Miesięczne miały już dokładnie taki sam
+// mechanizm naprawczy (autoRolloverMonthlyTasks) od dawna — tego samego brakowało dla
+// tygodnia. Ten sam wzorzec: niewykonane, nie-cykliczne zadanie tygodniowe z datą sprzed
+// bieżącego tygodnia dostaje datę poniedziałku bieżącego tygodnia, więc automatycznie
+// "wpada" do aktualnego tygodnia zamiast znikać. Zadania dzienne nie potrzebują tego —
+// w renderZadania() scope="dzien" i tak nigdy nie jest filtrowane po dacie, więc
+// niewykonane dzienne zadanie już zostaje widoczne w "Dziś" bez końca, aż je odznaczysz.
+function autoRolloverWeeklyTasks(){
+  var curWeekStart = currentWeekDates()[0];
+  var changed = false;
+  state.tasks.forEach(function(t){
+    if(t.scope!=="tydzien" || t.done || t.deletedAt || t.recurWeekday!=null) return;
+    var d = t.completedAt || t.createdAt;
+    if(!d || d>=curWeekStart) return;
+    t.createdAt = curWeekStart;
+    changed = true;
+  });
+  if(changed) save();
+}
 function renderZadania(el){
   autoRolloverMonthlyTasks();
+  autoRolloverWeeklyTasks();
   clientOpsExtendAllRecurringSeries();
   setTopActions('<button class="btn secondary" onclick="undoZad()">↺ Cofnij</button> <button class="btn" onclick="addTask()">+ Nowe zadanie</button>');
   var html = '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
