@@ -602,6 +602,7 @@ var TABS = [
   {id:"instagram", label:"Instagram", group:"Social Media"},
   {id:"facebook", label:"Facebook", group:"Social Media"},
   {id:"nawyki", label:"Nawyki", group:"Narzędzia"},
+  {id:"nawykibeta", label:"Nawyki (beta)", group:"Narzędzia"},
   {id:"klienci", label:"Klienci", group:"Narzędzia"},
   {id:"audyt", label:"Auto Audyt", group:"Narzędzia"},
   {id:"crm", label:"Baza kontaktów", group:"Narzędzia"},
@@ -621,6 +622,7 @@ var TAB_ICON_SVG = {
   kalendarz: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   finanse: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 8.5h3.2a1.8 1.8 0 0 1 0 3.5H9.5m0 0h4a1.8 1.8 0 0 1 0 3.5H9.5"/><line x1="12" y1="6.5" x2="12" y2="17.5"/></svg>',
   nawyki: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
+  nawykibeta: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>',
   klienci: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   crm: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>',
   clientops: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v3h8V3"/><polyline points="8 13 10.5 15.5 16 10"/></svg>',
@@ -2856,6 +2858,7 @@ var RENDERERS = {
   kalendarz: renderKalendarz,
   finanse: renderFinanse,
   nawyki: renderNawyki,
+  nawykibeta: renderNawykiBeta,
   klienci: renderKlienci,
   crm: renderCRM,
   clientops: renderClientOps,
@@ -2864,7 +2867,7 @@ var RENDERERS = {
   audyt: renderAudyt
 };
 var TITLES = {dashboard:"Pulpit", droga:"Droga", statystyki:"Statystyki", posty:"Posty",
-  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
+  instagram:"Instagram", facebook:"Facebook", zadania:"Zadania", kalendarz:"Kalendarz", finanse:"Finanse", nawyki:"Nawyki", nawykibeta:"Nawyki (beta)", klienci:"Klienci", crm:"Baza kontaktów", clientops:"Obsługa Klientów", agent:"Agent AI", ceo:"CEO", audyt:"Auto Audyt"};
 
 function renderAll(){
   renderNav();
@@ -8475,6 +8478,118 @@ function renderNawykiTotal(yr){
   html += '</tbody></table></div></div>';
   return html;
 }
+
+/* ---- NOWA ZAKŁADKA TESTOWA "Nawyki (beta)" ----
+   Duplikat zakładki Nawyki (te same dane, te same funkcje toggle/undo/backup)
+   z dodanym widokiem "mapa dni" (jak wykres commitów na GitHubie).
+   Bezpieczne do testowania: jedyny nowy kod to funkcje renderujące poniżej,
+   nic tu nie zapisuje danych inaczej niż oryginalna zakładka Nawyki. */
+var nawykiBetaYear, nawykiBetaTab;
+
+function buildHabitYearHeatmap(h, yr){
+  var year = +yr;
+  var jan1 = new Date(year,0,1);
+  var startDow = (jan1.getDay()+6)%7;
+  var isLeap = (new Date(year,1,29)).getMonth()===1;
+  var totalDays = isLeap?366:365;
+  var todayKey = todayStr();
+  var cells = '';
+  var monthLabelCols = {};
+  Object.keys(monthLabelCols).forEach(function(){});
+  for(var doy=0; doy<totalDays; doy++){
+    var d = new Date(year,0,1+doy);
+    var dow = (d.getDay()+6)%7;
+    var col = Math.floor((doy+startDow)/7);
+    var m = d.getMonth();
+    if(d.getDate()===1 && !(m in monthLabelCols)) monthLabelCols[m]=col;
+    var key = year+"-"+String(m+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    var done = !!(h.log && h.log[key]);
+    var isFuture = key > todayKey;
+    var bg = done ? "var(--accent)" : (isFuture ? "transparent" : "var(--border)");
+    var extra = isFuture ? "; border:1px dashed var(--border)" : "";
+    var title = escapeHtml(h.name)+" — "+key+(done?" ✓ zrobione":"");
+    cells += '<div title="'+title+'" style="grid-column:'+(col+1)+'; grid-row:'+(dow+2)+'; width:11px; height:11px; border-radius:2px; background:'+bg+extra+'"></div>';
+  }
+  var monthLabels = '';
+  Object.keys(monthLabelCols).forEach(function(m){
+    monthLabels += '<div style="grid-column:'+(monthLabelCols[m]+1)+'; grid-row:1; font-size:9px; color:var(--muted); text-transform:uppercase">'+HABIT_MONTH_ABBR[+m]+'</div>';
+  });
+  var ys = habitYearStats(h, yr);
+  var gridHtml = '<div style="display:grid; grid-auto-columns:13px; grid-template-rows:12px repeat(7,13px); gap:2px">'+monthLabels+cells+'</div>';
+  return '<div style="display:flex; align-items:flex-start; gap:12px; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border)">'+
+    '<div style="width:120px; flex:0 0 120px; font-size:12.5px; font-weight:600; padding-top:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="'+escapeHtml(h.name)+'">'+escapeHtml(h.name)+'</div>'+
+    '<div style="overflow-x:auto; padding-bottom:4px">'+gridHtml+'</div>'+
+    '<div style="padding-top:14px; font-size:12px; color:var(--accent); font-weight:700; white-space:nowrap; flex:0 0 auto">'+ys.pct+'%</div>'+
+  '</div>';
+}
+
+function renderNawykiHeatmapSection(yr){
+  if(!state.habits.length) return '';
+  var html = '<div class="card" style="margin-bottom:16px"><h3>Mapa dni — '+yr+' (nowy widok testowy)</h3>';
+  state.habits.forEach(function(h){ html += buildHabitYearHeatmap(h, yr); });
+  html += '<div style="font-size:11px; color:var(--muted); margin-top:4px">Każdy kwadrat to jeden dzień. Wypełniony kwadrat = nawyk odhaczony tego dnia. Najedź kursorem na kwadrat, żeby zobaczyć datę.</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderNawykiBeta(el){
+  setTopActions('<button class="btn secondary" onclick="undoNawyki()">↺ Cofnij</button> <button class="btn" onclick="addHabit()">+ Nawyk</button>');
+  var now = new Date();
+  var realCurYm = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  if(!nawykiBetaYear) nawykiBetaYear = now.getFullYear();
+  if(!nawykiBetaTab) nawykiBetaTab = realCurYm;
+  var yr = String(nawykiBetaYear);
+
+  var html = '';
+  if(window.__gcalToken && !state.habitsBackupSheetId) ensureHabitsBackupSheet();
+
+  html += '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">'+
+    '<div style="font-size:11px; color:var(--accent); font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px">Wersja testowa</div>'+
+    '<div style="font-size:12.5px; color:var(--muted-light)">To duplikat zakładki Nawyki z dodanym nowym widokiem „mapa dni" poniżej. Reszta (tabela, raport miesiąca, kopia zapasowa) działa identycznie jak w oryginalnej zakładce i zapisuje te same dane — możesz swobodnie testować, nic tu się nie zepsuje w oryginale.</div>'+
+    '</div>';
+
+  html += renderNawykiHeatmapSection(yr);
+
+  html += '<div class="row" style="margin-bottom:10px; gap:10px; justify-content:space-between; flex-wrap:wrap">'+
+    '<div class="row" style="gap:10px">'+
+    '<span style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:700">Rok</span>'+
+    '<button class="btn secondary small" onclick="changeNawykiBetaYear(-1)">◀</button>'+
+    '<b style="font-size:14px; min-width:40px; text-align:center">'+yr+'</b>'+
+    '<button class="btn secondary small" onclick="changeNawykiBetaYear(1)">▶</button>'+
+    '</div>'+
+    renderBackupBadge({
+      connected: !!window.__gcalToken, sheetId: state.habitsBackupSheetId, sheetUrl: state.habitsBackupSheetUrl,
+      error: habitsBackupStatus==="error", lastSyncKey: "habits",
+      actions: [{icon:"🔄", title:"Przywróć braki z kopii zapasowej", disabled: nawykiRestoreStatus==="loading", onclick:"nawykiRestoreFromBackup()",
+        danger: nawykiRestoreStatus==="error",
+        result: nawykiRestoreResult ? ("uzupełniono "+nawykiRestoreResult.restored+" zaznaczeń") : (nawykiRestoreStatus==="error" ? "nie udało się odczytać arkusza" : null)}]
+    })+
+    '</div>';
+
+  html += '<div class="chiprow">';
+  for(var m=1;m<=12;m++){
+    var ym = yr+"-"+String(m).padStart(2,"0");
+    var cls = "chip";
+    if(nawykiBetaTab===ym) cls += " active";
+    if(ym===realCurYm) cls += " chip-current"; else if(ym<realCurYm) cls += " chip-past";
+    html += '<span class="'+cls+'" onclick="setNawykiBetaTab(\''+ym+'\')">'+HABIT_MONTH_ABBR[m-1]+'</span>';
+  }
+  html += '<span class="chip'+(nawykiBetaTab==="TOTAL"?" active":"")+'" onclick="setNawykiBetaTab(\'TOTAL\')" style="font-weight:700; border-color:var(--accent)">TOTAL</span>';
+  html += '</div>';
+
+  html += (nawykiBetaTab==="TOTAL") ? renderNawykiTotal(yr) : renderNawykiMonth(nawykiBetaTab);
+  el.innerHTML = html;
+  attachPinchZoom("nawykiScrollBox");
+}
+function setNawykiBetaTab(v){ nawykiBetaTab = v; renderAll(); }
+function changeNawykiBetaYear(delta){
+  nawykiBetaYear = (nawykiBetaYear||new Date().getFullYear()) + delta;
+  if(nawykiBetaTab && nawykiBetaTab!=="TOTAL"){
+    nawykiBetaTab = nawykiBetaYear+"-"+nawykiBetaTab.split("-")[1];
+  }
+  renderAll();
+}
+/* ---- koniec zakładki testowej "Nawyki (beta)" ---- */
 
 function toggleHabitDay(id, dateKey){
   var h = state.habits.filter(function(x){return x.id===id;})[0];
