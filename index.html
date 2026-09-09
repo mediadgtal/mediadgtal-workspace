@@ -17111,6 +17111,7 @@ var unsubscribeClientOpsHistoriaSnapshot = null;
 var unsubscribeClientOpsWynikiSnapshot = null;
 var unsubscribeClientOpsPlatnosciSnapshot = null;
 var unsubscribeClientOpsScreenshotsSnapshot = null;
+var unsubscribeClientsSnapshot = null;
 var unsubscribeFbAuthSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
@@ -17130,6 +17131,7 @@ function mainStateForPush(){
   delete copy.droga;
   delete copy.clientOps;
   delete copy.fbAuth;
+  delete copy.clientsMonthly;
   return copy;
 }
 
@@ -17686,6 +17688,54 @@ function maybeMigrateClientOpsFromRemote(oldClientOps){
   clientOpsPlatnosciSync.maybeMigrateFromRemote(oldClientOps.platnosci);
   clientOpsScreenshotsSync.maybeMigrateFromRemote(oldClientOps.screenshots);
 }
+
+// 2026-09-09 — Klienci (rozliczenia miesięczne, zakładka "Klienci") było ostatnim modułem
+// wciąż trzymanym jako pole `clientsMonthly` w jednym współdzielonym dokumencie
+// workspace/damian — dokładnie ten sam podatny wzorzec, który spowodował realną utratę
+// danych w tasks/financeEntries (24-25.08) i droga/clientOps (25.08): dowolny zapis z karty
+// z nieodświeżonym stanem lokalnym cicho nadpisywał świeższe dane z innej karty/urządzenia.
+// Objaw zaobserwowany dziś: kopia zapasowa do Sheets straciła 5 wrześniowych klientów mimo
+// że w samej aplikacji (Firestore) były bezpieczne — klasyczny sygnał tego wzorca. Ten sam
+// wzorzec fabryki co przy clientOps (makeIdListFirestoreSync) — `clientsMonthly[ym]` jest
+// spłaszczane do jednej listy z `.ym` doklejonym do każdego wiersza (id klienta, np. "cli_xxx",
+// jest już globalnie unikalne w całym zbiorze, nie tylko w obrębie miesiąca — bezpieczne jako
+// klucz dokumentu Firestore) i odtwarzane z powrotem do zagnieżdżonej mapy przy odczycie.
+var clientsSync = makeIdListFirestoreSync("workspace_clients",
+  function(){
+    var arr = [];
+    Object.keys(window.state.clientsMonthly||{}).forEach(function(ym){
+      (window.state.clientsMonthly[ym]||[]).forEach(function(r){
+        if(!r || !r.id) return;
+        r.ym = ym;
+        arr.push(r);
+      });
+    });
+    return arr;
+  },
+  function(arr){
+    var map = {};
+    (arr||[]).forEach(function(r){
+      var ym = r.ym;
+      if(!ym) return;
+      if(!map[ym]) map[ym] = [];
+      map[ym].push(r);
+    });
+    window.state.clientsMonthly = map;
+  }
+);
+var clientsMigrationChecked = false;
+function maybeMigrateClientsFromRemote(oldClientsMonthly){
+  oldClientsMonthly = oldClientsMonthly || {};
+  var flat = [];
+  Object.keys(oldClientsMonthly).forEach(function(ym){
+    (oldClientsMonthly[ym]||[]).forEach(function(r){
+      if(r && r.id){ r.ym = ym; flat.push(r); }
+    });
+  });
+  clientsSync.maybeMigrateFromRemote(flat);
+}
+function scheduleClientsFirestorePush(){ clientsSync.schedule(); }
+function flushClientsFirestorePush(){ clientsSync.flush(); }
 // 2026-08-25 — fbAuth (długożyjący token Facebooka) też żył w workspace/damian, więc było
 // podatne na dokładnie ten sam wyścig co reszta pól tam trzymanych: dowolny zapis z karty,
 // która akurat miała fbAuth=null w pamięci (np. świeżo otwarta karta, zanim tryStoredFbAuth
@@ -17763,6 +17813,7 @@ function scheduleFirestorePush(){
   schedulePostsFirestorePush();
   scheduleDrogaFirestorePush();
   scheduleClientOpsFirestorePush();
+  scheduleClientsFirestorePush();
   scheduleFbAuthFirestorePush();
 }
 function flushPush(){
@@ -17840,7 +17891,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushFbAuthFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -17855,7 +17906,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushFbAuthFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -17891,6 +17942,10 @@ function startSync(){
         clientOpsMigrationChecked = true;
         maybeMigrateClientOpsFromRemote(remote.clientOps);
       }
+      if(!clientsMigrationChecked){
+        clientsMigrationChecked = true;
+        maybeMigrateClientsFromRemote(remote.clientsMonthly);
+      }
       if(!fbAuthMigrationChecked){
         fbAuthMigrationChecked = true;
         maybeMigrateFbAuthFromRemote(remote.fbAuth);
@@ -17909,6 +17964,7 @@ function startSync(){
       var keepPosts = window.state.posts;
       var keepDroga = window.state.droga;
       var keepClientOps = window.state.clientOps;
+      var keepClients = window.state.clientsMonthly;
       var keepFbAuth = window.state.fbAuth;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
@@ -17920,6 +17976,7 @@ function startSync(){
       window.state.posts = keepPosts||[];
       window.state.droga = keepDroga||def.droga;
       window.state.clientOps = keepClientOps||def.clientOps;
+      window.state.clientsMonthly = keepClients||def.clientsMonthly;
       window.state.fbAuth = keepFbAuth||null;
       originalSave();
       window.renderAll();
@@ -18087,6 +18144,12 @@ function startSync(){
     originalSave();
     if(window.renderAll) window.renderAll();
   }, function(err){ console.error("Firestore onSnapshot (workspace_client_ops_screenshots) error:", err); });
+
+  unsubscribeClientsSnapshot = onSnapshot(clientsSync.col, function(snap){
+    clientsSync.onSnapshotSync(snap);
+    originalSave();
+    if(window.renderAll) window.renderAll();
+  }, function(err){ console.error("Firestore onSnapshot (workspace_clients) error:", err); });
 
   unsubscribeFbAuthSnapshot = onSnapshot(fbAuthDocRef, function(snap){
     var data = snap.exists() ? snap.data() : null;
