@@ -17132,6 +17132,21 @@ function mainStateForPush(){
   delete copy.clientOps;
   delete copy.fbAuth;
   delete copy.clientsMonthly;
+  // 2026-09-10 — dokończenie migracji, patrz notatka przy makeFieldMapFirestoreSync wyżej.
+  delete copy.debts;
+  delete copy.creditCard;
+  delete copy.contentCalendar;
+  delete copy.hasla;
+  delete copy.audits;
+  delete copy.notifications;
+  delete copy.t4aClients;
+  delete copy.events;
+  delete copy.birthdays;
+  delete copy.imieninyExtra;
+  delete copy.agentRequests;
+  delete copy.clientMapPins;
+  delete copy.ceo;
+  CONFIG_BUNDLE_KEYS.forEach(function(k){ delete copy[k]; });
   return copy;
 }
 
@@ -17736,6 +17751,221 @@ function maybeMigrateClientsFromRemote(oldClientsMonthly){
 }
 function scheduleClientsFirestorePush(){ clientsSync.schedule(); }
 function flushClientsFirestorePush(){ clientsSync.flush(); }
+
+// 2026-09-10 — audyt po incydencie z kartą kredytową/Klientami: reszta pól wciąż trzymanych
+// w workspace/damian (debts, creditCard, notifications, contentCalendar, hasła do postów,
+// audyty, t4aClients, kalendarz/urodziny/imieniny, agentRequests, mapa klientów, cała gra CEO
+// i drobna konfiguracja) była dokładnie tak samo podatna na wyścig "stara karta nadpisuje
+// nowsze dane z innego urządzenia", jak wszystko wcześniej migrowane. Kończymy migrację raz
+// a porządnie zamiast po jednym polu na incydent — patrz [[feedback_check...]] w pamięci.
+// Listy rekordów z .id → ten sam wzorzec co CRM/zadania/finanse (makeIdListFirestoreSync).
+var debtsSync = makeIdListFirestoreSync("workspace_debts",
+  function(){ return window.state.debts; },
+  function(arr){ window.state.debts = arr; });
+var debtsMigrationChecked = false;
+function maybeMigrateDebtsFromRemote(old){ debtsSync.maybeMigrateFromRemote(old); }
+function scheduleDebtsFirestorePush(){ debtsSync.schedule(); }
+function flushDebtsFirestorePush(){ debtsSync.flush(); }
+
+var creditCardTxSync = makeIdListFirestoreSync("workspace_credit_card_tx",
+  function(){ return (window.state.creditCard && window.state.creditCard.transactions) || []; },
+  function(arr){ if(!window.state.creditCard) window.state.creditCard = {transactions:[]}; window.state.creditCard.transactions = arr; });
+var creditCardTxMigrationChecked = false;
+function maybeMigrateCreditCardTxFromRemote(oldCreditCard){ creditCardTxSync.maybeMigrateFromRemote((oldCreditCard && oldCreditCard.transactions) || []); }
+function scheduleCreditCardTxFirestorePush(){ creditCardTxSync.schedule(); }
+function flushCreditCardTxFirestorePush(){ creditCardTxSync.flush(); }
+
+var contentCalendarSync = makeIdListFirestoreSync("workspace_content_calendar",
+  function(){ return window.state.contentCalendar; },
+  function(arr){ window.state.contentCalendar = arr; });
+var contentCalendarMigrationChecked = false;
+function maybeMigrateContentCalendarFromRemote(old){ contentCalendarSync.maybeMigrateFromRemote(old); }
+function scheduleContentCalendarFirestorePush(){ contentCalendarSync.schedule(); }
+function flushContentCalendarFirestorePush(){ contentCalendarSync.flush(); }
+
+var haslaSync = makeIdListFirestoreSync("workspace_hasla",
+  function(){ return window.state.hasla; },
+  function(arr){ window.state.hasla = arr; });
+var haslaMigrationChecked = false;
+function maybeMigrateHaslaFromRemote(old){ haslaSync.maybeMigrateFromRemote(old); }
+function scheduleHaslaFirestorePush(){ haslaSync.schedule(); }
+function flushHaslaFirestorePush(){ haslaSync.flush(); }
+
+var auditsSync = makeIdListFirestoreSync("workspace_audits",
+  function(){ return window.state.audits; },
+  function(arr){ window.state.audits = arr; });
+var auditsMigrationChecked = false;
+function maybeMigrateAuditsFromRemote(old){ auditsSync.maybeMigrateFromRemote(old); }
+function scheduleAuditsFirestorePush(){ auditsSync.schedule(); }
+function flushAuditsFirestorePush(){ auditsSync.flush(); }
+
+var notificationsSync = makeIdListFirestoreSync("workspace_notifications",
+  function(){ return window.state.notifications; },
+  function(arr){ window.state.notifications = arr; });
+var notificationsMigrationChecked = false;
+function maybeMigrateNotificationsFromRemote(old){ notificationsSync.maybeMigrateFromRemote(old); }
+function scheduleNotificationsFirestorePush(){ notificationsSync.schedule(); }
+function flushNotificationsFirestorePush(){ notificationsSync.flush(); }
+
+var t4aClientsSync = makeIdListFirestoreSync("workspace_t4a_clients",
+  function(){ return window.state.t4aClients; },
+  function(arr){ window.state.t4aClients = arr; });
+var t4aClientsMigrationChecked = false;
+function maybeMigrateT4aClientsFromRemote(old){ t4aClientsSync.maybeMigrateFromRemote(old); }
+function scheduleT4aClientsFirestorePush(){ t4aClientsSync.schedule(); }
+function flushT4aClientsFirestorePush(){ t4aClientsSync.flush(); }
+
+var eventsSync = makeIdListFirestoreSync("workspace_events",
+  function(){ return window.state.events; },
+  function(arr){ window.state.events = arr; });
+var eventsMigrationChecked = false;
+function maybeMigrateEventsFromRemote(old){ eventsSync.maybeMigrateFromRemote(old); }
+function scheduleEventsFirestorePush(){ eventsSync.schedule(); }
+function flushEventsFirestorePush(){ eventsSync.flush(); }
+
+var birthdaysSync = makeIdListFirestoreSync("workspace_birthdays",
+  function(){ return window.state.birthdays; },
+  function(arr){ window.state.birthdays = arr; });
+var birthdaysMigrationChecked = false;
+function maybeMigrateBirthdaysFromRemote(old){ birthdaysSync.maybeMigrateFromRemote(old); }
+function scheduleBirthdaysFirestorePush(){ birthdaysSync.schedule(); }
+function flushBirthdaysFirestorePush(){ birthdaysSync.flush(); }
+
+var imieninySync = makeIdListFirestoreSync("workspace_imieniny",
+  function(){ return window.state.imieninyExtra; },
+  function(arr){ window.state.imieninyExtra = arr; });
+var imieninyMigrationChecked = false;
+function maybeMigrateImieninyFromRemote(old){ imieninySync.maybeMigrateFromRemote(old); }
+function scheduleImieninyFirestorePush(){ imieninySync.schedule(); }
+function flushImieninyFirestorePush(){ imieninySync.flush(); }
+
+var agentRequestsSync = makeIdListFirestoreSync("workspace_agent_requests",
+  function(){ return window.state.agentRequests; },
+  function(arr){ window.state.agentRequests = arr; });
+var agentRequestsMigrationChecked = false;
+function maybeMigrateAgentRequestsFromRemote(old){ agentRequestsSync.maybeMigrateFromRemote(old); }
+function scheduleAgentRequestsFirestorePush(){ agentRequestsSync.schedule(); }
+function flushAgentRequestsFirestorePush(){ agentRequestsSync.flush(); }
+
+var clientMapPinsSync = makeIdListFirestoreSync("workspace_client_map_pins",
+  function(){ return window.state.clientMapPins; },
+  function(arr){ window.state.clientMapPins = arr; });
+var clientMapPinsMigrationChecked = false;
+function maybeMigrateClientMapPinsFromRemote(old){ clientMapPinsSync.maybeMigrateFromRemote(old); }
+function scheduleClientMapPinsFirestorePush(){ clientMapPinsSync.schedule(); }
+function flushClientMapPinsFirestorePush(){ clientMapPinsSync.flush(); }
+
+// Pola-mapy (obiekt z niezależnymi kluczami, nie lista rekordów) — ten sam wzorzec co
+// workspace_droga (jeden dokument per klucz najwyższego poziomu, {value: ...}), tylko jako
+// osobna, reużywalna fabryka. setObj scala tylko klucze faktycznie obecne w snapshotcie
+// (nie nadpisuje całości na undefined), żeby brakujący jeszcze dokument (np. tuż po
+// migracji, zanim wszystkie klucze zdążyły się przenieść) nie zgasił reszty w window.state.
+function makeFieldMapFirestoreSync(collectionName, getObj, setObj){
+  var col = collection(db, collectionName);
+  var lastPushed = {};
+  var pushTimer = null;
+  var pending = false;
+  var hasSyncedOnce = false;
+  function dirtyKeys(){
+    var keys = [];
+    Object.keys(getObj()||{}).forEach(function(k){
+      var json = JSON.stringify(getObj()[k]);
+      if(lastPushed[k] !== json) keys.push(k);
+    });
+    return keys;
+  }
+  function removedKeys(){
+    var current = Object.keys(getObj()||{});
+    return Object.keys(lastPushed).filter(function(k){ return current.indexOf(k)===-1; });
+  }
+  function commitInChunks(ops){
+    var chunks = [];
+    for(var i=0;i<ops.length;i+=400){ chunks.push(ops.slice(i,i+400)); }
+    var chain = Promise.resolve();
+    chunks.forEach(function(chunk){
+      chain = chain.then(function(){
+        var batch = writeBatch(db);
+        chunk.forEach(function(op){
+          var ref = doc(col, op.id);
+          if(op.type==="set") batch.set(ref, {value: op.data}); else batch.delete(ref);
+        });
+        return batch.commit();
+      });
+    });
+    return chain;
+  }
+  function maybeMigrateFromRemote(oldObj){
+    oldObj = oldObj||{};
+    var keys = Object.keys(oldObj);
+    if(!keys.length) return;
+    getDocs(col).then(function(snap){
+      if(!snap.empty) return;
+      console.log("Migracja "+collectionName+": przenoszę "+keys.length+" pól…");
+      return commitInChunks(keys.map(function(k){ return {type:"set", id:k, data:oldObj[k]}; }))
+        .then(function(){ console.log("Migracja "+collectionName+" zakończona ("+keys.length+" pól)."); });
+    }).catch(function(err){ console.error("Migracja "+collectionName+" nie powiodła się:", err); });
+  }
+  function schedule(){
+    pending = true;
+    if(pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(flush, 500);
+  }
+  function flush(){
+    if(!pending) return;
+    if(!hasSyncedOnce) return;
+    if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+    pending = false;
+    var dirty = dirtyKeys();
+    var removed = removedKeys();
+    if(!dirty.length && !removed.length) return;
+    var obj = getObj()||{};
+    var ops = dirty.map(function(k){ return {type:"set", id:k, data:obj[k]}; })
+      .concat(removed.map(function(k){ return {type:"delete", id:k}; }));
+    commitInChunks(ops).then(function(){
+      dirty.forEach(function(k){ lastPushed[k] = JSON.stringify(obj[k]); });
+      removed.forEach(function(k){ delete lastPushed[k]; });
+    }).catch(function(err){
+      console.error("Firestore batch push ("+collectionName+") nie powiódł się:", err);
+    });
+  }
+  function onSnapshotSync(snap){
+    var obj = {};
+    snap.forEach(function(d){
+      var data = d.data();
+      obj[d.id] = data.value;
+      lastPushed[d.id] = JSON.stringify(data.value);
+    });
+    setObj(obj);
+    hasSyncedOnce = true;
+  }
+  return { col: col, maybeMigrateFromRemote: maybeMigrateFromRemote, schedule: schedule, flush: flush, onSnapshotSync: onSnapshotSync };
+}
+
+var ceoSync = makeFieldMapFirestoreSync("workspace_ceo",
+  function(){ return window.state.ceo||{}; },
+  function(obj){ if(!window.state.ceo) window.state.ceo = {}; Object.keys(obj).forEach(function(k){ window.state.ceo[k] = obj[k]; }); });
+var ceoMigrationChecked = false;
+function maybeMigrateCeoFromRemote(old){ ceoSync.maybeMigrateFromRemote(old); }
+function scheduleCeoFirestorePush(){ ceoSync.schedule(); }
+function flushCeoFirestorePush(){ ceoSync.flush(); }
+
+var CONFIG_BUNDLE_KEYS = ["calendars","brands","crmMeta","crmCategories","ideaCategories","clientsGoals","financeCorrected","socialStats","igAccounts","fbAccounts","geoCache","driveMonthFolders"];
+var configSync = makeFieldMapFirestoreSync("workspace_config",
+  function(){
+    var obj = {};
+    CONFIG_BUNDLE_KEYS.forEach(function(k){ obj[k] = window.state[k]; });
+    return obj;
+  },
+  function(obj){ Object.keys(obj).forEach(function(k){ window.state[k] = obj[k]; }); });
+var configMigrationChecked = false;
+function maybeMigrateConfigFromRemote(oldState){
+  var old = {};
+  CONFIG_BUNDLE_KEYS.forEach(function(k){ if(oldState && oldState[k]!==undefined) old[k] = oldState[k]; });
+  configSync.maybeMigrateFromRemote(old);
+}
+function scheduleConfigFirestorePush(){ configSync.schedule(); }
+function flushConfigFirestorePush(){ configSync.flush(); }
+
 // 2026-08-25 — fbAuth (długożyjący token Facebooka) też żył w workspace/damian, więc było
 // podatne na dokładnie ten sam wyścig co reszta pól tam trzymanych: dowolny zapis z karty,
 // która akurat miała fbAuth=null w pamięci (np. świeżo otwarta karta, zanim tryStoredFbAuth
@@ -17815,6 +18045,20 @@ function scheduleFirestorePush(){
   scheduleClientOpsFirestorePush();
   scheduleClientsFirestorePush();
   scheduleFbAuthFirestorePush();
+  scheduleDebtsFirestorePush();
+  scheduleCreditCardTxFirestorePush();
+  scheduleContentCalendarFirestorePush();
+  scheduleHaslaFirestorePush();
+  scheduleAuditsFirestorePush();
+  scheduleNotificationsFirestorePush();
+  scheduleT4aClientsFirestorePush();
+  scheduleEventsFirestorePush();
+  scheduleBirthdaysFirestorePush();
+  scheduleImieninyFirestorePush();
+  scheduleAgentRequestsFirestorePush();
+  scheduleClientMapPinsFirestorePush();
+  scheduleCeoFirestorePush();
+  scheduleConfigFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -17891,7 +18135,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -17906,7 +18150,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -17950,6 +18194,20 @@ function startSync(){
         fbAuthMigrationChecked = true;
         maybeMigrateFbAuthFromRemote(remote.fbAuth);
       }
+      if(!debtsMigrationChecked){ debtsMigrationChecked = true; maybeMigrateDebtsFromRemote(remote.debts); }
+      if(!creditCardTxMigrationChecked){ creditCardTxMigrationChecked = true; maybeMigrateCreditCardTxFromRemote(remote.creditCard); }
+      if(!contentCalendarMigrationChecked){ contentCalendarMigrationChecked = true; maybeMigrateContentCalendarFromRemote(remote.contentCalendar); }
+      if(!haslaMigrationChecked){ haslaMigrationChecked = true; maybeMigrateHaslaFromRemote(remote.hasla); }
+      if(!auditsMigrationChecked){ auditsMigrationChecked = true; maybeMigrateAuditsFromRemote(remote.audits); }
+      if(!notificationsMigrationChecked){ notificationsMigrationChecked = true; maybeMigrateNotificationsFromRemote(remote.notifications); }
+      if(!t4aClientsMigrationChecked){ t4aClientsMigrationChecked = true; maybeMigrateT4aClientsFromRemote(remote.t4aClients); }
+      if(!eventsMigrationChecked){ eventsMigrationChecked = true; maybeMigrateEventsFromRemote(remote.events); }
+      if(!birthdaysMigrationChecked){ birthdaysMigrationChecked = true; maybeMigrateBirthdaysFromRemote(remote.birthdays); }
+      if(!imieninyMigrationChecked){ imieninyMigrationChecked = true; maybeMigrateImieninyFromRemote(remote.imieninyExtra); }
+      if(!agentRequestsMigrationChecked){ agentRequestsMigrationChecked = true; maybeMigrateAgentRequestsFromRemote(remote.agentRequests); }
+      if(!clientMapPinsMigrationChecked){ clientMapPinsMigrationChecked = true; maybeMigrateClientMapPinsFromRemote(remote.clientMapPins); }
+      if(!ceoMigrationChecked){ ceoMigrationChecked = true; maybeMigrateCeoFromRemote(remote.ceo); }
+      if(!configMigrationChecked){ configMigrationChecked = true; maybeMigrateConfigFromRemote(remote); }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -17966,6 +18224,21 @@ function startSync(){
       var keepClientOps = window.state.clientOps;
       var keepClients = window.state.clientsMonthly;
       var keepFbAuth = window.state.fbAuth;
+      var keepDebts = window.state.debts;
+      var keepCreditCard = window.state.creditCard;
+      var keepContentCalendar = window.state.contentCalendar;
+      var keepHasla = window.state.hasla;
+      var keepAudits = window.state.audits;
+      var keepNotifications = window.state.notifications;
+      var keepT4aClients = window.state.t4aClients;
+      var keepEvents = window.state.events;
+      var keepBirthdays = window.state.birthdays;
+      var keepImieniny = window.state.imieninyExtra;
+      var keepAgentRequests = window.state.agentRequests;
+      var keepClientMapPins = window.state.clientMapPins;
+      var keepCeo = window.state.ceo;
+      var keepConfig = {};
+      CONFIG_BUNDLE_KEYS.forEach(function(k){ keepConfig[k] = window.state[k]; });
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
@@ -17976,6 +18249,29 @@ function startSync(){
       window.state.posts = keepPosts||[];
       window.state.droga = keepDroga||def.droga;
       window.state.clientOps = keepClientOps||def.clientOps;
+      // 2026-09-10 — reszta pól z dokończonej migracji (patrz makeFieldMapFirestoreSync /
+      // makeIdListFirestoreSync wyżej): bezpieczny fallback to zawsze pusta struktura, NIGDY
+      // def.<pole> — to dokładnie ten sam błąd, który wyżej podmieniał Klientów na dane demo.
+      window.state.debts = keepDebts||[];
+      window.state.creditCard = keepCreditCard||{transactions:[]};
+      window.state.contentCalendar = keepContentCalendar||[];
+      window.state.hasla = keepHasla||[];
+      window.state.audits = keepAudits||[];
+      window.state.notifications = keepNotifications||[];
+      window.state.t4aClients = keepT4aClients||[];
+      window.state.events = keepEvents||[];
+      window.state.birthdays = keepBirthdays||[];
+      window.state.imieninyExtra = keepImieniny||[];
+      window.state.agentRequests = keepAgentRequests||[];
+      window.state.clientMapPins = keepClientMapPins||[];
+      window.state.ceo = keepCeo||{};
+      // Uwaga: NIE używamy tu def[k] jako fallbacku — defaultState() ma dla części tych pól
+      // (clientsGoals, igAccounts/fbAccounts, socialStats) prawdziwe, ręcznie wpisane wartości
+      // (cele miesięczne, ID kont, historię obserwujących), więc "brak klucza w keepConfig"
+      // podmieniłoby aktualne dane na stare zaszyte w kodzie — dokładnie błąd z Klientów wyżej.
+      ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
+      ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
+      window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
       // 2026-09-10 — GOTCHA znaleziony podczas audytu: fallback na def.clientsMonthly
       // (zahardkodowane dane demo Estilo/Art Of Move/Venus/Jump ze stycznia-kwietnia 2026,
       // patrz defaultState()) wstawiał fałszywe dane klientów do window.state za każdym
@@ -18160,6 +18456,23 @@ function startSync(){
     if(window.renderAll) window.renderAll();
   }, function(err){ console.error("Firestore onSnapshot (workspace_clients) error:", err); });
 
+  // 2026-09-10 — reszta dokończonej migracji, ten sam wzorzec (sync.onSnapshotSync + save +
+  // render) co Klienci/Obsługa Klientów wyżej.
+  [
+    ["debts", debtsSync], ["credit_card_tx", creditCardTxSync], ["content_calendar", contentCalendarSync],
+    ["hasla", haslaSync], ["audits", auditsSync], ["notifications", notificationsSync],
+    ["t4a_clients", t4aClientsSync], ["events", eventsSync], ["birthdays", birthdaysSync],
+    ["imieniny", imieninySync], ["agent_requests", agentRequestsSync], ["client_map_pins", clientMapPinsSync],
+    ["ceo", ceoSync], ["config", configSync]
+  ].forEach(function(pair){
+    var label = pair[0], sync = pair[1];
+    onSnapshot(sync.col, function(snap){
+      sync.onSnapshotSync(snap);
+      originalSave();
+      if(window.renderAll) window.renderAll();
+    }, function(err){ console.error("Firestore onSnapshot (workspace_"+label+") error:", err); });
+  });
+
   unsubscribeFbAuthSnapshot = onSnapshot(fbAuthDocRef, function(snap){
     var data = snap.exists() ? snap.data() : null;
     var remoteFbAuth = (data && data.accessToken) ? data : null;
@@ -18209,6 +18522,21 @@ function startSync(){
         var keepClientOps = window.state.clientOps;
         var keepClients = window.state.clientsMonthly;
         var keepFbAuth = window.state.fbAuth;
+        var keepDebts = window.state.debts;
+        var keepCreditCard = window.state.creditCard;
+        var keepContentCalendar = window.state.contentCalendar;
+        var keepHasla = window.state.hasla;
+        var keepAudits = window.state.audits;
+        var keepNotifications = window.state.notifications;
+        var keepT4aClients = window.state.t4aClients;
+        var keepEvents = window.state.events;
+        var keepBirthdays = window.state.birthdays;
+        var keepImieniny = window.state.imieninyExtra;
+        var keepAgentRequests = window.state.agentRequests;
+        var keepClientMapPins = window.state.clientMapPins;
+        var keepCeo = window.state.ceo;
+        var keepConfig = {};
+        CONFIG_BUNDLE_KEYS.forEach(function(k){ keepConfig[k] = window.state[k]; });
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
@@ -18221,9 +18549,26 @@ function startSync(){
         window.state.clientOps = keepClientOps||def.clientOps;
         // 2026-09-10 — brakowało tu w ogóle clientsMonthly (jedyne miejsce, gdzie ten
         // moduł nie był przywracany z pamięci) — patrz identyczna poprawka i pełne
-        // wyjaśnienie w onSnapshot(docRef,...) wyżej.
+        // wyjaśnienie w onSnapshot(docRef,...) wyżej. Ta sama ochrona dodana teraz dla
+        // reszty dokończonej migracji, żeby to miejsce nie zostało znowu jedynym wyjątkiem.
         window.state.clientsMonthly = keepClients||{};
         window.state.fbAuth = keepFbAuth||null;
+        window.state.debts = keepDebts||[];
+        window.state.creditCard = keepCreditCard||{transactions:[]};
+        window.state.contentCalendar = keepContentCalendar||[];
+        window.state.hasla = keepHasla||[];
+        window.state.audits = keepAudits||[];
+        window.state.notifications = keepNotifications||[];
+        window.state.t4aClients = keepT4aClients||[];
+        window.state.events = keepEvents||[];
+        window.state.birthdays = keepBirthdays||[];
+        window.state.imieninyExtra = keepImieniny||[];
+        window.state.agentRequests = keepAgentRequests||[];
+        window.state.clientMapPins = keepClientMapPins||[];
+        window.state.ceo = keepCeo||{};
+        ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
+        ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
+        window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
         originalSave();
         window.renderAll();
       }
