@@ -17976,7 +17976,16 @@ function startSync(){
       window.state.posts = keepPosts||[];
       window.state.droga = keepDroga||def.droga;
       window.state.clientOps = keepClientOps||def.clientOps;
-      window.state.clientsMonthly = keepClients||def.clientsMonthly;
+      // 2026-09-10 — GOTCHA znaleziony podczas audytu: fallback na def.clientsMonthly
+      // (zahardkodowane dane demo Estilo/Art Of Move/Venus/Jump ze stycznia-kwietnia 2026,
+      // patrz defaultState()) wstawiał fałszywe dane klientów do window.state za każdym
+      // razem, gdy remote nie zawierał klucza clientsMonthly — a mainStateForPush()
+      // CELOWO usuwa clientsMonthly z zapisu do workspace/damian (jest już migrowane do
+      // osobnej kolekcji workspace_clients), więc ten warunek był PRAWDZIWY przy KAŻDYM
+      // zapisie. Bezpieczny fallback to pusta struktura, tak jak przy tasks/financeEntries/
+      // posts/habits/crmContacts (patrz linijki wyżej) — prawdziwe dane i tak przychodzą z
+      // osobnego nasłuchu onSnapshot(clientsSync.col).
+      window.state.clientsMonthly = keepClients||{};
       window.state.fbAuth = keepFbAuth||null;
       originalSave();
       window.renderAll();
@@ -18198,6 +18207,7 @@ function startSync(){
         var keepPosts = window.state.posts;
         var keepDroga = window.state.droga;
         var keepClientOps = window.state.clientOps;
+        var keepClients = window.state.clientsMonthly;
         var keepFbAuth = window.state.fbAuth;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
@@ -18209,6 +18219,10 @@ function startSync(){
         window.state.posts = keepPosts||[];
         window.state.droga = keepDroga||def.droga;
         window.state.clientOps = keepClientOps||def.clientOps;
+        // 2026-09-10 — brakowało tu w ogóle clientsMonthly (jedyne miejsce, gdzie ten
+        // moduł nie był przywracany z pamięci) — patrz identyczna poprawka i pełne
+        // wyjaśnienie w onSnapshot(docRef,...) wyżej.
+        window.state.clientsMonthly = keepClients||{};
         window.state.fbAuth = keepFbAuth||null;
         originalSave();
         window.renderAll();
