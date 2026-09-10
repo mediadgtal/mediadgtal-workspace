@@ -15143,16 +15143,25 @@ var crmT4ALastPull = 0;
 function crmApplyT4APullRow(c, row){
   // row jest A:R (indeks 0 = nazwa w kolumnie A), statusy zaczynają się od K = indeks 10 —
   // patrz t4aBlockA_H/J_P/Q_R (te same offsety, co zapis).
+  //
+  // 2026-09-10 — GOTCHA znaleziony podczas audytu: to automatyczne pociąganie co 45s
+  // podmieniało checkboxy WPROST na to, co jest w arkuszu — w tym cofanie zaznaczonego
+  // (true) z powrotem na niezaznaczony (false), jeśli arkusz akurat pokazywał starszą/inną
+  // wartość. Ręczna funkcja uzgadniania (crmReconcileT4AFromSheet, patrz komentarz przy niej)
+  // celowo NIGDY nie cofa true->false, właśnie żeby uniknąć tego dokładnego scenariusza —
+  // to automatyczne pociąganie nie miało tej samej ochrony. t4aDirty już chroni przed
+  // wyścigiem "kliknąłem, jeszcze się nie wysłało", ale nie przed sytuacją, gdy arkusz
+  // Tomka sam się zmieni (błąd formuły, ręczna edycja) już po udanej synchronizacji.
+  // Teraz: tylko uzupełniamy false->true, nigdy true->false — tak samo jak reconcile.
   var changed = false;
   var t = crmGetT4A(c);
   var next = {sent:crmT4ABoolify(row[10]), offer:crmT4ABoolify(row[11]), decision:crmT4ABoolify(row[12]), listed:crmT4ABoolify(row[13]), client:crmT4ABoolify(row[14])};
+  ["sent","offer","decision","listed","client"].forEach(function(k){
+    if(next[k] && !t[k]){ t[k] = true; changed = true; }
+  });
   var nextSentDate = (row[15]||"").toString().trim();
   var nextSystem = (row[16]||"").toString().trim();
   var nextNotes = (row[17]||"").toString().trim();
-  if(next.sent!==t.sent || next.offer!==t.offer || next.decision!==t.decision || next.listed!==t.listed || next.client!==t.client){
-    t.sent=next.sent; t.offer=next.offer; t.decision=next.decision; t.listed=next.listed; t.client=next.client;
-    changed = true;
-  }
   if(nextSentDate && !t.sentDate){ t.sentDate = nextSentDate; changed = true; }
   if(nextSystem && nextSystem!==c.system){ c.system = nextSystem; changed = true; }
   if(nextNotes && !t.notes){ t.notes = nextNotes; changed = true; }
