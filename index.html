@@ -17147,6 +17147,7 @@ function mainStateForPush(){
   delete copy.clientMapPins;
   delete copy.ceo;
   CONFIG_BUNDLE_KEYS.forEach(function(k){ delete copy[k]; });
+  delete copy.habitReports;
   return copy;
 }
 
@@ -17966,6 +17967,16 @@ function maybeMigrateConfigFromRemote(oldState){
 function scheduleConfigFirestorePush(){ configSync.schedule(); }
 function flushConfigFirestorePush(){ configSync.flush(); }
 
+// 2026-09-10 — habitReports (raporty miesięczne nawyków, mapa rok-miesiąc -> lista wierszy)
+// przeoczone w pierwszym przebiegu migracji — dogrywka tym samym wzorcem co ceo/config.
+var habitReportsSync = makeFieldMapFirestoreSync("workspace_habit_reports",
+  function(){ return window.state.habitReports||{}; },
+  function(obj){ window.state.habitReports = obj; });
+var habitReportsMigrationChecked = false;
+function maybeMigrateHabitReportsFromRemote(old){ habitReportsSync.maybeMigrateFromRemote(old); }
+function scheduleHabitReportsFirestorePush(){ habitReportsSync.schedule(); }
+function flushHabitReportsFirestorePush(){ habitReportsSync.flush(); }
+
 // 2026-08-25 — fbAuth (długożyjący token Facebooka) też żył w workspace/damian, więc było
 // podatne na dokładnie ten sam wyścig co reszta pól tam trzymanych: dowolny zapis z karty,
 // która akurat miała fbAuth=null w pamięci (np. świeżo otwarta karta, zanim tryStoredFbAuth
@@ -18059,6 +18070,7 @@ function scheduleFirestorePush(){
   scheduleClientMapPinsFirestorePush();
   scheduleCeoFirestorePush();
   scheduleConfigFirestorePush();
+  scheduleHabitReportsFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -18135,7 +18147,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -18150,7 +18162,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -18208,6 +18220,7 @@ function startSync(){
       if(!clientMapPinsMigrationChecked){ clientMapPinsMigrationChecked = true; maybeMigrateClientMapPinsFromRemote(remote.clientMapPins); }
       if(!ceoMigrationChecked){ ceoMigrationChecked = true; maybeMigrateCeoFromRemote(remote.ceo); }
       if(!configMigrationChecked){ configMigrationChecked = true; maybeMigrateConfigFromRemote(remote); }
+      if(!habitReportsMigrationChecked){ habitReportsMigrationChecked = true; maybeMigrateHabitReportsFromRemote(remote.habitReports); }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -18239,6 +18252,7 @@ function startSync(){
       var keepCeo = window.state.ceo;
       var keepConfig = {};
       CONFIG_BUNDLE_KEYS.forEach(function(k){ keepConfig[k] = window.state[k]; });
+      var keepHabitReports = window.state.habitReports;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
@@ -18272,6 +18286,7 @@ function startSync(){
       ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
       ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
       window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
+      window.state.habitReports = keepHabitReports||{};
       // 2026-09-10 — GOTCHA znaleziony podczas audytu: fallback na def.clientsMonthly
       // (zahardkodowane dane demo Estilo/Art Of Move/Venus/Jump ze stycznia-kwietnia 2026,
       // patrz defaultState()) wstawiał fałszywe dane klientów do window.state za każdym
@@ -18463,7 +18478,7 @@ function startSync(){
     ["hasla", haslaSync], ["audits", auditsSync], ["notifications", notificationsSync],
     ["t4a_clients", t4aClientsSync], ["events", eventsSync], ["birthdays", birthdaysSync],
     ["imieniny", imieninySync], ["agent_requests", agentRequestsSync], ["client_map_pins", clientMapPinsSync],
-    ["ceo", ceoSync], ["config", configSync]
+    ["ceo", ceoSync], ["config", configSync], ["habit_reports", habitReportsSync]
   ].forEach(function(pair){
     var label = pair[0], sync = pair[1];
     onSnapshot(sync.col, function(snap){
@@ -18537,6 +18552,7 @@ function startSync(){
         var keepCeo = window.state.ceo;
         var keepConfig = {};
         CONFIG_BUNDLE_KEYS.forEach(function(k){ keepConfig[k] = window.state[k]; });
+        var keepHabitReports = window.state.habitReports;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
@@ -18569,6 +18585,7 @@ function startSync(){
         ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
         ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
         window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
+      window.state.habitReports = keepHabitReports||{};
         originalSave();
         window.renderAll();
       }
