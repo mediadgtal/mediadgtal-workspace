@@ -3817,6 +3817,17 @@ function autoPublishPastPosts(){
   state.posts.forEach(function(p){
     if(p.deletedAt || p.stage!=="zaplanowany") return;
     if(!p.date || p.date>=today) return;
+    // 2026-09-10 — GOTCHA znaleziony podczas audytu: posty "fbig" (publikowane realnie przez
+    // API Facebooka/Instagrama) miały tu stage podmieniane na "opublikowany" wyłącznie na
+    // podstawie minięcia daty, bez sprawdzenia czy publikacja faktycznie się powiodła. Dla
+    // tych postów stage="opublikowany" ustawia WYŁĄCZNIE serwer (runIgPublishTask/publishPost)
+    // po realnym potwierdzeniu z Meta Graph API, albo triggerPublishPost po stronie klienta po
+    // odebraniu odpowiedzi ok:true. Jeśli zaplanowana publikacja się nie powiodła (błąd API,
+    // zgubione zadanie w kolejce) i data minęła, to auto-oznaczanie po cichu ukrywało tę
+    // awarię jako sukces — dokładnie ten sam gatunek błędu, co poprzednie incydenty z Postami.
+    // Dla postów organicznych (tiktok/youtube/bez platformy — publikowanych ręcznie poza tą
+    // appką) nie ma żadnej automatycznej weryfikacji, więc auto-oznaczanie po dacie zostaje.
+    if(p.platform==="fbig") return;
     p.stage = "opublikowany";
     ceoAwardXpEvent(p.video ? "reelPublished" : "postPublished");
     syncContentCalendarFromPost(p);
