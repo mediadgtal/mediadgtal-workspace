@@ -17757,6 +17757,13 @@ var clientsSync = makeIdListFirestoreSync("workspace_clients",
       map[ym].push(r);
     });
     window.state.clientsMonthly = map;
+    // 2026-09-11 — GOTCHA znaleziony podczas audytu backupu (RAW w Sheets utknęło na
+    // sierpniu mimo że dane wrześniowe były już poprawnie w Firestore/aplikacji): rekordy
+    // dopisane wprost do Firestore (nie przez lokalną edycję w UI) trafiały do
+    // clientsMonthly przez ten onSnapshot, ale nigdy nie odświeżały kopii zapasowej w
+    // Sheets — backup odświeżał się tylko przy save() z lokalnej edycji albo przy
+    // odświeżeniu tokena Google. Teraz każda zmiana z Firestore też planuje backup.
+    if(typeof window.scheduleClientsBackupPush === "function") window.scheduleClientsBackupPush();
   }
 );
 var clientsMigrationChecked = false;
