@@ -2390,7 +2390,6 @@ function defaultState(){
     return {id:uid("hab"), name:name, log:log};
   });
   s.habitReports = {};
-  s.habitCalcMetrics = [];
   s.habitCalcValues = {};
   s.habitsBackupSheetId = null;
   s.habitsBackupSheetUrl = null;
@@ -8377,8 +8376,7 @@ function renderNawykiMonth(ym){
   state.habits.forEach(function(h){
     var st = habitMonthStats(h, ym);
     html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
-      escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span>'+
-      ' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="setHabitReps(\''+h.id+'\')" title="Ustaw powtórzeń dziennie (do raportu miesiąca)">⚙</span></td>';
+      escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span></td>';
     for(var d=1; d<=dim; d++){
       var key = ym+"-"+String(d).padStart(2,"0");
       var wd2 = dowShort(y,m,d);
@@ -8393,41 +8391,34 @@ function renderNawykiMonth(ym){
   });
   html += '</tbody></table></div></div>';
   html += renderHabitReportBox(ym);
-  html += renderHabitCalcBox(ym);
   return html;
 }
 
 function renderHabitReportBox(ym){
+  var vals = (state.habitCalcValues && state.habitCalcValues[ym]) || {};
   var html = '<div class="card" style="margin-top:16px"><h3>Raport miesiąca — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>';
-  html += '<table><thead><tr><th style="width:70px">Dni</th><th>Raport miesiąca</th></tr></thead><tbody>';
-  if(!state.habits.length){ html += '<tr><td colspan="2" style="color:var(--muted)">Brak śledzonych nawyków.</td></tr>'; }
+  html += '<table><thead><tr><th style="width:60px">Dni</th><th>Nawyk</th><th style="width:100px">Ile dziennie</th><th style="width:120px; text-align:right">Wynik miesiąca</th></tr></thead><tbody>';
+  if(!state.habits.length){ html += '<tr><td colspan="4" style="color:var(--muted)">Brak śledzonych nawyków.</td></tr>'; }
   state.habits.forEach(function(h){
     var days = habitMonthStats(h, ym).done;
-    var label = h.name;
-    if(h.repsPerDay){ label += ' ('+(days*h.repsPerDay)+' '+(h.repsUnit||"razy")+')'; }
-    html += '<tr><td style="text-align:center">'+days+'</td><td>'+escapeHtml(label)+'</td></tr>';
+    var v = vals[h.id];
+    var hasV = (v!==undefined && v!==null);
+    html += '<tr><td style="text-align:center">'+days+'</td><td>'+escapeHtml(h.name)+'</td>'+
+      '<td><input type="number" inputmode="decimal" value="'+(hasV?v:"")+'" onchange="updateHabitCalcValue(\''+ym+'\',\''+h.id+'\',this.value)" style="width:80px; text-align:right"></td>'+
+      '<td style="text-align:right; font-weight:600">'+(hasV?formatHabitCalcNum(days*(+v))+' razy':'<span style="color:var(--muted)">—</span>')+'</td></tr>';
   });
   html += '</tbody></table>';
-  html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Liczone automatycznie z odhaczonych dni w tym miesiącu. Kliknij ⚙ przy nawyku w tabeli powyżej, żeby ustawić powtórzeń dziennie.</div>';
+  html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Wpisz ile robisz dziennie — wynik miesiąca liczy się automatycznie: dni × dziennie.</div>';
   html += '</div>';
   return html;
 }
 
-/* 2026-09-14 — mały ręczny kalkulator ilości w Nawykach: Damian pamięta realne sumy
-   (np. ile pompek/brzuszków zrobił w danym miesiącu), ale apka tego nie wie i nie może
-   wyliczyć sama (dzienne ilości się różnią, checkbox nawyku mówi tylko "zrobione/nie").
-   Lista pozycji (nazwa/jednostka) jest wspólna dla wszystkich miesięcy, żeby dało się
-   zsumować rok w zakładce TOTAL — patrz renderHabitCalcTotal(). */
-function ensureHabitCalcMetrics(){
-  if(!state.habitCalcMetrics) state.habitCalcMetrics = [];
-  // Przy pierwszym użyciu (pusta lista) zasiej kalkulator wszystkimi obecnymi nawykami
-  // z tabeli powyżej — Damian nie musi ich ręcznie przepisywać jeden po drugim.
-  if(!state.habitCalcMetrics.length && state.habits && state.habits.length){
-    state.habitCalcMetrics = state.habits.map(function(h){ return {id:uid("hcm"), name:h.name, unit:"razy"}; });
-    save();
-  }
-  return state.habitCalcMetrics;
-}
+/* 2026-09-14 — w Raporcie miesiąca: pole "ile dziennie" per nawyk i miesiąc (np. ile
+   pompek dziennie robił Damian w danym miesiącu), pomnożone automatycznie przez liczbę
+   odhaczonych dni w tym miesiącu = wynik miesięczny. Zastępuje starą globalną wartość
+   h.repsPerDay (ustawianą raz przez ⚙, tę samą dla każdego miesiąca) — dzienna ilość
+   realnie zmienia się z miesiąca na miesiąc, więc musi być edytowalna per miesiąc. Suma
+   w zakładce TOTAL: patrz habitCalcYearTotal(), dodatkowa kolumna w renderNawykiTotal(). */
 function ensureHabitCalcValues(ym){
   if(!state.habitCalcValues) state.habitCalcValues = {};
   if(!state.habitCalcValues[ym]) state.habitCalcValues[ym] = {};
@@ -8436,85 +8427,26 @@ function ensureHabitCalcValues(ym){
 function formatHabitCalcNum(n){
   return String(Math.round((+n||0)*100)/100);
 }
-function renderHabitCalcBox(ym){
-  var metrics = ensureHabitCalcMetrics();
-  var vals = (state.habitCalcValues && state.habitCalcValues[ym]) || {};
-  var html = '<div class="card" style="margin-top:16px"><h3>Kalkulator ilości — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>';
-  html += '<div style="font-size:11px; color:var(--muted); margin-bottom:10px">Ręcznie wpisywane sumy za cały miesiąc (np. łączna liczba pompek). Wpisz tu — w zakładce TOTAL zsumuje się to automatycznie za cały rok.</div>';
-  if(!metrics.length){
-    html += '<div style="color:var(--muted); margin-bottom:10px">Brak pozycji.</div>';
-  } else {
-    html += '<table><thead><tr><th>Pozycja</th><th style="width:120px">Suma w miesiącu</th><th></th></tr></thead><tbody>';
-    metrics.forEach(function(m){
-      var v = vals[m.id];
-      html += '<tr><td>'+escapeHtml(m.name)+' <span style="color:var(--muted); font-size:11px">('+escapeHtml(m.unit||"razy")+')</span> <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabitCalcMetric(\''+m.id+'\')" title="Zmień nazwę/jednostkę">✎</span></td>'+
-        '<td><input type="number" inputmode="decimal" value="'+(v===undefined||v===null?"":v)+'" onchange="updateHabitCalcValue(\''+ym+'\',\''+m.id+'\',this.value)" style="width:110px; text-align:right"></td>'+
-        '<td><button class="linklike danger" onclick="deleteHabitCalcMetric(\''+m.id+'\')">Usuń</button></td></tr>';
-    });
-    html += '</tbody></table>';
-  }
-  html += '<button class="linklike" style="margin-top:10px" onclick="addHabitCalcMetric()">+ Dodaj pozycję</button>';
-  html += '</div>';
-  return html;
-}
-function addHabitCalcMetric(){
-  var name = prompt("Nazwa pozycji (np. Pompki, Brzuszki, Przebiegnięte km):");
-  if(!name || !name.trim()) return;
-  var unit = prompt('Jak nazwać jednostkę (np. "razy", "km")?', "razy");
-  ensureHabitCalcMetrics().push({id:uid("hcm"), name:name.trim(), unit:(unit||"razy").trim()});
-  save(); renderAll();
-}
-function renameHabitCalcMetric(id){
-  var m = ensureHabitCalcMetrics().filter(function(x){return x.id===id;})[0];
-  if(!m) return;
-  var name = prompt("Nowa nazwa:", m.name);
-  if(name && name.trim()) m.name = name.trim();
-  var unit = prompt('Jednostka:', m.unit||"razy");
-  if(unit!==null) m.unit = (unit.trim()||"razy");
-  save(); renderAll();
-}
-function deleteHabitCalcMetric(id){
-  if(!confirm("Usunąć tę pozycję kalkulatora ze wszystkich miesięcy? Wpisanych wcześniej sum nie da się cofnąć.")) return;
-  state.habitCalcMetrics = ensureHabitCalcMetrics().filter(function(x){return x.id!==id;});
-  Object.keys(state.habitCalcValues||{}).forEach(function(ym){
-    if(state.habitCalcValues[ym]) delete state.habitCalcValues[ym][id];
-  });
-  save(); renderAll();
-}
-function updateHabitCalcValue(ym, metricId, val){
+function updateHabitCalcValue(ym, habitId, val){
   var vals = ensureHabitCalcValues(ym);
   val = (val||"").trim().replace(",", ".");
-  if(val===""){ delete vals[metricId]; save(); return; }
+  if(val===""){ delete vals[habitId]; save(); renderAll(); return; }
   var num = Number(val);
   if(isNaN(num)){ alert("Podaj liczbę."); renderAll(); return; }
-  vals[metricId] = num;
-  save();
+  vals[habitId] = num;
+  save(); renderAll();
 }
-function renderHabitCalcTotal(yr){
-  var metrics = ensureHabitCalcMetrics();
-  var html = '<div class="card" style="margin-top:16px"><h3>Kalkulator ilości — podsumowanie '+yr+'</h3>';
-  if(!metrics.length){
-    html += '<div style="color:var(--muted)">Brak pozycji. Dodaj je w widoku wybranego miesiąca, w sekcji "Kalkulator ilości".</div></div>';
-    return html;
-  }
-  html += '<div style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid crosshair-grid"><thead><tr>'+
-    '<th style="position:sticky; left:0; background:var(--bg)">Pozycja</th>';
-  HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
-  html += '<th style="text-align:right">Suma (rok)</th></tr></thead><tbody>';
-  metrics.forEach(function(m){
-    var total = 0;
-    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
-      escapeHtml(m.name)+' <span style="color:var(--muted); font-size:11px">('+escapeHtml(m.unit||"razy")+')</span></td>';
-    for(var mo=1; mo<=12; mo++){
-      var ymKey = yr+"-"+String(mo).padStart(2,"0");
-      var v = (state.habitCalcValues && state.habitCalcValues[ymKey] && state.habitCalcValues[ymKey][m.id]) || 0;
-      total += (+v||0);
-      html += '<td style="text-align:center">'+(v?formatHabitCalcNum(v):'<span style="color:var(--muted)">—</span>')+'</td>';
+function habitCalcYearTotal(h, yr){
+  var total = 0, any = false;
+  for(var mo=1; mo<=12; mo++){
+    var ym = yr+"-"+String(mo).padStart(2,"0");
+    var v = state.habitCalcValues && state.habitCalcValues[ym] && state.habitCalcValues[ym][h.id];
+    if(v!==undefined && v!==null){
+      any = true;
+      total += habitMonthStats(h, ym).done * (+v);
     }
-    html += '<td style="text-align:right; font-weight:700; color:var(--accent)">'+formatHabitCalcNum(total)+' '+escapeHtml(m.unit||"razy")+'</td></tr>';
-  });
-  html += '</tbody></table></div></div>';
-  return html;
+  }
+  return any ? total : null;
 }
 
 function renderNawykiTotal(yr){
@@ -8522,9 +8454,10 @@ function renderNawykiTotal(yr){
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>'+
     '<th style="text-align:right">Suma (dni)</th><th style="text-align:right">% rok</th>';
   HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
-  html += '<th></th></tr></thead><tbody>';
+  html += '<th style="text-align:right">Suma ilości (rok)</th><th></th></tr></thead><tbody>';
   state.habits.forEach(function(h){
     var ys = habitYearStats(h, yr);
+    var calcTotal = habitCalcYearTotal(h, yr);
     html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
       escapeHtml(h.name)+' <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabit(\''+h.id+'\')" title="Zmień nazwę">✎</span></td>'+
       '<td style="text-align:right; font-weight:600">'+ys.done+'</td>'+
@@ -8533,10 +8466,10 @@ function renderNawykiTotal(yr){
       var st = habitMonthStats(h, yr+"-"+String(m).padStart(2,"0"));
       html += '<td style="text-align:center">'+st.pct+'%</td>';
     }
-    html += '<td><button class="linklike danger" onclick="deleteHabit(\''+h.id+'\')">Usuń</button></td></tr>';
+    html += '<td style="text-align:right; font-weight:700; color:var(--accent)">'+(calcTotal!==null?formatHabitCalcNum(calcTotal)+' razy':'<span style="color:var(--muted)">—</span>')+'</td>'+
+      '<td><button class="linklike danger" onclick="deleteHabit(\''+h.id+'\')">Usuń</button></td></tr>';
   });
   html += '</tbody></table></div></div>';
-  html += renderHabitCalcTotal(yr);
   return html;
 }
 
@@ -8555,20 +8488,6 @@ function renameHabit(id){
   if(!name || name===h.name) return;
   pushNawykiUndo({type:"rename", habitId:id, prevName:h.name});
   h.name = name;
-  save(); renderAllKeepScroll("nawykiScrollBox");
-}
-function setHabitReps(id){
-  var h = state.habits.filter(function(x){return x.id===id;})[0];
-  if(!h) return;
-  var repsStr = prompt('Ile powtórzeń dziennie robisz przy tym nawyku (dla raportu miesiąca, np. "20")? Zostaw puste, żeby wyłączyć.', h.repsPerDay||"");
-  if(repsStr===null) return;
-  repsStr = repsStr.trim();
-  if(!repsStr){ h.repsPerDay = null; h.repsUnit = null; save(); renderAllKeepScroll("nawykiScrollBox"); return; }
-  var reps = parseInt(repsStr, 10);
-  if(!reps || reps<=0){ alert("Podaj liczbę większą od zera."); return; }
-  var unit = prompt('Jak nazwać sumę w raporcie (np. "brzuszków", "pompek", "łącznie")?', h.repsUnit||"razy");
-  h.repsPerDay = reps;
-  h.repsUnit = (unit||"razy").trim();
   save(); renderAllKeepScroll("nawykiScrollBox");
 }
 function addHabit(){
@@ -18024,7 +17943,7 @@ function maybeMigrateCeoFromRemote(old){ ceoSync.maybeMigrateFromRemote(old); }
 function scheduleCeoFirestorePush(){ ceoSync.schedule(); }
 function flushCeoFirestorePush(){ ceoSync.flush(); }
 
-var CONFIG_BUNDLE_KEYS = ["calendars","brands","crmMeta","crmCategories","ideaCategories","clientsGoals","financeCorrected","socialStats","igAccounts","fbAccounts","geoCache","driveMonthFolders","habitCalcMetrics"];
+var CONFIG_BUNDLE_KEYS = ["calendars","brands","crmMeta","crmCategories","ideaCategories","clientsGoals","financeCorrected","socialStats","igAccounts","fbAccounts","geoCache","driveMonthFolders"];
 var configSync = makeFieldMapFirestoreSync("workspace_config",
   function(){
     var obj = {};
@@ -18051,12 +17970,10 @@ function maybeMigrateHabitReportsFromRemote(old){ habitReportsSync.maybeMigrateF
 function scheduleHabitReportsFirestorePush(){ habitReportsSync.schedule(); }
 function flushHabitReportsFirestorePush(){ habitReportsSync.flush(); }
 
-// 2026-09-14 — habitCalcValues (ręczny kalkulator ilości w Nawykach, np. suma pompek/
-// brzuszków w danym miesiącu — dane, których apka nie może wyliczyć sama, bo Damian nie
-// zaznacza dziennie dokładnej liczby powtórzeń). Ten sam wzorzec co habitReports: mapa
-// rok-miesiąc -> {metricId: liczba}, jeden dokument Firestore per miesiąc. Lista metryk
-// (nazwa/jednostka) leci osobno w workspace_config (habitCalcMetrics), bo zmienia się
-// rzadko, tak jak reszta CONFIG_BUNDLE_KEYS.
+// 2026-09-14 — habitCalcValues ("ile dziennie" w Raporcie miesiąca, per nawyk i miesiąc,
+// pomnożone przez dni na wyjściu — patrz renderHabitReportBox/habitCalcYearTotal). Ten sam
+// wzorzec co habitReports: mapa rok-miesiąc -> {habitId: liczba}, jeden dokument Firestore
+// per miesiąc, żeby edycja jednego miesiąca nie ścigała się o nadpisanie całego pola.
 var habitCalcValuesSync = makeFieldMapFirestoreSync("workspace_habit_calc_values",
   function(){ return window.state.habitCalcValues||{}; },
   function(obj){ window.state.habitCalcValues = obj; });
@@ -18374,7 +18291,7 @@ function startSync(){
       // (clientsGoals, igAccounts/fbAccounts, socialStats) prawdziwe, ręcznie wpisane wartości
       // (cele miesięczne, ID kont, historię obserwujących), więc "brak klucza w keepConfig"
       // podmieniłoby aktualne dane na stare zaszyte w kodzie — dokładnie błąd z Klientów wyżej.
-      ["calendars","brands","crmCategories","igAccounts","fbAccounts","habitCalcMetrics"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
+      ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
       ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
       window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
       window.state.habitReports = keepHabitReports||{};
@@ -18676,7 +18593,7 @@ function startSync(){
         window.state.agentRequests = keepAgentRequests||[];
         window.state.clientMapPins = keepClientMapPins||[];
         window.state.ceo = keepCeo||{};
-        ["calendars","brands","crmCategories","igAccounts","fbAccounts","habitCalcMetrics"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
+        ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
         ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
         window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
       window.state.habitReports = keepHabitReports||{};
