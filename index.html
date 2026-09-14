@@ -8303,15 +8303,6 @@ function undoNawyki(){
     state.habits.splice(a.index, 0, a.habit);
   } else if(a.type==="add"){
     state.habits = state.habits.filter(function(h){return h.id!==a.habitId;});
-  } else if(a.type==="reportrow-add"){
-    var rr1 = state.habitReports[a.ym];
-    if(rr1) rr1.splice(a.index,1);
-  } else if(a.type==="reportrow-edit"){
-    var rr2 = state.habitReports[a.ym];
-    if(rr2 && rr2[a.index]) rr2[a.index][a.field] = a.prevValue;
-  } else if(a.type==="reportrow-delete"){
-    var rr3 = state.habitReports[a.ym];
-    if(rr3) rr3.splice(a.index, 0, a.row);
   }
   save(); renderAllKeepScroll("nawykiScrollBox");
 }
@@ -8406,16 +8397,6 @@ function renderNawykiMonth(ym){
   return html;
 }
 
-function normalizeHabitReport(ym){
-  if(!state.habitReports) state.habitReports = {};
-  var r = state.habitReports[ym];
-  if(!r){ r = []; state.habitReports[ym] = r; }
-  else if(typeof r === "string"){
-    r = r.trim() ? [{value:"", label:r}] : [];
-    state.habitReports[ym] = r;
-  }
-  return r;
-}
 function renderHabitReportBox(ym){
   var html = '<div class="card" style="margin-top:16px"><h3>Raport miesiąca — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>';
   html += '<table><thead><tr><th style="width:70px">Dni</th><th>Raport miesiąca</th></tr></thead><tbody>';
@@ -8428,44 +8409,8 @@ function renderHabitReportBox(ym){
   });
   html += '</tbody></table>';
   html += '<div style="font-size:11px; color:var(--muted); margin-top:8px">Liczone automatycznie z odhaczonych dni w tym miesiącu. Kliknij ⚙ przy nawyku w tabeli powyżej, żeby ustawić powtórzeń dziennie.</div>';
-
-  var rows = normalizeHabitReport(ym);
-  html += '<h4 style="margin:16px 0 8px">Dodatkowe wpisy</h4>';
-  html += '<table><thead><tr><th style="width:70px">Dni</th><th>Raport miesiąca</th><th></th></tr></thead><tbody>';
-  if(!rows.length){ html += '<tr><td colspan="3" style="color:var(--muted)">Brak wpisów.</td></tr>'; }
-  rows.forEach(function(r, idx){
-    html += '<tr>'+
-      '<td><input type="text" value="'+escapeHtml(r.value||"")+'" onchange="updateHabitReportRow(\''+ym+'\','+idx+',\'value\',this.value)" style="width:60px; text-align:center"></td>'+
-      '<td><input type="text" value="'+escapeHtml(r.label||"")+'" onchange="updateHabitReportRow(\''+ym+'\','+idx+',\'label\',this.value)"></td>'+
-      '<td><button class="linklike danger" onclick="deleteHabitReportRow(\''+ym+'\','+idx+')">Usuń</button></td></tr>';
-  });
-  html += '</tbody></table>';
-  html += '<button class="linklike" style="margin-top:10px" onclick="addHabitReportRow(\''+ym+'\')">+ Dodaj wiersz</button>';
   html += '</div>';
   return html;
-}
-function addHabitReportRow(ym){
-  var rows = normalizeHabitReport(ym);
-  rows.push({value:"", label:""});
-  pushNawykiUndo({type:"reportrow-add", ym:ym, index:rows.length-1});
-  save(); renderAll();
-}
-function updateHabitReportRow(ym, idx, field, val){
-  var rows = normalizeHabitReport(ym);
-  if(!rows[idx]) return;
-  var prev = rows[idx][field];
-  if(prev===val) return;
-  pushNawykiUndo({type:"reportrow-edit", ym:ym, index:idx, field:field, prevValue:prev});
-  rows[idx][field] = val;
-  save();
-}
-function deleteHabitReportRow(ym, idx){
-  var rows = normalizeHabitReport(ym);
-  if(!rows[idx]) return;
-  var removed = rows[idx];
-  pushNawykiUndo({type:"reportrow-delete", ym:ym, index:idx, row:removed});
-  rows.splice(idx,1);
-  save(); renderAll();
 }
 
 /* 2026-09-14 — mały ręczny kalkulator ilości w Nawykach: Damian pamięta realne sumy
@@ -8475,6 +8420,12 @@ function deleteHabitReportRow(ym, idx){
    zsumować rok w zakładce TOTAL — patrz renderHabitCalcTotal(). */
 function ensureHabitCalcMetrics(){
   if(!state.habitCalcMetrics) state.habitCalcMetrics = [];
+  // Przy pierwszym użyciu (pusta lista) zasiej kalkulator wszystkimi obecnymi nawykami
+  // z tabeli powyżej — Damian nie musi ich ręcznie przepisywać jeden po drugim.
+  if(!state.habitCalcMetrics.length && state.habits && state.habits.length){
+    state.habitCalcMetrics = state.habits.map(function(h){ return {id:uid("hcm"), name:h.name, unit:"razy"}; });
+    save();
+  }
   return state.habitCalcMetrics;
 }
 function ensureHabitCalcValues(ym){
