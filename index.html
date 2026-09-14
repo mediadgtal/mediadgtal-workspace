@@ -2390,6 +2390,8 @@ function defaultState(){
     return {id:uid("hab"), name:name, log:log};
   });
   s.habitReports = {};
+  s.habitCalcMetrics = [];
+  s.habitCalcValues = {};
   s.habitsBackupSheetId = null;
   s.habitsBackupSheetUrl = null;
   s.habitsBackupYear = null;
@@ -8400,6 +8402,7 @@ function renderNawykiMonth(ym){
   });
   html += '</tbody></table></div></div>';
   html += renderHabitReportBox(ym);
+  html += renderHabitCalcBox(ym);
   return html;
 }
 
@@ -8465,6 +8468,104 @@ function deleteHabitReportRow(ym, idx){
   save(); renderAll();
 }
 
+/* 2026-09-14 — mały ręczny kalkulator ilości w Nawykach: Damian pamięta realne sumy
+   (np. ile pompek/brzuszków zrobił w danym miesiącu), ale apka tego nie wie i nie może
+   wyliczyć sama (dzienne ilości się różnią, checkbox nawyku mówi tylko "zrobione/nie").
+   Lista pozycji (nazwa/jednostka) jest wspólna dla wszystkich miesięcy, żeby dało się
+   zsumować rok w zakładce TOTAL — patrz renderHabitCalcTotal(). */
+function ensureHabitCalcMetrics(){
+  if(!state.habitCalcMetrics) state.habitCalcMetrics = [];
+  return state.habitCalcMetrics;
+}
+function ensureHabitCalcValues(ym){
+  if(!state.habitCalcValues) state.habitCalcValues = {};
+  if(!state.habitCalcValues[ym]) state.habitCalcValues[ym] = {};
+  return state.habitCalcValues[ym];
+}
+function formatHabitCalcNum(n){
+  return String(Math.round((+n||0)*100)/100);
+}
+function renderHabitCalcBox(ym){
+  var metrics = ensureHabitCalcMetrics();
+  var vals = (state.habitCalcValues && state.habitCalcValues[ym]) || {};
+  var html = '<div class="card" style="margin-top:16px"><h3>Kalkulator ilości — '+monthName(+ym.split("-")[1]-1)+' '+ym.split("-")[0]+'</h3>';
+  html += '<div style="font-size:11px; color:var(--muted); margin-bottom:10px">Ręcznie wpisywane sumy za cały miesiąc (np. łączna liczba pompek). Wpisz tu — w zakładce TOTAL zsumuje się to automatycznie za cały rok.</div>';
+  if(!metrics.length){
+    html += '<div style="color:var(--muted); margin-bottom:10px">Brak pozycji.</div>';
+  } else {
+    html += '<table><thead><tr><th>Pozycja</th><th style="width:120px">Suma w miesiącu</th><th></th></tr></thead><tbody>';
+    metrics.forEach(function(m){
+      var v = vals[m.id];
+      html += '<tr><td>'+escapeHtml(m.name)+' <span style="color:var(--muted); font-size:11px">('+escapeHtml(m.unit||"razy")+')</span> <span class="linklike" style="font-size:10.5px; cursor:pointer" onclick="renameHabitCalcMetric(\''+m.id+'\')" title="Zmień nazwę/jednostkę">✎</span></td>'+
+        '<td><input type="number" inputmode="decimal" value="'+(v===undefined||v===null?"":v)+'" onchange="updateHabitCalcValue(\''+ym+'\',\''+m.id+'\',this.value)" style="width:110px; text-align:right"></td>'+
+        '<td><button class="linklike danger" onclick="deleteHabitCalcMetric(\''+m.id+'\')">Usuń</button></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '<button class="linklike" style="margin-top:10px" onclick="addHabitCalcMetric()">+ Dodaj pozycję</button>';
+  html += '</div>';
+  return html;
+}
+function addHabitCalcMetric(){
+  var name = prompt("Nazwa pozycji (np. Pompki, Brzuszki, Przebiegnięte km):");
+  if(!name || !name.trim()) return;
+  var unit = prompt('Jak nazwać jednostkę (np. "razy", "km")?', "razy");
+  ensureHabitCalcMetrics().push({id:uid("hcm"), name:name.trim(), unit:(unit||"razy").trim()});
+  save(); renderAll();
+}
+function renameHabitCalcMetric(id){
+  var m = ensureHabitCalcMetrics().filter(function(x){return x.id===id;})[0];
+  if(!m) return;
+  var name = prompt("Nowa nazwa:", m.name);
+  if(name && name.trim()) m.name = name.trim();
+  var unit = prompt('Jednostka:', m.unit||"razy");
+  if(unit!==null) m.unit = (unit.trim()||"razy");
+  save(); renderAll();
+}
+function deleteHabitCalcMetric(id){
+  if(!confirm("Usunąć tę pozycję kalkulatora ze wszystkich miesięcy? Wpisanych wcześniej sum nie da się cofnąć.")) return;
+  state.habitCalcMetrics = ensureHabitCalcMetrics().filter(function(x){return x.id!==id;});
+  Object.keys(state.habitCalcValues||{}).forEach(function(ym){
+    if(state.habitCalcValues[ym]) delete state.habitCalcValues[ym][id];
+  });
+  save(); renderAll();
+}
+function updateHabitCalcValue(ym, metricId, val){
+  var vals = ensureHabitCalcValues(ym);
+  val = (val||"").trim().replace(",", ".");
+  if(val===""){ delete vals[metricId]; save(); return; }
+  var num = Number(val);
+  if(isNaN(num)){ alert("Podaj liczbę."); renderAll(); return; }
+  vals[metricId] = num;
+  save();
+}
+function renderHabitCalcTotal(yr){
+  var metrics = ensureHabitCalcMetrics();
+  var html = '<div class="card" style="margin-top:16px"><h3>Kalkulator ilości — podsumowanie '+yr+'</h3>';
+  if(!metrics.length){
+    html += '<div style="color:var(--muted)">Brak pozycji. Dodaj je w widoku wybranego miesiąca, w sekcji "Kalkulator ilości".</div></div>';
+    return html;
+  }
+  html += '<div style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table class="nawyki-grid crosshair-grid"><thead><tr>'+
+    '<th style="position:sticky; left:0; background:var(--bg)">Pozycja</th>';
+  HABIT_MONTH_ABBR.forEach(function(mn){ html += '<th style="text-align:center">'+mn+'</th>'; });
+  html += '<th style="text-align:right">Suma (rok)</th></tr></thead><tbody>';
+  metrics.forEach(function(m){
+    var total = 0;
+    html += '<tr><td style="position:sticky; left:0; background:var(--bg); font-weight:600; white-space:nowrap">'+
+      escapeHtml(m.name)+' <span style="color:var(--muted); font-size:11px">('+escapeHtml(m.unit||"razy")+')</span></td>';
+    for(var mo=1; mo<=12; mo++){
+      var ymKey = yr+"-"+String(mo).padStart(2,"0");
+      var v = (state.habitCalcValues && state.habitCalcValues[ymKey] && state.habitCalcValues[ymKey][m.id]) || 0;
+      total += (+v||0);
+      html += '<td style="text-align:center">'+(v?formatHabitCalcNum(v):'<span style="color:var(--muted)">—</span>')+'</td>';
+    }
+    html += '<td style="text-align:right; font-weight:700; color:var(--accent)">'+formatHabitCalcNum(total)+' '+escapeHtml(m.unit||"razy")+'</td></tr>';
+  });
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
 function renderNawykiTotal(yr){
   var html = '<div class="card"><div id="nawykiScrollBox" style="overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y"><table class="nawyki-grid crosshair-grid"><thead><tr>'+
     '<th style="position:sticky; left:0; background:var(--bg)">Nawyk</th>'+
@@ -8484,6 +8585,7 @@ function renderNawykiTotal(yr){
     html += '<td><button class="linklike danger" onclick="deleteHabit(\''+h.id+'\')">Usuń</button></td></tr>';
   });
   html += '</tbody></table></div></div>';
+  html += renderHabitCalcTotal(yr);
   return html;
 }
 
@@ -17168,6 +17270,7 @@ function mainStateForPush(){
   delete copy.ceo;
   CONFIG_BUNDLE_KEYS.forEach(function(k){ delete copy[k]; });
   delete copy.habitReports;
+  delete copy.habitCalcValues;
   return copy;
 }
 
@@ -17970,7 +18073,7 @@ function maybeMigrateCeoFromRemote(old){ ceoSync.maybeMigrateFromRemote(old); }
 function scheduleCeoFirestorePush(){ ceoSync.schedule(); }
 function flushCeoFirestorePush(){ ceoSync.flush(); }
 
-var CONFIG_BUNDLE_KEYS = ["calendars","brands","crmMeta","crmCategories","ideaCategories","clientsGoals","financeCorrected","socialStats","igAccounts","fbAccounts","geoCache","driveMonthFolders"];
+var CONFIG_BUNDLE_KEYS = ["calendars","brands","crmMeta","crmCategories","ideaCategories","clientsGoals","financeCorrected","socialStats","igAccounts","fbAccounts","geoCache","driveMonthFolders","habitCalcMetrics"];
 var configSync = makeFieldMapFirestoreSync("workspace_config",
   function(){
     var obj = {};
@@ -17996,6 +18099,20 @@ var habitReportsMigrationChecked = false;
 function maybeMigrateHabitReportsFromRemote(old){ habitReportsSync.maybeMigrateFromRemote(old); }
 function scheduleHabitReportsFirestorePush(){ habitReportsSync.schedule(); }
 function flushHabitReportsFirestorePush(){ habitReportsSync.flush(); }
+
+// 2026-09-14 — habitCalcValues (ręczny kalkulator ilości w Nawykach, np. suma pompek/
+// brzuszków w danym miesiącu — dane, których apka nie może wyliczyć sama, bo Damian nie
+// zaznacza dziennie dokładnej liczby powtórzeń). Ten sam wzorzec co habitReports: mapa
+// rok-miesiąc -> {metricId: liczba}, jeden dokument Firestore per miesiąc. Lista metryk
+// (nazwa/jednostka) leci osobno w workspace_config (habitCalcMetrics), bo zmienia się
+// rzadko, tak jak reszta CONFIG_BUNDLE_KEYS.
+var habitCalcValuesSync = makeFieldMapFirestoreSync("workspace_habit_calc_values",
+  function(){ return window.state.habitCalcValues||{}; },
+  function(obj){ window.state.habitCalcValues = obj; });
+var habitCalcValuesMigrationChecked = false;
+function maybeMigrateHabitCalcValuesFromRemote(old){ habitCalcValuesSync.maybeMigrateFromRemote(old); }
+function scheduleHabitCalcValuesFirestorePush(){ habitCalcValuesSync.schedule(); }
+function flushHabitCalcValuesFirestorePush(){ habitCalcValuesSync.flush(); }
 
 // 2026-08-25 — fbAuth (długożyjący token Facebooka) też żył w workspace/damian, więc było
 // podatne na dokładnie ten sam wyścig co reszta pól tam trzymanych: dowolny zapis z karty,
@@ -18091,6 +18208,7 @@ function scheduleFirestorePush(){
   scheduleCeoFirestorePush();
   scheduleConfigFirestorePush();
   scheduleHabitReportsFirestorePush();
+  scheduleHabitCalcValuesFirestorePush();
 }
 function flushPush(){
   if(!pendingPush) return Promise.resolve();
@@ -18167,7 +18285,7 @@ var __hiddenAt = null;
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
-    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush();
+    flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush(); flushHabitCalcValuesFirestorePush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -18182,7 +18300,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush(); flushHabitCalcValuesFirestorePush(); });
 
 function startSync(){
   var originalSave = window.save;
@@ -18241,6 +18359,7 @@ function startSync(){
       if(!ceoMigrationChecked){ ceoMigrationChecked = true; maybeMigrateCeoFromRemote(remote.ceo); }
       if(!configMigrationChecked){ configMigrationChecked = true; maybeMigrateConfigFromRemote(remote); }
       if(!habitReportsMigrationChecked){ habitReportsMigrationChecked = true; maybeMigrateHabitReportsFromRemote(remote.habitReports); }
+      if(!habitCalcValuesMigrationChecked){ habitCalcValuesMigrationChecked = true; maybeMigrateHabitCalcValuesFromRemote(remote.habitCalcValues); }
       if((remote._updatedAt||0) < (window.state._updatedAt||0)){
         // Serwer ma starszą wersję niż to, co jest lokalnie (np. odświeżenie strony
         // tuż po zapisie, zanim push zdążył dojść) — nie nadpisuj świeższych lokalnych
@@ -18273,6 +18392,7 @@ function startSync(){
       var keepConfig = {};
       CONFIG_BUNDLE_KEYS.forEach(function(k){ keepConfig[k] = window.state[k]; });
       var keepHabitReports = window.state.habitReports;
+      var keepHabitCalcValues = window.state.habitCalcValues;
       var def = window.defaultState();
       Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
       window.state = window.migrateState(remote);
@@ -18303,10 +18423,11 @@ function startSync(){
       // (clientsGoals, igAccounts/fbAccounts, socialStats) prawdziwe, ręcznie wpisane wartości
       // (cele miesięczne, ID kont, historię obserwujących), więc "brak klucza w keepConfig"
       // podmieniłoby aktualne dane na stare zaszyte w kodzie — dokładnie błąd z Klientów wyżej.
-      ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
+      ["calendars","brands","crmCategories","igAccounts","fbAccounts","habitCalcMetrics"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
       ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
       window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
       window.state.habitReports = keepHabitReports||{};
+      window.state.habitCalcValues = keepHabitCalcValues||{};
       // 2026-09-10 — GOTCHA znaleziony podczas audytu: fallback na def.clientsMonthly
       // (zahardkodowane dane demo Estilo/Art Of Move/Venus/Jump ze stycznia-kwietnia 2026,
       // patrz defaultState()) wstawiał fałszywe dane klientów do window.state za każdym
@@ -18498,7 +18619,8 @@ function startSync(){
     ["hasla", haslaSync], ["audits", auditsSync], ["notifications", notificationsSync],
     ["t4a_clients", t4aClientsSync], ["events", eventsSync], ["birthdays", birthdaysSync],
     ["imieniny", imieninySync], ["agent_requests", agentRequestsSync], ["client_map_pins", clientMapPinsSync],
-    ["ceo", ceoSync], ["config", configSync], ["habit_reports", habitReportsSync]
+    ["ceo", ceoSync], ["config", configSync], ["habit_reports", habitReportsSync],
+    ["habit_calc_values", habitCalcValuesSync]
   ].forEach(function(pair){
     var label = pair[0], sync = pair[1];
     onSnapshot(sync.col, function(snap){
@@ -18573,6 +18695,7 @@ function startSync(){
         var keepConfig = {};
         CONFIG_BUNDLE_KEYS.forEach(function(k){ keepConfig[k] = window.state[k]; });
         var keepHabitReports = window.state.habitReports;
+        var keepHabitCalcValues = window.state.habitCalcValues;
         var def = window.defaultState();
         Object.keys(def).forEach(function(k){ if(!(k in remote)) remote[k] = def[k]; });
         window.state = window.migrateState(remote);
@@ -18602,10 +18725,11 @@ function startSync(){
         window.state.agentRequests = keepAgentRequests||[];
         window.state.clientMapPins = keepClientMapPins||[];
         window.state.ceo = keepCeo||{};
-        ["calendars","brands","crmCategories","igAccounts","fbAccounts"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
+        ["calendars","brands","crmCategories","igAccounts","fbAccounts","habitCalcMetrics"].forEach(function(k){ window.state[k] = keepConfig[k]||[]; });
         ["crmMeta","ideaCategories","clientsGoals","socialStats","geoCache","driveMonthFolders"].forEach(function(k){ window.state[k] = keepConfig[k]||{}; });
         window.state.financeCorrected = (keepConfig.financeCorrected!==undefined) ? keepConfig.financeCorrected : true;
       window.state.habitReports = keepHabitReports||{};
+      window.state.habitCalcValues = keepHabitCalcValues||{};
         originalSave();
         window.renderAll();
       }
