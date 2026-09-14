@@ -18154,6 +18154,15 @@ document.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "hidden"){
     __hiddenAt = Date.now();
     flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush(); flushHabitCalcValuesFirestorePush();
+    // 2026-09-14 — kopie zapasowe w Google Sheets (odrębne od powyższych zapisów do Firestore)
+    // były odpalane WYŁĄCZNIE przez debounce 1.5s w scheduleXBackupPush() i nigdy nie miały
+    // odpowiednika tutaj — jeśli karta znikała (zmiana karty/zablokowanie telefonu) w tym oknie
+    // 1.5s po zapisie, backup do arkusza po prostu nigdy nie leciał i nic tego nie odnawiało,
+    // dopóki jakiś PÓŹNIEJSZY, niepowiązany zapis w module z aktywnym Google nie przeleciał
+    // przez ten sam debounce. Właśnie tak ugrzązł arkusz Klienci — realne dane były bezpieczne
+    // w Firestore cały czas, ale kopia w Sheets zamroziła się na sierpniu. Naprawa: doczekać te
+    // same zaległe zapisy tutaj, tak jak już się robi dla Firestore.
+    flushHabitsBackupPush(); flushClientsBackupPush(); flushCrmBackupPush(); flushFinanceBackupPush(); flushClientOpsBackupPush(); flushTasksBackupPush(); flushDrogaBackupPush(); flushPostyBackupPush();
   } else if(document.visibilityState === "visible" && __hiddenAt){
     var hiddenMs = Date.now() - __hiddenAt;
     __hiddenAt = null;
@@ -18168,7 +18177,7 @@ document.addEventListener("visibilitychange", function(){
     }
   }
 });
-window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush(); flushHabitCalcValuesFirestorePush(); });
+window.addEventListener("pagehide", function(){ flushPush(); flushCrmFirestorePush(); flushTasksFirestorePush(); flushFinanceFirestorePush(); flushHabitsFirestorePush(); flushPostsFirestorePush(); flushDrogaFirestorePush(); flushClientOpsFirestorePush(); flushClientsFirestorePush(); flushFbAuthFirestorePush(); flushDebtsFirestorePush(); flushCreditCardTxFirestorePush(); flushContentCalendarFirestorePush(); flushHaslaFirestorePush(); flushAuditsFirestorePush(); flushNotificationsFirestorePush(); flushT4aClientsFirestorePush(); flushEventsFirestorePush(); flushBirthdaysFirestorePush(); flushImieninyFirestorePush(); flushAgentRequestsFirestorePush(); flushClientMapPinsFirestorePush(); flushCeoFirestorePush(); flushConfigFirestorePush(); flushHabitReportsFirestorePush(); flushHabitCalcValuesFirestorePush(); flushHabitsBackupPush(); flushClientsBackupPush(); flushCrmBackupPush(); flushFinanceBackupPush(); flushClientOpsBackupPush(); flushTasksBackupPush(); flushDrogaBackupPush(); flushPostyBackupPush(); });
 
 function startSync(){
   var originalSave = window.save;
