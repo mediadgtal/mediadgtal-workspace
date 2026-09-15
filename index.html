@@ -4310,12 +4310,12 @@ function renderPublishSection(p){
   if(p.publishMissingExternally){
     html += '<div style="width:100%; font-size:12px; color:#d1636f; background:rgba(209,99,111,.12); padding:8px 10px; border-radius:6px">⚠️ Ten post pokazywał się jako opublikowany, ale automatyczna kontrola wykryła że zniknął z profilu (usunięty ręcznie poza appką) — status zresetowany, możesz opublikować ponownie.</div>';
   }
-  // 2026-08-05 — Damian potwierdził: konto MediaDGtal publikuje TYLKO na Instagramie, nigdy
-  // na Facebooku (świadomy wybór, nie przeoczenie). Wcześniej przycisk FB był zawsze widoczny
-  // nawet dla tego konta i dało się go przypadkiem kliknąć — raz to zrobił, opublikował się
-  // realny (błędny, bo appka nie obsługuje wielozdjęciowych postów FB) wpis na jego profilu.
-  // Dla marki MediaDGtal sekcja Facebooka w ogóle się nie renderuje.
-  if(p.brand!=="MediaDGtal"){
+  // 2026-08-05 — Damian: konto MediaDGtal publikowało wtedy TYLKO na Instagramie, sekcja FB
+  // była dla tej marki w ogóle ukryta. 2026-09-15 — Damian chce teraz też publikować na
+  // swoim fanpage'u MediaDGtal na Facebooku, tak samo jak już działa dla tool4arts (konto FB
+  // "MediaDGtal", fbPageId 108992522037930, ma już aktywny page token w FB_PAGE_TOKENS —
+  // cotygodniowe pobieranie followersów je potwierdza, serwer publishPost jest od zawsze
+  // brand-agnostyczny). Blokada zdjęta — sekcja FB renderuje się teraz dla każdej marki.
   html += '<div style="min-width:160px">';
   if(p.fbPublishStatus){
     html += publishStatusLine(p.fbPublishStatus);
@@ -4334,7 +4334,6 @@ function renderPublishSection(p){
     html += '<button class="btn small" style="margin-top:8px" '+(busyFb?'disabled':'')+' onclick="triggerPublishPost(\''+p.id+'\',\'fb\')">'+fbLabel+'</button>';
   }
   html += '</div>';
-  }
 
   html += '<div style="min-width:160px">';
   if(p.igPublishStatus){
@@ -4366,10 +4365,6 @@ function triggerPublishPost(id, target){
   if(__publishingIds[key]) return;
   var p = state.posts.filter(function(x){return x.id===id;})[0];
   if(!p) return;
-  if(target==="fb" && p.brand==="MediaDGtal"){
-    alert("Konto MediaDGtal publikuje tylko na Instagramie — Facebook jest dla niego wyłączony.");
-    return;
-  }
   var isToday = postIsToday(p);
   if(target==="fb" && p.fbPublishStatus && p.fbPublishStatus.ok && p.fbPublishStatus.scheduled){
     // Facebook jest planowany natywnie przez Metę w momencie kliknięcia "Zaplanuj teraz" —
@@ -4456,11 +4451,11 @@ function triggerPublishPost(id, target){
     if(entry && entry.ok && !entry.scheduled){
       ceoAwardXpEvent(live.video ? "reelPublished" : "postPublished");
     }
-    // Konto MediaDGtal ma sekcję Facebooka celowo wyłączoną (patrz renderPublishSection,
-    // "brand!=='MediaDGtal'") — dla niego fbPublishStatus NIGDY się nie ustawia, więc warunek
-    // z fbPublishStatus.ok nigdy by się nie spełnił i stage zostawałby na "zaplanowany" na
-    // zawsze, mimo realnej, udanej publikacji na Instagramie (znaleziono 2026-08-19).
-    var fbOk = live.brand==="MediaDGtal" || (live.fbPublishStatus && live.fbPublishStatus.ok && !live.fbPublishStatus.scheduled);
+    // 2026-09-15 — do tej daty konto MediaDGtal miało sekcję Facebooka celowo wyłączoną,
+    // więc fbPublishStatus dla niego nigdy się nie ustawiał i ten warunek był na sztywno
+    // "prawda" tylko dla tej marki (patrz historia w renderPublishSection). Odkąd FB jest
+    // włączony dla wszystkich marek, liczy się tak samo dla każdej — prawdziwy status FB.
+    var fbOk = live.fbPublishStatus && live.fbPublishStatus.ok && !live.fbPublishStatus.scheduled;
     var igOk = live.igPublishStatus && live.igPublishStatus.ok;
     if(fbOk && igOk){
       live.stage = "opublikowany";
