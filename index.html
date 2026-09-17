@@ -6534,6 +6534,22 @@ function backupLastSyncLabel(key){
   var d = new Date(iso);
   return " — ostatni udany sync: "+d.toLocaleDateString("pl-PL")+" "+d.toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"});
 }
+// 2026-09-17 — incydent: flushXBackupPush() czyściło całą kolumnę (batchClear), a DOPIERO
+// w drugim, osobnym żądaniu wysyłało właściwe dane (batchUpdate). Odkąd 02621d2 (14.09) zaczęło
+// odpalać ten sam flush też na pagehide/visibilitychange-hidden (czyli często w trakcie
+// realnego zamykania karty), zdarzało się, że pierwsze żądanie (clear) zdążyło dojść, a drugie
+// (zapis prawdziwych danych) zostało ucięte przez przeglądarkę wraz z zamykaną stroną — arkusz
+// zostawał trwale pusty. Padding rozwiązuje to bez osobnego żądania czyszczącego: dopisujemy
+// zapas pustych wierszy ZA prawdziwymi danymi w TYM SAMYM zapisie, więc pojedyncze przerwane
+// żądanie albo w ogóle nie wyjdzie (stare dane bez zmian — bezpieczne), albo wyjdzie w całości
+// (nowe dane + padding). Sheets API i tak przycina końcowe puste wiersze przy odczycie, więc
+// żadna inna funkcja (Sprawdź 1:1, Przywróć z kopii...) tego paddingu nie zobaczy.
+function backupPadRows(rows, cols, pad){
+  var out = rows.slice();
+  var blank = []; for(var i=0;i<cols;i++) blank.push("");
+  for(var i=0;i<(pad||300);i++) out.push(blank.slice());
+  return out;
+}
 // 2026-07-31 — Kompaktowy wskaźnik kopii zapasowej, obok zakładek modułu zamiast
 // pełnowidocznego banera zajmującego osobną linię (Damian: "to jest tylko informacja").
 // Ten sam kształt danych używany we wszystkich modułach z backupem (Nawyki/Zadania/
@@ -10002,30 +10018,25 @@ function flushClientOpsBackupPush(){
     platnosciRows.push([p.id,nameOf(p.clientId),p.ym,p.oplacony]);
   });
 
-  // 2026-08-17 — czyścimy pełne kolumny PRZED zapisem: batchUpdate z zakresem "!A1" i
-  // tablicą values nadpisuje tylko tyle wierszy ile jest w tablicy, nie kasuje nic poniżej.
-  // Gdy lokalny zbiór kiedyś się skurczy (np. po naprawie błędu dublującego zadania),
-  // stare wiersze zostawały w arkuszu na zawsze — stąd zduplikowane/nieaktualne wiersze
-  // znalezione w kontroli 17.08. Czyszczenie całych kolumn przed każdym zapisem to eliminuje.
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchClear", {
-    method:"POST",
-    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({ranges:["KLIENCI!A:Y","ZADANIA!A:J","HISTORIA!A:E","WYNIKI!A:T","PLATNOSCI!A:D"]})
-  }).then(function(){
-    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchUpdate", {
+  // 2026-09-17 — patrz komentarz przy backupPadRows(): jedno zapisujące żądanie na zakładkę,
+  // z paddingiem zamiast osobnego batchClear+batchUpdate, żeby przerwanie przy zamknięciu karty
+  // nigdy nie zostawiało arkusza pustego (wcześniej zerowało wszystkie 5 zakładek, incydent 16/17.09).
+  // Bez keepalive:true — 5 zakładek z realnymi wolumenami (Historia/Wyniki/Zadania) mogą razem
+  // przekroczyć limit ~64KB na żądania keepalive przeglądarki; samo połączenie clear+write w
+  // jedno żądanie już usuwa ryzyko pustego arkusza, niezależnie od keepalive.
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.clientOpsBackupSheetId+"/values:batchUpdate", {
       method:"POST",
       headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
       body: JSON.stringify({
         valueInputOption:"RAW",
         data:[
-          {range:"KLIENCI!A1", values: klienciRows},
-          {range:"ZADANIA!A1", values: zadaniaRows},
-          {range:"HISTORIA!A1", values: historiaRows},
-          {range:"WYNIKI!A1", values: wynikiRows},
-          {range:"PLATNOSCI!A1", values: platnosciRows}
+          {range:"KLIENCI!A1", values: backupPadRows(klienciRows, 25, 300)},
+          {range:"ZADANIA!A1", values: backupPadRows(zadaniaRows, 10, 300)},
+          {range:"HISTORIA!A1", values: backupPadRows(historiaRows, 5, 300)},
+          {range:"WYNIKI!A1", values: backupPadRows(wynikiRows, 20, 300)},
+          {range:"PLATNOSCI!A1", values: backupPadRows(platnosciRows, 4, 300)}
         ]
       })
-    });
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ clientOpsBackupStatus = "ok"; backupSyncSucceeded("clientOps"); renderAll(); }
@@ -10105,18 +10116,14 @@ function flushTasksBackupPush(){
   if(!tasksBackupPending) return;
   tasksBackupPending = false;
   if(!window.__gcalToken || !state.tasksBackupSheetId) return;
-  // 2026-08-25 — ten sam gotcha co clientOps/posty (80c18c8): czyścimy pełną kolumnę przed
-  // zapisem, żeby usunięte/zmienione zadania nie zostawiały wiersza-widma w arkuszu.
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values:batchClear", {
-    method:"POST",
-    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({ranges:["ZADANIA!A:I"]})
-  }).then(function(){
-    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values:batchUpdate", {
+  // 2026-09-17 — patrz komentarz przy backupPadRows(): jedno zapisujące żądanie z paddingiem
+  // zamiast osobnego batchClear+batchUpdate, żeby przerwanie przy zamknięciu karty nigdy nie
+  // zostawiało arkusza pustego (wcześniej zerowało ZADANIA, patrz incydent 16/17.09).
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.tasksBackupSheetId+"/values:batchUpdate", {
       method:"POST",
+      keepalive:true,
       headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"ZADANIA!A1", values: tasksBackupRows()}]})
-    });
+      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"ZADANIA!A1", values: backupPadRows(tasksBackupRows(), 9, 300)}]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ tasksBackupStatus = "ok"; backupSyncSucceeded("tasks"); renderAll(); }
@@ -10233,18 +10240,14 @@ function flushDrogaBackupPush(){
   if(!drogaBackupPending) return;
   drogaBackupPending = false;
   if(!window.__gcalToken || !state.drogaBackupSheetId) return;
-  // 2026-08-25 — ten sam gotcha co clientOps/posty (80c18c8): czyścimy pełną kolumnę przed
-  // zapisem, żeby usunięte klucze state.droga nie zostawiały wiersza-widma w arkuszu.
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values:batchClear", {
-    method:"POST",
-    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({ranges:["DROGA!A:B"]})
-  }).then(function(){
-    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values:batchUpdate", {
+  // 2026-09-17 — patrz komentarz przy backupPadRows(): jedno zapisujące żądanie z paddingiem
+  // zamiast osobnego batchClear+batchUpdate, żeby przerwanie przy zamknięciu karty nigdy nie
+  // zostawiało arkusza pustego (wcześniej zerowało DROGA, patrz incydent 16/17.09).
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.drogaBackupSheetId+"/values:batchUpdate", {
       method:"POST",
+      keepalive:true,
       headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"DROGA!A1", values: drogaBackupRows()}]})
-    });
+      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"DROGA!A1", values: backupPadRows(drogaBackupRows(), 2, 300)}]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ drogaBackupStatus = "ok"; backupSyncSucceeded("droga"); renderAll(); }
@@ -10345,20 +10348,15 @@ function flushPostyBackupPush(){
   if(!postyBackupPending) return;
   postyBackupPending = false;
   if(!window.__gcalToken || !state.postyBackupSheetId) return;
-  // 2026-08-17 — czyścimy pełną kolumnę PRZED zapisem, z tego samego powodu co w
-  // flushClientOpsBackupPush: "!A1" + values nadpisuje tylko tyle wierszy ile jest w
-  // tablicy, więc gdy zbiór lokalny się skurczy, stare wiersze zostają w arkuszu
-  // na zawsze (stąd sprzeczny status posta "AI zabierze Ci pracę" w kontroli 17.08).
-  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values:batchClear", {
-    method:"POST",
-    headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-    body: JSON.stringify({ranges:["POSTY!A:Q"]})
-  }).then(function(){
-    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values:batchUpdate", {
+  // 2026-09-17 — patrz komentarz przy backupPadRows(): jedno zapisujące żądanie z paddingiem
+  // zamiast osobnego batchClear+batchUpdate, żeby przerwanie przy zamknięciu karty nigdy nie
+  // zostawiało arkusza pustego (wcześniej zerowało POSTY, patrz incydent 16/17.09). Bez
+  // keepalive:true — z setkami postów i długimi opisami payload łatwo przekracza limit
+  // keepalive przeglądarki (~64KB); atomowość zapisu nie zależy od tej flagi.
+  fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.postyBackupSheetId+"/values:batchUpdate", {
       method:"POST",
       headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"POSTY!A1", values: postyBackupRows()}]})
-    });
+      body: JSON.stringify({valueInputOption:"RAW", data:[{range:"POSTY!A1", values: backupPadRows(postyBackupRows(), 17, 300)}]})
   }).then(function(r){
     if(r.status===401){ window.__gcalToken=null; }
     if(r.ok){ postyBackupStatus = "ok"; backupSyncSucceeded("posty"); renderAll(); }
