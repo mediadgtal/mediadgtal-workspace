@@ -17603,6 +17603,53 @@ function stripUndefinedFields(obj){
   Object.keys(obj||{}).forEach(function(k){ if(obj[k]!==undefined) out[k] = obj[k]; });
   return out;
 }
+// Ta sama ochrona co stripUndefinedFields, dla ręcznie pisanych (nie przez
+// makeIdListFirestoreSync) nasłuchów onSnapshot dla crm/tasks/finance/habits/posts:
+// bez tego merge'a przychodzące echo z serwera potrafi wylądować w oknie między lokalną
+// edycją a jej zaplanowanym (debounce 500ms) flush() i bezpowrotnie ją skasować, blind
+// nadpisując window.state.X starszą wersją z serwera. Item z niezapisaną lokalną zmianą
+// (jego bieżący JSON różni się od ostatnio potwierdzonego jako wypchnięty w lastPushedMap)
+// zostaje lokalny zamiast być zastąpiony przez snapshot.
+function mergeSnapshotArray(snap, currentArray, lastPushedMap){
+  var currentById = {};
+  (currentArray||[]).forEach(function(item){ if(item && item.id) currentById[item.id] = item; });
+  var dirty = {};
+  Object.keys(currentById).forEach(function(id){
+    if(lastPushedMap[id] !== JSON.stringify(currentById[id])) dirty[id] = true;
+  });
+  var arr = [];
+  var seen = {};
+  snap.forEach(function(d){
+    var data = d.data();
+    lastPushedMap[d.id] = JSON.stringify(data);
+    seen[d.id] = true;
+    arr.push(dirty[d.id] ? currentById[d.id] : data);
+  });
+  Object.keys(currentById).forEach(function(id){
+    if(!seen[id] && dirty[id]) arr.push(currentById[id]);
+  });
+  return arr;
+}
+// mergeSnapshotArray, wersja dla map klucz->wartość (np. workspace_droga).
+function mergeSnapshotObject(snap, currentObj, lastPushedMap){
+  currentObj = currentObj||{};
+  var dirty = {};
+  Object.keys(currentObj).forEach(function(k){
+    if(lastPushedMap[k] !== JSON.stringify(currentObj[k])) dirty[k] = true;
+  });
+  var obj = {};
+  var seen = {};
+  snap.forEach(function(d){
+    var data = d.data();
+    lastPushedMap[d.id] = JSON.stringify(data.value);
+    seen[d.id] = true;
+    obj[d.id] = dirty[d.id] ? currentObj[d.id] : data.value;
+  });
+  Object.keys(currentObj).forEach(function(k){
+    if(!seen[k] && dirty[k]) obj[k] = currentObj[k];
+  });
+  return obj;
+}
 function makeIdListFirestoreSync(collectionName, getArray, setArray){
   var col = collection(db, collectionName);
   var lastPushed = {};
@@ -17674,11 +17721,29 @@ function makeIdListFirestoreSync(collectionName, getArray, setArray){
     });
   }
   function onSnapshotSync(snap){
+    // Bez tej ochrony: jeśli przychodzące echo z Firestore ląduje w oknie między lokalną
+    // edycją a jej zaplanowanym (debounce 500ms) zapisem, blind setArray() niżej nadpisuje
+    // lokalny stan starszą wersją z serwera i edycja znika bezpowrotnie, mimo że flush()
+    // jeszcze się nie wykonał. Item liczy się jako "dirty" (ma niezapisaną lokalną zmianę),
+    // jeśli jego bieżący JSON różni się od tego, co ostatnio faktycznie potwierdziliśmy jako
+    // wypchnięte (lastPushed) — taki item zostaje lokalny zamiast być zastąpiony przez snapshot.
+    var current = getArray()||[];
+    var currentById = {};
+    current.forEach(function(item){ if(item && item.id) currentById[item.id] = item; });
+    var dirty = {};
+    Object.keys(currentById).forEach(function(id){
+      if(lastPushed[id] !== JSON.stringify(currentById[id])) dirty[id] = true;
+    });
     var arr = [];
+    var seen = {};
     snap.forEach(function(d){
       var data = d.data();
-      arr.push(data);
       lastPushed[d.id] = JSON.stringify(data);
+      seen[d.id] = true;
+      arr.push(dirty[d.id] ? currentById[d.id] : data);
+    });
+    Object.keys(currentById).forEach(function(id){
+      if(!seen[id] && dirty[id]) arr.push(currentById[id]);
     });
     setArray(arr);
     hasSyncedOnce = true;
@@ -17927,11 +17992,24 @@ function makeFieldMapFirestoreSync(collectionName, getObj, setObj){
     });
   }
   function onSnapshotSync(snap){
+    // Patrz analogiczny komentarz w makeIdListFirestoreSync.onSnapshotSync — ta sama ochrona
+    // przed nadpisaniem niezapisanej lokalnej edycji echem z serwera, które przyszło w oknie
+    // przed jej zaplanowanym (debounce 500ms) flush().
+    var current = getObj()||{};
+    var dirty = {};
+    Object.keys(current).forEach(function(k){
+      if(lastPushed[k] !== JSON.stringify(current[k])) dirty[k] = true;
+    });
     var obj = {};
+    var seen = {};
     snap.forEach(function(d){
       var data = d.data();
-      obj[d.id] = data.value;
       lastPushed[d.id] = JSON.stringify(data.value);
+      seen[d.id] = true;
+      obj[d.id] = dirty[d.id] ? current[d.id] : data.value;
+    });
+    Object.keys(current).forEach(function(k){
+      if(!seen[k] && dirty[k]) obj[k] = current[k];
     });
     setObj(obj);
     hasSyncedOnce = true;
@@ -18335,13 +18413,7 @@ function startSync(){
 
   crmMigrateOldDocIfNeeded();
   unsubscribeCrmSnapshot = onSnapshot(crmContactsCol, function(snap){
-    var arr = [];
-    snap.forEach(function(d){
-      var data = d.data();
-      arr.push(data);
-      crmLastPushed[d.id] = JSON.stringify(data);
-    });
-    window.state.crmContacts = arr;
+    window.state.crmContacts = mergeSnapshotArray(snap, window.state.crmContacts, crmLastPushed);
     originalSave();
     if(window.renderAll) window.renderAll();
   }, function(err){
@@ -18349,13 +18421,7 @@ function startSync(){
   });
 
   unsubscribeTasksSnapshot = onSnapshot(tasksCol, function(snap){
-    var arr = [];
-    snap.forEach(function(d){
-      var data = d.data();
-      arr.push(data);
-      tasksLastPushed[d.id] = JSON.stringify(data);
-    });
-    window.state.tasks = arr;
+    window.state.tasks = mergeSnapshotArray(snap, window.state.tasks, tasksLastPushed);
     tasksHasSyncedOnce = true;
     // 2026-08-25 — fixupTaskSeedContamination20260824() (jednorazowa naprawa z dnia
     // incydentu) NIGDY nie miała zabezpieczenia "uruchom tylko raz" — odpalała się przy
@@ -18374,13 +18440,7 @@ function startSync(){
   });
 
   unsubscribeFinanceSnapshot = onSnapshot(financeCol, function(snap){
-    var arr = [];
-    snap.forEach(function(d){
-      var data = d.data();
-      arr.push(data);
-      financeLastPushed[d.id] = JSON.stringify(data);
-    });
-    window.state.financeEntries = arr;
+    window.state.financeEntries = mergeSnapshotArray(snap, window.state.financeEntries, financeLastPushed);
     financeHasSyncedOnce = true;
     // 2026-08-24 — sprzątanie jednorazowe: pierwsze uruchomienie financeForceSyncTwoWay
     // (zanim wykluczało zakładki DŁUGI/KARTA KREDYTOWA z arkusza Finansów) wciągnęło z nich
@@ -18397,12 +18457,7 @@ function startSync(){
   });
 
   unsubscribeHabitsSnapshot = onSnapshot(habitsCol, function(snap){
-    var arr = [];
-    snap.forEach(function(d){
-      var data = d.data();
-      arr.push(data);
-      habitsLastPushed[d.id] = JSON.stringify(data);
-    });
+    var arr = mergeSnapshotArray(snap, window.state.habits, habitsLastPushed);
     // 2026-08-25 — od migracji na workspace_habits (352e74f) kolejność wynikała z tego, jak
     // Firestore akurat zwrócił dokumenty (efektywnie po ID), nie z tego, w jakiej kolejności
     // Damian je kiedyś ułożył — stąd zauważona "przypadkowa" kolejność w widoku Nawyki.
@@ -18422,13 +18477,7 @@ function startSync(){
   });
 
   unsubscribePostsSnapshot = onSnapshot(postsCol, function(snap){
-    var arr = [];
-    snap.forEach(function(d){
-      var data = d.data();
-      arr.push(data);
-      postsLastPushed[d.id] = JSON.stringify(data);
-    });
-    window.state.posts = arr;
+    window.state.posts = mergeSnapshotArray(snap, window.state.posts, postsLastPushed);
     postsHasSyncedOnce = true;
     originalSave();
     if(window.renderAll) window.renderAll();
@@ -18437,13 +18486,7 @@ function startSync(){
   });
 
   unsubscribeDrogaSnapshot = onSnapshot(drogaCol, function(snap){
-    var obj = {};
-    snap.forEach(function(d){
-      var data = d.data();
-      obj[d.id] = data.value;
-      drogaLastPushed[d.id] = JSON.stringify(data.value);
-    });
-    window.state.droga = obj;
+    window.state.droga = mergeSnapshotObject(snap, window.state.droga, drogaLastPushed);
     drogaHasSyncedOnce = true;
     originalSave();
     if(window.renderAll) window.renderAll();
