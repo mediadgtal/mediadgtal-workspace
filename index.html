@@ -17173,7 +17173,7 @@ function crmCommitInChunks(ops){
       var batch = writeBatch(db);
       chunk.forEach(function(op){
         var ref = doc(crmContactsCol, op.id);
-        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+        if(op.type==="set") batch.set(ref, stripUndefinedFields(op.data)); else batch.delete(ref);
       });
       return batch.commit();
     });
@@ -17239,7 +17239,7 @@ function tasksCommitInChunks(ops){
       var batch = writeBatch(db);
       chunk.forEach(function(op){
         var ref = doc(tasksCol, op.id);
-        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+        if(op.type==="set") batch.set(ref, stripUndefinedFields(op.data)); else batch.delete(ref);
       });
       return batch.commit();
     });
@@ -17322,7 +17322,7 @@ function financeCommitInChunks(ops){
       var batch = writeBatch(db);
       chunk.forEach(function(op){
         var ref = doc(financeCol, op.id);
-        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+        if(op.type==="set") batch.set(ref, stripUndefinedFields(op.data)); else batch.delete(ref);
       });
       return batch.commit();
     });
@@ -17399,7 +17399,7 @@ function habitsCommitInChunks(ops){
       var batch = writeBatch(db);
       chunk.forEach(function(op){
         var ref = doc(habitsCol, op.id);
-        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+        if(op.type==="set") batch.set(ref, stripUndefinedFields(op.data)); else batch.delete(ref);
       });
       return batch.commit();
     });
@@ -17470,7 +17470,7 @@ function postsCommitInChunks(ops){
       var batch = writeBatch(db);
       chunk.forEach(function(op){
         var ref = doc(postsCol, op.id);
-        if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+        if(op.type==="set") batch.set(ref, stripUndefinedFields(op.data)); else batch.delete(ref);
       });
       return batch.commit();
     });
@@ -17546,7 +17546,7 @@ function drogaCommitInChunks(ops){
       var batch = writeBatch(db);
       chunk.forEach(function(op){
         var ref = doc(drogaCol, op.id);
-        if(op.type==="set") batch.set(ref, {value: op.data}); else batch.delete(ref);
+        if(op.type==="set") batch.set(ref, {value: op.data===undefined?null:op.data}); else batch.delete(ref);
       });
       return batch.commit();
     });
@@ -17592,6 +17592,17 @@ function flushDrogaFirestorePush(){
 // platnosci/screenshots), każda z .id — dokładnie ten sam kształt co tasks/finance/habits/
 // posts. Zamiast pisać ten sam blok pięć razy z ryzykiem literówki przy kopiowaniu,
 // jedna fabryka (identyczna logika co tasksCol) zainstancjonowana pięć razy.
+// Firestore SDK rzuca błąd i odrzuca CAŁY batch.commit(), jeśli jakikolwiek zapisywany
+// dokument ma pole z wartością JS `undefined` (np. świeżo dodany wiersz "wyniki", gdzie
+// pola liczbowe startują jako undefined, dopóki nie zostaną wpisane). Bez tego czyszczenia
+// każda kolejna próba flush() dla takiego dokumentu cicho failuje w nieskończoność (widoczne
+// tylko w konsoli), a dane wpisane w UI nigdy nie trafiają do Firestore — po odświeżeniu
+// strony znikają, bo lokalny stan jest nadpisywany świeżym (pustym) stanem z serwera.
+function stripUndefinedFields(obj){
+  var out = {};
+  Object.keys(obj||{}).forEach(function(k){ if(obj[k]!==undefined) out[k] = obj[k]; });
+  return out;
+}
 function makeIdListFirestoreSync(collectionName, getArray, setArray){
   var col = collection(db, collectionName);
   var lastPushed = {};
@@ -17621,7 +17632,7 @@ function makeIdListFirestoreSync(collectionName, getArray, setArray){
         var batch = writeBatch(db);
         chunk.forEach(function(op){
           var ref = doc(col, op.id);
-          if(op.type==="set") batch.set(ref, op.data); else batch.delete(ref);
+          if(op.type==="set") batch.set(ref, stripUndefinedFields(op.data)); else batch.delete(ref);
         });
         return batch.commit();
       });
@@ -17874,7 +17885,7 @@ function makeFieldMapFirestoreSync(collectionName, getObj, setObj){
         var batch = writeBatch(db);
         chunk.forEach(function(op){
           var ref = doc(col, op.id);
-          if(op.type==="set") batch.set(ref, {value: op.data}); else batch.delete(ref);
+          if(op.type==="set") batch.set(ref, {value: op.data===undefined?null:op.data}); else batch.delete(ref);
         });
         return batch.commit();
       });
