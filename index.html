@@ -2873,8 +2873,18 @@ function renderAll(){
   setTopActions("");
   renderGcalBanner();
   var el = document.getElementById("content");
+  // 2026-10-01 — listy z własnym przewijaniem (oznaczone data-scroll-key) traciły pozycję
+  // przy każdym renderAll() (np. po synchronizacji z innej karty) i skakały na górę.
+  var keptScroll = {};
+  el.querySelectorAll("[data-scroll-key]").forEach(function(box){
+    if(box.scrollTop) keptScroll[box.getAttribute("data-scroll-key")] = box.scrollTop;
+  });
   el.innerHTML = "";
   RENDERERS[currentTab](el);
+  Object.keys(keptScroll).forEach(function(k){
+    var box = el.querySelector('[data-scroll-key="'+k+'"]');
+    if(box) box.scrollTop = keptScroll[k];
+  });
 }
 function renderGcalBanner(){
   var el = document.getElementById("gcalBanner");
@@ -7469,7 +7479,7 @@ function renderZadania(el){
     }
     if(!items.length && !coItems.length){ html += '<div class="empty">Brak zadań.</div><button class="linklike" onclick="openTaskModal({scope:\''+scope+'\', category:\'MediaDGtal\', date:\''+defaultDate+'\'})">+ Dodaj do „'+label+'"</button>'; }
     else{
-      var listOpen = scope==="miesiac" ? '<div style="max-height:450px; overflow-y:auto">' : '';
+      var listOpen = scope==="miesiac" ? '<div data-scroll-key="zadMiesiac-'+miesiacVal+'" style="max-height:450px; overflow-y:auto">' : '';
       html += listOpen;
       items.forEach(function(t){
         var togFn = t.recurWeekday!=null ? "toggleRecurTaskToday" : "toggleTask";
@@ -17100,6 +17110,21 @@ var unsubscribeClientsSnapshot = null;
 var unsubscribeFbAuthSnapshot = null;
 var pushTimer = null;
 var pendingPush = false;
+// 2026-10-01 — zapis bez zmian (np. save() wywołane przy przerysowaniu) i tak wysyłał cały
+// dokument workspace/damian z nowym _updatedAt, co odpalało onSnapshot + renderAll() we
+// wszystkich otwartych kartach (i w tej samej) — pętla zapisów co ~3s, przy której każda lista
+// z własnym przewijaniem (np. Zadania → Miesiąc) skakała na górę. Pomijamy zapis, jeśli treść
+// (bez _updatedAt) jest identyczna z tą, którą serwer już ma (ostatnio wysłana/odebrana).
+var lastMainSyncedJson = null;
+function mainStateCanonicalJson(obj){
+  function canon(v){
+    if(v===undefined || typeof v==="function") return undefined;
+    if(v===null || typeof v!=="object") return JSON.stringify(v);
+    if(Array.isArray(v)) return "["+v.map(function(x){ var c=canon(x); return c===undefined?"null":c; }).join(",")+"]";
+    return "{"+Object.keys(v).sort().filter(function(k){ return k!=="_updatedAt" && canon(v[k])!==undefined; }).map(function(k){ return JSON.stringify(k)+":"+canon(v[k]); }).join(",")+"}";
+  }
+  return canon(obj);
+}
 var crmPushTimer = null;
 var pendingCrmPush = false;
 
@@ -18165,7 +18190,14 @@ function flushPush(){
   if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
   pendingPush = false;
   var docRef = doc(db, "workspace", "damian");
-  return setDoc(docRef, mainStateForPush()).then(function(){
+  var payload = mainStateForPush();
+  var payloadJson = mainStateCanonicalJson(payload);
+  if(payloadJson===lastMainSyncedJson){
+    setSyncStatus("Zsynchronizowano");
+    return Promise.resolve();
+  }
+  return setDoc(docRef, payload).then(function(){
+    lastMainSyncedJson = payloadJson;
     setSyncStatus("Zsynchronizowano");
   }).catch(function(err){
     console.error("Firestore push (workspace/damian) nie powiódł się:", err);
@@ -18271,6 +18303,7 @@ function startSync(){
   unsubscribeSnapshot = onSnapshot(docRef, function(snap){
     if(snap.exists()){
       var remote = snap.data();
+      lastMainSyncedJson = mainStateCanonicalJson(remote);
       if(!tasksMigrationChecked){
         tasksMigrationChecked = true;
         maybeMigrateTasksFromRemote(remote.tasks);
