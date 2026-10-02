@@ -17635,11 +17635,20 @@ function stripUndefinedFields(obj){
 // nadpisując window.state.X starszą wersją z serwera. Item z niezapisaną lokalną zmianą
 // (jego bieżący JSON różni się od ostatnio potwierdzonego jako wypchnięty w lastPushedMap)
 // zostaje lokalny zamiast być zastąpiony przez snapshot.
+// 2026-10-02 — POPRAWKA KRYTYCZNA: przy PIERWSZYM snapshocie po otwarciu strony lastPushedMap
+// jest puste, więc każdy item wczytany z localStorage (np. tydzień-dwa stary stan z rzadziej
+// używanego urządzenia) wyglądał na "dirty", wygrywał z serwerem i był potem wypychany z
+// powrotem do Firestore — 02.10 20:09 UTC taki stary stan nadpisał Nawyki (wszystko po 14.09),
+// zadania, klientów, finanse i drogę. Pierwszy snapshot = serwer zawsze wygrywa (tak jak przed
+// 23.09); ochrona niezapisanych edycji działa dopiero od drugiego snapshotu.
+var snapshotSyncedMaps = new WeakSet();
 function mergeSnapshotArray(snap, currentArray, lastPushedMap){
+  var firstSync = !snapshotSyncedMaps.has(lastPushedMap);
+  snapshotSyncedMaps.add(lastPushedMap);
   var currentById = {};
   (currentArray||[]).forEach(function(item){ if(item && item.id) currentById[item.id] = item; });
   var dirty = {};
-  Object.keys(currentById).forEach(function(id){
+  if(!firstSync) Object.keys(currentById).forEach(function(id){
     if(lastPushedMap[id] !== JSON.stringify(currentById[id])) dirty[id] = true;
   });
   var arr = [];
@@ -17657,9 +17666,11 @@ function mergeSnapshotArray(snap, currentArray, lastPushedMap){
 }
 // mergeSnapshotArray, wersja dla map klucz->wartość (np. workspace_droga).
 function mergeSnapshotObject(snap, currentObj, lastPushedMap){
+  var firstSync = !snapshotSyncedMaps.has(lastPushedMap);
+  snapshotSyncedMaps.add(lastPushedMap);
   currentObj = currentObj||{};
   var dirty = {};
-  Object.keys(currentObj).forEach(function(k){
+  if(!firstSync) Object.keys(currentObj).forEach(function(k){
     if(lastPushedMap[k] !== JSON.stringify(currentObj[k])) dirty[k] = true;
   });
   var obj = {};
@@ -17756,7 +17767,8 @@ function makeIdListFirestoreSync(collectionName, getArray, setArray){
     var currentById = {};
     current.forEach(function(item){ if(item && item.id) currentById[item.id] = item; });
     var dirty = {};
-    Object.keys(currentById).forEach(function(id){
+    // Pierwszy snapshot: serwer wygrywa (patrz komentarz 2026-10-02 przy mergeSnapshotArray).
+    if(hasSyncedOnce) Object.keys(currentById).forEach(function(id){
       if(lastPushed[id] !== JSON.stringify(currentById[id])) dirty[id] = true;
     });
     var arr = [];
@@ -18022,7 +18034,8 @@ function makeFieldMapFirestoreSync(collectionName, getObj, setObj){
     // przed jej zaplanowanym (debounce 500ms) flush().
     var current = getObj()||{};
     var dirty = {};
-    Object.keys(current).forEach(function(k){
+    // Pierwszy snapshot: serwer wygrywa (patrz komentarz 2026-10-02 przy mergeSnapshotArray).
+    if(hasSyncedOnce) Object.keys(current).forEach(function(k){
       if(lastPushed[k] !== JSON.stringify(current[k])) dirty[k] = true;
     });
     var obj = {};
