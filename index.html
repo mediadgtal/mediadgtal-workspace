@@ -7318,19 +7318,15 @@ function flushFinanceBackupPush(){
       body: JSON.stringify({requests:structRequests})
     });
   }).then(function(){
-    // DŁUGI się kurczy, gdy Damian usunie dług albo spłatę (poprawka błędu) — czyścimy
-    // pełną kolumnę przed zapisem, tym samym sposobem co naprawiony 2026-08-17 bug w
-    // Obsłudze Klientów/Posty, żeby stare wiersze nie zostawały w arkuszu na zawsze.
-    return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchClear", {
-      method:"POST",
-      headers:{Authorization:"Bearer "+window.__gcalToken, "Content-Type":"application/json"},
-      body: JSON.stringify({ranges:["DŁUGI!A:G","'KARTA KREDYTOWA'!A:E"]})
-    });
-  }).then(function(){
-    var valuesData = [{range:"TOTAL!A1", values: totalRows}, {range:"DŁUGI!A1", values: financeDebtsGrid()},
-      {range:"'KARTA KREDYTOWA'!A1", values: financeCreditCardGrid()}];
+    // DŁUGI się kurczy, gdy Damian usunie dług albo spłatę (poprawka błędu), a zakładka
+    // miesiąca — gdy usunie wpis. 2026-10-07 — zamiast osobnego batchClear (patrz
+    // backupPadRows() i incydent 16/17.09) dopisujemy puste wiersze w tym samym zapisie,
+    // więc stare wiersze i tak znikają, a przerwane żądanie nie zostawia pustego arkusza.
+    function pad(rows){ return backupPadRows(rows, rows[0].length, 100); }
+    var valuesData = [{range:"TOTAL!A1", values: pad(totalRows)}, {range:"DŁUGI!A1", values: pad(financeDebtsGrid())},
+      {range:"'KARTA KREDYTOWA'!A1", values: pad(financeCreditCardGrid())}];
     monthsPresent.forEach(function(ym){
-      valuesData.push({range:"'"+financeBackupMonthTabName(ym)+"'!A1", values: financeMonthGrid(ym)});
+      valuesData.push({range:"'"+financeBackupMonthTabName(ym)+"'!A1", values: pad(financeMonthGrid(ym))});
     });
     return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchUpdate", {
       method:"POST",
