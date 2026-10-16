@@ -3838,7 +3838,16 @@ function autoPublishPastPosts(){
     // awarię jako sukces — dokładnie ten sam gatunek błędu, co poprzednie incydenty z Postami.
     // Dla postów organicznych (tiktok/youtube/bez platformy — publikowanych ręcznie poza tą
     // appką) nie ma żadnej automatycznej weryfikacji, więc auto-oznaczanie po dacie zostaje.
-    if(p.platform==="fbig") return;
+    // 2026-10-16 — wyjątek: FB zaplanowany natywnie w Meta (fbPublishStatus.scheduled, Meta
+    // sama publikuje o czasie) + IG opublikowany przez serwer (runIgPublishTask, ok:true).
+    // Warunek fbOk w triggerPublishPost wymaga !scheduled, a nic potem nie przestawia
+    // "scheduled" na false — takie posty wisiały na "zaplanowany" na zawsze (13.10 i 15.10).
+    // Po minięciu daty oba kanały są potwierdzone przez Meta, więc oznaczamy jako opublikowany.
+    if(p.platform==="fbig"){
+      var fb = p.fbPublishStatus, ig = p.igPublishStatus;
+      if(!(fb && fb.ok && fb.scheduled && ig && ig.ok)) return;
+      p.publishedAt = p.date;
+    }
     p.stage = "opublikowany";
     ceoAwardXpEvent(p.video ? "reelPublished" : "postPublished");
     syncContentCalendarFromPost(p);
@@ -7111,7 +7120,7 @@ function financeVerify1to1(){
   fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"?fields=sheets.properties", {headers:{Authorization:"Bearer "+window.__gcalToken}})
     .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
     .then(function(meta){
-      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL" && t!=="DŁUGI" && t!=="KARTA KREDYTOWA"; });
+      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(isFinanceMonthTab);
       if(!monthTabs.length){ financeVerifyStatus="done"; financeVerifyResult={sheetTotal:0, localTotal:state.financeEntries.length}; renderAll(); return; }
       var ranges = monthTabs.map(function(t){ return "ranges="+encodeURIComponent("'"+t+"'!A1:E"); }).join("&");
       return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchGet?"+ranges, {headers:{Authorization:"Bearer "+window.__gcalToken}})
@@ -7127,6 +7136,13 @@ function financeVerify1to1(){
 }
 var FINANCE_CATEGORY_LABEL_REV = {"Przychody":"przychody","Wydatki firmowe":"firmowe","Moje wydatki":"osobiste","Oszczędności":"oszczednosci","Inwestycje":"inwestycje"};
 var FINANCE_MONTH_TAB_TO_YM = {"Styczeń":"01","Luty":"02","Marzec":"03","Kwiecień":"04","Maj":"05","Czerwiec":"06","Lipiec":"07","Sierpień":"08","Wrzesień":"09","Październik":"10","Listopad":"11","Grudzień":"12"};
+// 2026-10-16 — tylko zakładki "Miesiąc RRRR" są miesiącami. Wcześniej wykluczaliśmy znane
+// nie-miesięczne zakładki po nazwie (TOTAL/DŁUGI/KARTA KREDYTOWA), więc osierocona zakładka
+// "Styczeń NaN" (z błędnych wpisów z 24.08) dalej byłaby wciągana jako miesiąc "NaN-01".
+function isFinanceMonthTab(t){
+  var m = /^(\S+) (\d{4})$/.exec(t||"");
+  return !!(m && FINANCE_MONTH_TAB_TO_YM[m[1]]);
+}
 // Wymuszona synchronizacja dwukierunkowa dla Finansów — analogiczna do
 // tasksForceSyncTwoWay, ale arkusz nie ma kolumny id (tylko Kategoria/Nazwa/Kwota/Sposób
 // płatności/Data), więc dopasowanie robimy po TREŚCI (miesiąc+kategoria+nazwa+kwota+sposób
@@ -7138,7 +7154,7 @@ function financeForceSyncTwoWay(){
   fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"?fields=sheets.properties", {headers:{Authorization:"Bearer "+window.__gcalToken}})
     .then(function(r){ if(!r.ok) throw new Error("http"+r.status); return r.json(); })
     .then(function(meta){
-      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(function(t){ return t!=="TOTAL" && t!=="DŁUGI" && t!=="KARTA KREDYTOWA"; });
+      var monthTabs = (meta.sheets||[]).map(function(s){ return s.properties.title; }).filter(isFinanceMonthTab);
       if(!monthTabs.length){ financeVerifyStatus="done"; financeVerifyResult={sheetTotal:0, localTotal:state.financeEntries.length, restoredFromSheet:0}; renderAll(); return; }
       var ranges = monthTabs.map(function(t){ return "ranges="+encodeURIComponent("'"+t+"'!A1:E"); }).join("&");
       return fetch("https://sheets.googleapis.com/v4/spreadsheets/"+state.financeBackupSheetId+"/values:batchGet?"+ranges, {headers:{Authorization:"Bearer "+window.__gcalToken}})
@@ -7258,7 +7274,7 @@ function flushFinanceBackupPush(){
   // WSZYSTKIE lata obecne w financeEntries w tym samym, aktualnym arkuszu.
   var monthsPresent = Array.from(new Set(
     state.financeEntries.map(function(e){ return e.month; })
-  )).sort();
+  )).filter(function(ym){ return /^\d{4}-\d{2}$/.test(ym||""); }).sort();
   var catOrder = FINANCE_CATEGORIES.map(function(c){return c[0];});
   function financeMonthGrid(ym){
     var rows = [["Kategoria","Nazwa","Kwota","Sposób płatności","Data dodania"]];
