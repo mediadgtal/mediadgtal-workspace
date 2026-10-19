@@ -4170,11 +4170,7 @@ var __previewImgIdx = 0;
 // /file/d/<id>/view) nie odtwarza się w <video>: Drive nie serwuje pliku wideo pod takim linkiem
 // (zwraca stronę HTML / blokuje streaming), więc podgląd był pusty. Dla linków z Drive osadzamy
 // oficjalny odtwarzacz Drive (/file/d/<id>/preview) w iframe; inne linki dalej idą do <video>.
-function driveFileIdFromUrl(url){
-  if(!url || !/drive\.google\.com|docs\.google\.com/.test(url)) return null;
-  var m = url.match(/\/file\/d\/([A-Za-z0-9_-]{10,})/) || url.match(/[?&]id=([A-Za-z0-9_-]{10,})/);
-  return m ? m[1] : null;
-}
+// ID wyciąga istniejący driveFileIdFromUrl (niżej, przy normalizeImageUrl).
 function previewVideoHtml(url, cls, onerr){
   var driveId = driveFileIdFromUrl(url);
   if(driveId) return '<iframe class="'+cls+'" src="https://drive.google.com/file/d/'+encodeURIComponent(driveId)+'/preview" allow="autoplay" allowfullscreen style="border:0"></iframe>';
