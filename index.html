@@ -4166,6 +4166,20 @@ function renderPostyZaplanowane(){
   return html;
 }
 var __previewImgIdx = 0;
+// 2026-10-19 — wideo podpięte linkiem z Google Drive (drive.google.com/uc?export=view&id=… albo
+// /file/d/<id>/view) nie odtwarza się w <video>: Drive nie serwuje pliku wideo pod takim linkiem
+// (zwraca stronę HTML / blokuje streaming), więc podgląd był pusty. Dla linków z Drive osadzamy
+// oficjalny odtwarzacz Drive (/file/d/<id>/preview) w iframe; inne linki dalej idą do <video>.
+function driveFileIdFromUrl(url){
+  if(!url || !/drive\.google\.com|docs\.google\.com/.test(url)) return null;
+  var m = url.match(/\/file\/d\/([A-Za-z0-9_-]{10,})/) || url.match(/[?&]id=([A-Za-z0-9_-]{10,})/);
+  return m ? m[1] : null;
+}
+function previewVideoHtml(url, cls, onerr){
+  var driveId = driveFileIdFromUrl(url);
+  if(driveId) return '<iframe class="'+cls+'" src="https://drive.google.com/file/d/'+encodeURIComponent(driveId)+'/preview" allow="autoplay" allowfullscreen style="border:0"></iframe>';
+  return '<video class="'+cls+'" src="'+escapeHtml(url)+'" controls'+(onerr?' onerror="'+onerr+'"':'')+'></video>';
+}
 var __previewView = "ig"; // "ig" albo "fb"
 var __previewPostId = null;
 function openPostPreview(id){
@@ -4219,7 +4233,7 @@ function renderFbigPreviewBody(p){
         '<div class="ig-preview-headtext"><b>'+escapeHtml(p.brand)+'</b><span>'+(p.date?fmtDate(p.date):"brak daty")+'</span></div>'+
       '</div>'+
       (p.video && view==="ig" ?
-        '<div class="ig-preview-imgwrap"><video class="ig-preview-img" src="'+escapeHtml(p.video)+'" controls></video></div>'
+        '<div class="ig-preview-imgwrap">'+previewVideoHtml(p.video, 'ig-preview-img')+'</div>'
         : mainImg ?
         '<div class="ig-preview-imgwrap">'+
           (showImages.length>1 ? '<button class="ig-preview-nav prev" onclick="shiftPreviewImg(-1)">‹</button>' : '')+
@@ -4249,7 +4263,7 @@ function renderGenericPreviewBody(p){
         '<div class="ig-preview-headtext"><b>'+escapeHtml(p.brand)+'</b><span>'+(p.date?fmtDate(p.date):"brak daty")+'</span></div>'+
       '</div>'+
       (p.video ?
-        '<div class="ig-preview-imgwrap"><video class="ig-preview-img" src="'+escapeHtml(p.video)+'" controls></video></div>'
+        '<div class="ig-preview-imgwrap">'+previewVideoHtml(p.video, 'ig-preview-img')+'</div>'
         : mainImg ?
         '<div class="ig-preview-imgwrap">'+
           (images.length>1 ? '<button class="ig-preview-nav prev" onclick="shiftPreviewImg(-1)">‹</button>' : '')+
@@ -4270,7 +4284,7 @@ function renderTiktokPreviewBody(p){
   var caption = p.captionIg || p.captionFb || p.title || "";
   return '<div>'+
     '<div class="tt-preview-box tt-preview-wrap">'+
-      (p.video ? '<video class="tt-preview-media" src="'+escapeHtml(p.video)+'" controls onerror="this.parentElement.classList.add(\'tt-preview-broken\')"></video>'
+      (p.video ? previewVideoHtml(p.video, 'tt-preview-media', "this.parentElement.classList.add('tt-preview-broken')")
         : p.images && p.images[0] ? '<img class="tt-preview-media" src="'+escapeHtml(p.images[0])+'" alt="" onerror="this.parentElement.classList.add(\'tt-preview-broken\')"><div class="tt-preview-play">▶</div>'
         : '<div class="tt-preview-noimg">Brak wideo/zdjęcia</div>')+
       '<div class="tt-preview-brokenmsg">Nie udało się załadować pliku spod podanego linku.</div>'+
@@ -4289,7 +4303,7 @@ function renderYoutubePreviewBody(p){
   var initials = (p.brand||"?").slice(0,2).toUpperCase();
   return '<div class="yt-preview-box">'+
       '<div class="yt-preview-thumbwrap">'+
-        (p.video ? '<video class="yt-preview-thumb" src="'+escapeHtml(p.video)+'" controls onerror="this.parentElement.classList.add(\'yt-preview-broken\')"></video>'
+        (p.video ? previewVideoHtml(p.video, 'yt-preview-thumb', "this.parentElement.classList.add('yt-preview-broken')")
           : p.images && p.images[0] ? '<img class="yt-preview-thumb" src="'+escapeHtml(p.images[0])+'" alt="" onerror="this.parentElement.classList.add(\'yt-preview-broken\')"><div class="yt-preview-play"></div>'
           : '<div class="yt-preview-noimg">Brak miniatury/wideo</div>')+
         '<div class="yt-preview-brokenmsg">Nie udało się załadować pliku spod podanego linku.</div>'+
