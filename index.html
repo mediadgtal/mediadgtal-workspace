@@ -2985,6 +2985,17 @@ function renderDashboard(el){
   }
   html += '</div>';
 
+  // Outreach (2026-10-21) — przypomnienie o dziennym prospectingu z Bazy kontaktów.
+  (function(){
+    var o = crmOutreachMeta();
+    var q = (o.queue.date===today) ? o.queue.ids.length : 0;
+    var sent = crmOutreachSentToday();
+    html += '<div class="card"><h3>📨 Outreach na dziś</h3>';
+    html += '<div style="font-size:13px; color:var(--muted-light); margin-bottom:10px">'+
+      (q ? 'Wysłane: <b style="color:#fff">'+sent+' / '+q+'</b> z dzisiejszej listy.' : (sent ? 'Wysłane dziś: <b style="color:#fff">'+sent+'</b>.' : 'Nie masz jeszcze dzisiejszej listy szkół do napisania.'))+'</div>';
+    html += '<button class="btn small" onclick="crmSubview=\'outreach\'; switchTab(\'crm\')">'+(q && sent>=q ? 'Zobacz listę' : (q ? 'Kontynuuj →' : 'Ułóż listę →'))+'</button></div>';
+  })();
+
   html += '<div class="card"><h3>Dziś w kalendarzu</h3>';
   if(gcalLoadingDash){ html += '<div class="empty">Synchronizuję z Google Calendar…</div>'; }
   else{ html += todayEvents.length ? todayEvents.map(eventRow).join("") : '<div class="empty">Brak wydarzeń na dziś.</div>'; }
@@ -16055,6 +16066,255 @@ function crmUrl(v, kind){
   }
   return v;
 }
+/* ================= OUTREACH — półautomatyczny prospecting (2026-10-21) =================
+   Damian wybiera kategorię i liczbę szkół, aplikacja układa dzienną listę spośród kontaktów,
+   do których jeszcze nie pisał, i przygotowuje jedną z 3 wiadomości z podstawionymi danymi.
+   Lajki i wysyłkę Damian robi ręcznie z prywatnego IG/FB (pełna automatyzacja = ryzyko bana
+   konta, odrzucona świadomie). Ustawienia i dzisiejsza lista siedzą w state.crmMeta.outreach
+   (synchronizowane w workspace_config), znacznik wysyłki w kontakcie (c.outreach). */
+var CRM_OUTREACH_DEFAULT_TEMPLATES = [
+  {name:"Wiadomość 1", text:"Cześć! 👋 Trafiłem na profil {nazwa} i bardzo podoba mi się to, co robicie. Zajmuję się marketingiem dla szkół tańca i studiów ruchu — pomagam zapełniać grupy dzięki reklamom na FB i IG. Mogę podesłać 2–3 pomysły, co u Was mogłoby zadziałać? 🙂"},
+  {name:"Wiadomość 2", text:"Hej! Widzę, że {nazwa} fajnie się rozwija 💪 Pracuję ze studiami tańca, pole dance i jogi nad pozyskiwaniem nowych kursantów z social mediów. Chętnie pokażę, jak to wygląda u innych studiów — dać znać?"},
+  {name:"Wiadomość 3", text:"Dzień dobry! Piszę, bo specjalizuję się w reklamach dla studiów tańca i fitnessu. Jeśli planujecie nabory, mogę bezpłatnie zerknąć na Wasz profil i podpowiedzieć, co poprawić, żeby przyciągał więcej zapisów. Zainteresowani?"}
+];
+var crmOutreachLastVia = {}; // id -> "ig"|"fb" — co Damian ostatnio otworzył przy danym kontakcie (tylko w tej sesji)
+var crmOutreachCopiedFor = null;
+function crmOutreachMeta(){
+  if(!state.crmMeta) state.crmMeta = {reviewIndex:0, filter:"all"};
+  var o = state.crmMeta.outreach;
+  if(!o){
+    o = state.crmMeta.outreach = {
+      templates: CRM_OUTREACH_DEFAULT_TEMPLATES.map(function(t){ return {name:t.name, text:t.text}; }),
+      category: "", count: 10, skipT4A: true, queue: {date:"", ids:[]}, tplPick: {}
+    };
+  }
+  if(!o.templates || o.templates.length<3) o.templates = CRM_OUTREACH_DEFAULT_TEMPLATES.map(function(t){ return {name:t.name, text:t.text}; });
+  if(!o.queue) o.queue = {date:"", ids:[]};
+  if(!o.tplPick) o.tplPick = {};
+  return o;
+}
+function crmOutreachCandidates(category){
+  var o = crmOutreachMeta();
+  return crmActiveContacts().filter(function(c){
+    if(category && (c.category||"")!==category) return false;
+    if(!crmUrl(c.ig,"ig") && !crmUrl(c.fb,"fb")) return false;
+    if(c.outreach || c.status || c.lastContact || c.hot) return false;
+    if(o.skipT4A && (c.t4a2SentAt || c.t4a2Stage)) return false;
+    return true;
+  }).sort(function(a,b){ return (a.importedAt||"").localeCompare(b.importedAt||"") || (a.name||"").localeCompare(b.name||"","pl"); });
+}
+function crmOutreachSet(key, val){
+  var o = crmOutreachMeta();
+  if(key==="count") val = Math.max(1, Math.min(50, parseInt(val,10)||10));
+  o[key] = val;
+  save(); renderAll();
+}
+function crmOutreachSetTemplate(i, field, val){
+  var o = crmOutreachMeta();
+  o.templates[i][field] = val;
+  save();
+}
+function crmOutreachResetTemplate(i){
+  var o = crmOutreachMeta();
+  if(!confirm('Przywrócić domyślną treść "'+o.templates[i].name+'"? Twoja wersja zostanie nadpisana.')) return;
+  o.templates[i] = {name:CRM_OUTREACH_DEFAULT_TEMPLATES[i].name, text:CRM_OUTREACH_DEFAULT_TEMPLATES[i].text};
+  save(); renderAll();
+}
+function crmOutreachBuild(){
+  var o = crmOutreachMeta();
+  var today = todayStr();
+  var keep = (o.queue.date===today) ? o.queue.ids.filter(function(id){
+    var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+    return c && c.outreach;
+  }) : [];
+  var pending = (o.queue.date===today) ? o.queue.ids.length - keep.length : 0;
+  if(pending && !confirm("Na dzisiejszej liście jest jeszcze "+pending+" niewysłanych szkół. Ułożyć listę od nowa?")) return;
+  var picked = crmOutreachCandidates(o.category).slice(0, o.count).map(function(c){ return c.id; });
+  if(!picked.length){ alert("Brak szkół do wybrania w tej kategorii — do wszystkich z linkiem IG/FB już pisałeś albo mają status."); return; }
+  o.queue = {date:today, ids:keep.concat(picked)};
+  o.tplPick = {};
+  picked.forEach(function(id, i){ o.tplPick[id] = i % 3; }); // rotacja, żeby nie szła ciągle ta sama wiadomość
+  save(); renderAll();
+}
+function crmOutreachTplIndex(id){
+  var o = crmOutreachMeta();
+  return (o.tplPick[id]!=null) ? o.tplPick[id] : 0;
+}
+function crmOutreachPickTemplate(id, i){
+  crmOutreachMeta().tplPick[id] = i;
+  save(); renderAll();
+}
+function crmOutreachMessage(c, i){
+  var t = crmOutreachMeta().templates[i].text || "";
+  return t.replace(/\{nazwa\}/g, c.name||"").replace(/\{miasto\}/g, c.city||"").replace(/\{osoba\}/g, c.contactPerson||"");
+}
+function crmOutreachCopySync(text){
+  // Kopiowanie synchronicznie (execCommand), bo zaraz potem otwiera się nowa karta i odbiera
+  // focus — asynchroniczny navigator.clipboard potrafi wtedy po cichu nie zadziałać.
+  var ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  var ok = false;
+  try{ ok = document.execCommand("copy"); }catch(e){}
+  document.body.removeChild(ta);
+  return ok;
+}
+function crmOutreachOpen(id, kind){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  var url = crmUrl(kind==="ig" ? c.ig : c.fb, kind);
+  if(!url) return;
+  crmOutreachCopySync(crmOutreachMessage(c, crmOutreachTplIndex(id)));
+  crmOutreachLastVia[id] = kind;
+  crmOutreachCopiedFor = id;
+  window.open(url, "_blank", "noopener");
+  renderAll();
+}
+function crmOutreachCopy(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  crmOutreachCopySync(crmOutreachMessage(c, crmOutreachTplIndex(id)));
+  crmOutreachCopiedFor = id;
+  renderAll();
+}
+function crmOutreachMarkSent(id, via){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  var today = todayStr();
+  var tpl = crmOutreachTplIndex(id);
+  c.outreach = {sentAt:today, via:via, template:tpl, prev:{status:c.status||"", lastContact:c.lastContact||"", taggedAt:c.taggedAt||"", notes:c.notes||""}};
+  if(!c.status){ c.status = "brak_odpowiedzi"; c.taggedAt = today; }
+  c.lastContact = today;
+  c.notes = (c.notes ? c.notes+"\n" : "")+today+" — outreach "+(via==="ig"?"Instagram":"Facebook")+" ("+crmOutreachMeta().templates[tpl].name+")";
+  if(crmOutreachCopiedFor===id) crmOutreachCopiedFor = null;
+  save(); renderAll();
+}
+function crmOutreachSkip(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c) return;
+  c.outreach = {skippedAt:todayStr()};
+  save(); renderAll();
+}
+function crmOutreachUndo(id){
+  var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+  if(!c || !c.outreach) return;
+  var p = c.outreach.prev;
+  if(p){ ["status","lastContact","taggedAt","notes"].forEach(function(k){ if(p[k]) c[k] = p[k]; else delete c[k]; }); }
+  delete c.outreach;
+  save(); renderAll();
+}
+function crmOutreachSentToday(){
+  var today = todayStr();
+  return crmActiveContacts().filter(function(c){ return c.outreach && c.outreach.sentAt===today; }).length;
+}
+function crmOutreachStats(){
+  var o = crmOutreachMeta();
+  var per = o.templates.map(function(){ return {sent:0, replied:0}; });
+  var total = {sent:0, replied:0};
+  crmActiveContacts().forEach(function(c){
+    if(!c.outreach || !c.outreach.sentAt) return;
+    var replied = c.status && c.status!=="brak_odpowiedzi";
+    total.sent++; if(replied) total.replied++;
+    var p = per[c.outreach.template]; if(p){ p.sent++; if(replied) p.replied++; }
+  });
+  return {total:total, per:per};
+}
+function renderCrmOutreach(){
+  var o = crmOutreachMeta();
+  var today = todayStr();
+  var queueIds = (o.queue.date===today) ? o.queue.ids : [];
+  var html = '';
+
+  // --- ustawienia listy
+  html += '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">';
+  html += '<h3>📨 Dzisiejsza lista do napisania</h3>';
+  html += '<p style="font-size:13px; color:var(--muted-light); margin:0 0 12px">Wybierz kategorię i liczbę szkół — dobiorę tylko takie, do których jeszcze nie pisałeś (bez statusu i daty kontaktu). Ty lajkujesz kilka ostatnich postów i wklejasz wiadomość (już będzie w schowku).</p>';
+  html += '<div class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end">';
+  html += '<div class="field" style="margin:0; min-width:200px"><label>Kategoria</label><select onchange="crmOutreachSet(\'category\', this.value)">';
+  html += '<option value=""'+(!o.category?" selected":"")+'>Wszystkie kategorie ('+crmOutreachCandidates("").length+')</option>';
+  (state.crmCategories||[]).forEach(function(cat){
+    html += '<option value="'+escapeHtml(cat)+'"'+(o.category===cat?" selected":"")+'>'+escapeHtml(cat)+' ('+crmOutreachCandidates(cat).length+' do napisania)</option>';
+  });
+  html += '</select></div>';
+  html += '<div class="field" style="margin:0; width:110px"><label>Ile szkół</label><input type="number" min="1" max="50" value="'+o.count+'" onchange="crmOutreachSet(\'count\', this.value)"></div>';
+  html += '<label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted-light); cursor:pointer; padding-bottom:8px"><input type="checkbox" style="width:auto"'+(o.skipT4A?" checked":"")+' onchange="crmOutreachSet(\'skipT4A\', this.checked)"> Pomiń szkoły, do których szła już wiadomość o tool4arts</label>';
+  html += '<button class="btn" style="margin-bottom:2px" onclick="crmOutreachBuild()">'+(queueIds.length?"↻ Ułóż listę od nowa":"Ułóż listę")+'</button>';
+  html += '</div></div>';
+
+  // --- lista
+  if(queueIds.length){
+    var sentToday = 0;
+    var rows = '';
+    queueIds.forEach(function(id){
+      var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
+      if(!c || c.deletedAt) return;
+      var done = c.outreach && c.outreach.sentAt;
+      var skipped = c.outreach && c.outreach.skippedAt;
+      if(done) sentToday++;
+      var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb");
+      var tpl = crmOutreachTplIndex(id);
+      var place = [c.city, crmVoivodeship(c)].filter(Boolean).join(", ");
+      rows += '<div class="card" style="padding:14px 16px; margin-bottom:10px'+((done||skipped)?"; opacity:.55":"")+'">';
+      rows += '<div class="row" style="justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center">';
+      rows += '<div><b style="color:#fff">'+escapeHtml(c.name||"")+'</b> <span style="font-size:12px; color:var(--muted)">'+escapeHtml(place)+(c.category?" · "+escapeHtml(c.category):"")+'</span></div>';
+      if(done){
+        rows += '<div style="font-size:13px; color:#63b58a">✓ Wysłane ('+(c.outreach.via==="ig"?"Instagram":"Facebook")+', '+escapeHtml(o.templates[c.outreach.template] ? o.templates[c.outreach.template].name : "")+') <button class="linklike" onclick="crmOutreachUndo(\''+id+'\')">cofnij</button></div>';
+      } else if(skipped){
+        rows += '<div style="font-size:13px; color:var(--muted)">Pominięte <button class="linklike" onclick="crmOutreachUndo(\''+id+'\')">cofnij</button></div>';
+      } else {
+        rows += '<div class="row" style="gap:6px; flex-wrap:wrap">';
+        if(igUrl) rows += '<button class="btn small" onclick="crmOutreachOpen(\''+id+'\',\'ig\')">📷 Otwórz Instagram</button>';
+        if(fbUrl) rows += '<button class="btn small" onclick="crmOutreachOpen(\''+id+'\',\'fb\')">👍 Otwórz Facebook</button>';
+        rows += '</div>';
+      }
+      rows += '</div>';
+      if(!done && !skipped){
+        rows += '<div class="row" style="gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center">';
+        o.templates.forEach(function(t, i){
+          rows += '<button class="btn small '+(i===tpl?"":"secondary")+'" onclick="crmOutreachPickTemplate(\''+id+'\','+i+')">'+escapeHtml(t.name||("Wiadomość "+(i+1)))+'</button>';
+        });
+        rows += '<button class="linklike" style="margin-left:6px" onclick="crmOutreachCopy(\''+id+'\')">📋 Kopiuj</button>';
+        if(crmOutreachCopiedFor===id) rows += '<span style="font-size:12px; color:#63b58a">Skopiowano — wklej w wiadomości (Cmd+V)</span>';
+        rows += '</div>';
+        rows += '<div style="margin-top:8px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; background:rgba(255,255,255,.03); border-radius:8px; padding:8px 10px">'+escapeHtml(crmOutreachMessage(c, tpl))+'</div>';
+        rows += '<div class="row" style="gap:6px; margin-top:10px; flex-wrap:wrap">';
+        if(igUrl) rows += '<button class="btn small secondary" onclick="crmOutreachMarkSent(\''+id+'\',\'ig\')">✓ Wysłane z IG</button>';
+        if(fbUrl) rows += '<button class="btn small secondary" onclick="crmOutreachMarkSent(\''+id+'\',\'fb\')">✓ Wysłane z FB</button>';
+        rows += '<button class="btn small secondary" onclick="crmOutreachSkip(\''+id+'\')" title="Np. szkoła nie istnieje albo nie pasuje — nie wróci na listę">Pomiń</button>';
+        rows += '<button class="linklike" onclick="openCrmModal(\''+id+'\')">szczegóły kontaktu</button>';
+        rows += '</div>';
+      }
+      rows += '</div>';
+    });
+    html += '<div style="font-size:13px; color:var(--muted-light); margin:0 0 10px">Postęp: <b style="color:#fff">'+sentToday+' / '+queueIds.length+'</b> wysłanych z dzisiejszej listy</div>';
+    html += rows;
+  } else {
+    html += '<div class="card" style="margin-bottom:16px"><div class="empty">Na dziś nie ma jeszcze listy — wybierz kategorię i kliknij „Ułóż listę”.</div></div>';
+  }
+
+  // --- statystyki
+  var st = crmOutreachStats();
+  if(st.total.sent){
+    html += '<div class="card" style="margin:6px 0 16px"><h3>📊 Która wiadomość działa</h3>';
+    html += '<div style="font-size:13px; color:var(--muted-light); margin-bottom:8px">Łącznie wysłane: <b style="color:#fff">'+st.total.sent+'</b> · odpisali: <b style="color:#fff">'+st.total.replied+'</b> ('+Math.round(100*st.total.replied/st.total.sent)+'%). „Odpisali” = status zmieniony z „Brak odpowiedzi” na inny.</div>';
+    st.per.forEach(function(p, i){
+      html += '<div style="font-size:13px; color:var(--muted-light)">'+escapeHtml(o.templates[i].name)+': '+p.sent+' wysłanych, '+p.replied+' odpowiedzi'+(p.sent?" ("+Math.round(100*p.replied/p.sent)+"%)":"")+'</div>';
+    });
+    html += '</div>';
+  }
+
+  // --- szablony
+  html += '<div class="card"><h3>✏️ Treść wiadomości</h3>';
+  html += '<p style="font-size:13px; color:var(--muted-light); margin:0 0 12px">Zmiany zapisują się same po kliknięciu poza polem. Możesz wstawić: <code>{nazwa}</code> — nazwa szkoły, <code>{miasto}</code>, <code>{osoba}</code> — osoba kontaktowa (jeśli jest w bazie).</p>';
+  o.templates.forEach(function(t, i){
+    html += '<div class="field"><div class="row" style="gap:8px; align-items:center; margin-bottom:6px">'+
+      '<input type="text" value="'+escapeHtml(t.name||"")+'" style="max-width:220px" onchange="crmOutreachSetTemplate('+i+',\'name\', this.value); renderAll()">'+
+      '<button class="linklike" onclick="crmOutreachResetTemplate('+i+')">przywróć domyślną</button></div>'+
+      '<textarea rows="4" onchange="crmOutreachSetTemplate('+i+',\'text\', this.value); renderAll()">'+escapeHtml(t.text||"")+'</textarea></div>';
+  });
+  html += '</div>';
+  return html;
+}
 function renderCRM(el){
   if(!state.crmMeta) state.crmMeta = {reviewIndex:0, filter:"all"};
   if(!state.crmCategories) state.crmCategories = ["Studio Tańca","Pole Dance","Joga","Pilates","Sztuki Walki"];
@@ -16072,6 +16332,7 @@ function renderCRM(el){
   var html = '<div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">';
   html += '<div class="tabsw" style="margin-bottom:0">'+
     '<button class="'+(crmSubview==="priorytety"?"active":"")+'" onclick="crmSetSubview(\'priorytety\')">Priorytety</button>'+
+    '<button class="'+(crmSubview==="outreach"?"active":"")+'" onclick="crmSetSubview(\'outreach\')">📨 Outreach</button>'+
     '<button class="'+(crmSubview==="baza"?"active":"")+'" onclick="crmSetSubview(\'baza\')">Baza</button>'+
     '<button class="'+(crmSubview==="przeglad"?"active":"")+'" onclick="crmSetSubview(\'przeglad\')">Przegląd</button>'+
     '<button class="'+(crmSubview==="import"?"active":"")+'" onclick="crmSetSubview(\'import\')">Import</button>'+
@@ -16090,7 +16351,7 @@ function renderCRM(el){
   });
   html += '</div>';
 
-  html += (crmSubview==="import") ? renderCrmImport() : (crmSubview==="priorytety" ? renderCrmPriorytety() : (crmSubview==="kosz" ? renderCrmKosz() : (crmSubview==="baza" ? renderCrmBaza() : renderCrmPrzeglad())));
+  html += (crmSubview==="import") ? renderCrmImport() : (crmSubview==="priorytety" ? renderCrmPriorytety() : (crmSubview==="kosz" ? renderCrmKosz() : (crmSubview==="baza" ? renderCrmBaza() : (crmSubview==="outreach" ? renderCrmOutreach() : renderCrmPrzeglad()))));
   el.innerHTML = html;
 }
 function renderCrmImport(){
