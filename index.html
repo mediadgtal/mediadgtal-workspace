@@ -590,20 +590,20 @@ var AVATAR_FULL_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIB
 
 /* ================= STATE ================= */
 // CEO tab wstrzymana na prośbę Damiana (2026-07-22) — rozpraszała go i auto-generator questów mieszał
-// wygenerowane zadania z jego prawdziwymi zadaniami. Ustaw na false (i przywróć "Gra" na pierwotne
+// wygenerowane zadania z jego prawdziwymi zadaniami. Ustaw na false (i przywróć grupę "Gra" w NAV_GROUPS i TABS na pierwotne
 // miejsce w NAV_GROUPS, zaraz za "Główne", jeśli chcesz zachować kolejność) gdy Damian poprosi o "obudzenie" zakładki.
 var CEO_SLEEPING = true;
 // Droga uśpiona na prośbę Damiana (2026-10-21) — nie korzysta z niej, dane były nieaktualne. Dane w
 // state.droga i backup do Sheets zostają nietknięte. Ustaw na false (i przywróć grupę "Główne" w TABS), żeby obudzić.
 var DROGA_SLEEPING = true;
-var NAV_GROUPS = ["Główne","Social Media","Narzędzia","System","Gra","Uśpione"];
+var NAV_GROUPS = ["Główne","Social Media","Narzędzia","System","Uśpione"];
 var TABS = [
   {id:"dashboard", label:"Pulpit", group:"Główne"},
   {id:"droga", label:"Droga", group:"Uśpione"},
   {id:"zadania", label:"Zadania", group:"Główne"},
   {id:"kalendarz", label:"Kalendarz", group:"Główne"},
   {id:"finanse", label:"Finanse", group:"Główne"},
-  {id:"ceo", label:"CEO", group:"Gra"},
+  {id:"ceo", label:"CEO", group:"Uśpione"},
   {id:"posty", label:"Posty", group:"Social Media"},
   {id:"instagram", label:"Instagram", group:"Social Media"},
   {id:"facebook", label:"Facebook", group:"Social Media"},
