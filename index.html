@@ -2894,12 +2894,46 @@ function renderAll(){
   el.querySelectorAll("[data-scroll-key]").forEach(function(box){
     if(box.scrollTop) keptScroll[box.getAttribute("data-scroll-key")] = box.scrollTop;
   });
+  // 2026-10-23 — odświeżenie w tle (synchronizacja, pobieranie statusów co 45 s) wyrzucało
+  // kursor z pola, w którym Damian właśnie pisał, i kasowało niezapisany jeszcze tekst.
+  // Zapamiętaj aktywne pole i przywróć je (z treścią i pozycją kursora) po przerysowaniu.
+  var kept = renderAllCaptureFocus(el);
   el.innerHTML = "";
   RENDERERS[currentTab](el);
   Object.keys(keptScroll).forEach(function(k){
     var box = el.querySelector('[data-scroll-key="'+k+'"]');
     if(box) box.scrollTop = keptScroll[k];
   });
+  if(kept) renderAllRestoreFocus(el, kept);
+}
+function renderAllFieldKey(f){
+  return f.tagName+"|"+(f.id||"")+"|"+(f.getAttribute("onchange")||"")+"|"+(f.getAttribute("oninput")||"")+"|"+(f.getAttribute("placeholder")||"");
+}
+function renderAllTextFields(root){
+  return Array.prototype.filter.call(root.querySelectorAll("input, textarea"), function(f){
+    return f.tagName==="TEXTAREA" || /^(text|search|email|url|tel|number|password|)$/i.test(f.getAttribute("type")||"");
+  });
+}
+function renderAllCaptureFocus(root){
+  var a = document.activeElement;
+  if(!a || !root.contains(a) || renderAllTextFields(root).indexOf(a)<0) return null;
+  var key = renderAllFieldKey(a);
+  var same = renderAllTextFields(root).filter(function(f){ return renderAllFieldKey(f)===key; });
+  var sel = null;
+  try{ sel = [a.selectionStart, a.selectionEnd]; }catch(e){}
+  // window.event istnieje tylko, gdy render wywołała akcja Damiana (Enter, klik) — wtedy pole może
+  // celowo zostać wyczyszczone (np. po dodaniu zadania), więc treść przywracamy tylko przy renderze w tle.
+  return {key:key, nth:same.indexOf(a), value:a.value, restoreValue:!window.event, sel:sel, scrollTop:a.scrollTop};
+}
+function renderAllRestoreFocus(root, k){
+  var same = renderAllTextFields(root).filter(function(f){ return renderAllFieldKey(f)===k.key; });
+  var f = same[k.nth];
+  if(!f) return;
+  if(k.restoreValue && f.value!==k.value) f.value = k.value; // niezapisane jeszcze pisanie (onchange jeszcze nie poszedł)
+  else if(!k.restoreValue && f.value!==k.value) return;          // pole celowo zmienione przez akcję — nie wracaj do niego
+  f.focus({preventScroll:true});
+  try{ if(k.sel && k.sel[0]!=null) f.setSelectionRange(k.sel[0], k.sel[1]); }catch(e){}
+  f.scrollTop = k.scrollTop;
 }
 function renderGcalBanner(){
   var el = document.getElementById("gcalBanner");
