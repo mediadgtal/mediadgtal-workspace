@@ -14841,7 +14841,10 @@ var CRM_STATUSES = [
 /* 2026-07-27 — osobny, prywatny (nie zsynchronizowany z arkuszem Tomka) tor tagowania
    dla własnego cyklu follow-upów Damiana przy sprzedaży tool4arts: pierwsza wiadomość →
    (ta sama doba: "nie teraz" → follow30 za 30 dni) albo (cisza 7 dni → wysyła follow-up,
-   przypomnienie w Priorytetach). Po 30 dniach: brak odpowiedzi albo niezainteresowany. */
+   przypomnienie w Priorytetach). Po 30 dniach: brak odpowiedzi albo niezainteresowany.
+   2026-10-26 — zamiast co 7 dni: follow-upy w dniu 3 / 7 / 14 od pierwszej wiadomości (ten sam
+   cykl co w Outreachu, CRM_OUTREACH_FOLLOWUP_DAYS). Początek cyklu w c.t4a2FirstAt, wysłane
+   follow-upy w c.t4a2Followups; po trzecim przypomnienia się kończą. */
 var CRM_T4A_FOLLOW_STAGES = [
   {id:"follow30", label:"Follow 30 dni", color:"#7fa9c9", bg:"#1c2732"},
   {id:"w_rozmowie", label:"W rozmowie", color:"#cf9b4a", bg:"#342c1f"},
@@ -14855,13 +14858,17 @@ function crmT4AFollowStageDef(id){
 function crmT4AFollowTag(c){
   var s = crmT4AFollowStageDef(c.t4a2Stage);
   if(s) return '<span class="tag" style="background:'+s.bg+'; color:'+s.color+'">'+s.label+'</span>';
-  if(c.t4a2SentAt) return '<span class="tag" style="background:#2a2830; color:var(--muted)">Wysłano, czeka</span>';
+  if(c.t4a2SentAt) return '<span class="tag" style="background:#2a2830; color:var(--muted)">'+crmT4AFollowLabel(c)+'</span>';
   return "";
 }
 function crmT4AFollowLabel(c){
   var s = crmT4AFollowStageDef(c.t4a2Stage);
   if(s) return s.label;
-  if(c.t4a2SentAt) return "Wysłano, czeka";
+  if(c.t4a2SentAt){
+    var n = (c.t4a2Followups||[]).length;
+    if(n>=CRM_OUTREACH_FOLLOWUP_DAYS.length) return "Wysłano, follow-upy 3/3";
+    return "Wysłano, czeka"+(n ? " (follow-up "+n+"/3)" : "");
+  }
   return "";
 }
 function crmAddDays(dateStr, n){
@@ -14872,12 +14879,18 @@ function crmAddDays(dateStr, n){
 function crmT4AFollowDueDate(c){
   if(c.t4a2Stage==="follow30") return c.t4a2DueDate||"";
   if(!c.t4a2Stage && c.t4a2SentAt){
-    // Licz termin od realnej daty ostatniego kontaktu (c.lastContact), nie od kliknięcia
-    // "Wysłano follow-up dziś" — to drugie bywa spóźnione względem faktycznego kontaktu
-    // i fałszywie przesuwa termin w przyszłość. Fallback na t4a2SentAt tylko gdy lastContact
-    // nigdy nie było ustawione.
-    var base = c.lastContact || c.t4a2SentAt;
-    return crmAddDays(base, 7);
+    // dzień 3 / 7 / 14 od pierwszej wiadomości (stare kontakty bez t4a2FirstAt: od t4a2SentAt),
+    // a po spóźnionym follow-upie nie wcześniej niż odstęp od niego
+    var first = c.t4a2FirstAt || c.t4a2SentAt;
+    var done = c.t4a2Followups || [];
+    var n = done.length;
+    if(n>=CRM_OUTREACH_FOLLOWUP_DAYS.length) return "";
+    var due = crmAddDays(first, CRM_OUTREACH_FOLLOWUP_DAYS[n]);
+    if(n){
+      var gap = crmAddDays(done[n-1], CRM_OUTREACH_FOLLOWUP_DAYS[n]-CRM_OUTREACH_FOLLOWUP_DAYS[n-1]);
+      if(gap>due) due = gap;
+    }
+    return due;
   }
   return "";
 }
@@ -14904,10 +14917,33 @@ function crmAdvanceReviewAfterTag(c){
   var next = crmFindIndex(curIdx, 1, filter);
   state.crmMeta.reviewIndex = (next===-1) ? curIdx : next;
 }
+// Szkoła w trakcie cyklu 3/7/14 tool4arts, której follow-up przypada dziś lub wcześniej
+function crmT4AFollowCycleDue(c){
+  if(c.t4a2Stage || !c.t4a2SentAt) return false;
+  var d = crmT4AFollowDueDate(c);
+  return !!d && d<=todayStr();
+}
+// Zapisz follow-up w cyklu tool4arts (bez renderu) — wspólne dla przycisku tool4arts i Outreachu,
+// bo Damian pisze o marketingu i tool4arts w jednej wiadomości
+function crmT4ARecordFollowup(c){
+  var today = todayStr();
+  if(!c.t4a2FirstAt) c.t4a2FirstAt = c.t4a2SentAt || today;
+  var fu = c.t4a2Followups || [];
+  if(fu[fu.length-1]!==today) c.t4a2Followups = fu.concat([today]);
+  c.t4a2SentAt = today;
+}
 function crmT4ASendFollowToday(id){
   var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
   if(!c) return;
   var already = c.lastContact===todayStr();
+  if(!c.t4a2SentAt || c.t4a2Stage){
+    // pierwsza wiadomość albo powrót po „Follow 30 dni”/innym etapie — nowy cykl 3/7/14
+    c.t4a2FirstAt = todayStr();
+    c.t4a2Followups = [];
+  } else {
+    crmT4ARecordFollowup(c);
+    if(crmOutreachFollowupIsDue(c)) crmOutreachRecordFollowup(c); // ta sama wiadomość = też follow-up z Outreachu
+  }
   c.t4a2SentAt = todayStr();
   c.t4a2Stage = "";
   c.t4a2DueDate = "";
@@ -15496,7 +15532,7 @@ function crmT4AFollowModalHtml(c){
     '<div style="background:var(--sidebar-bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px">'+
     '<div>'+tag+'</div>'+
     (c.t4a2SentAt ? '<div style="font-size:11.5px; color:var(--muted); margin-top:4px">Ostatnia wiadomość: '+fmtDate(c.t4a2SentAt)+'</div>' : '')+
-    (c.t4a2SentAt && !c.t4a2Stage && c.lastContact && c.lastContact!==c.t4a2SentAt ? '<div style="font-size:11.5px; color:var(--muted); margin-top:2px">Termin liczony od daty ostatniego kontaktu: '+fmtDate(c.lastContact)+'</div>' : '')+
+    (c.t4a2SentAt && !c.t4a2Stage ? '<div style="font-size:11.5px; color:var(--muted); margin-top:2px">Cykl 3 / 7 / 14 dni od pierwszej wiadomości'+(c.t4a2FirstAt||c.t4a2SentAt ? ' ('+fmtDate(c.t4a2FirstAt||c.t4a2SentAt)+')' : '')+'</div>' : '')+
     dueLine+
     '<div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap">'+
     '<button type="button" class="btn small" onclick="crmT4ASendFollowToday(\''+c.id+'\')">'+(c.t4a2SentAt?"Wysłano follow-up dziś":"Wysłano 1. wiadomość dziś")+'</button>'+
@@ -16142,6 +16178,7 @@ function crmOutreachMeta(){
   if(!o.queue.refilledFor) o.queue.refilledFor = [];
   if(!o.tplPick) o.tplPick = {};
   if(!o.followTemplates) o.followTemplates = CRM_OUTREACH_FOLLOWUP_DEFAULT_TEMPLATES.slice();
+  if(!o.followNames) o.followNames = CRM_OUTREACH_FOLLOWUP_DAYS.map(function(d, i){ return "Follow-up "+(i+1)+" — dzień "+d; });
   return o;
 }
 function crmOutreachCandidates(category){
@@ -16164,12 +16201,6 @@ function crmOutreachSetTemplate(i, field, val){
   var o = crmOutreachMeta();
   o.templates[i][field] = val;
   save();
-}
-function crmOutreachResetTemplate(i){
-  var o = crmOutreachMeta();
-  if(!confirm('Przywrócić domyślną treść "'+o.templates[i].name+'"? Twoja wersja zostanie nadpisana.')) return;
-  o.templates[i] = {name:CRM_OUTREACH_DEFAULT_TEMPLATES[i].name, text:CRM_OUTREACH_DEFAULT_TEMPLATES[i].text};
-  save(); renderAll();
 }
 function crmOutreachBuild(){
   var o = crmOutreachMeta();
@@ -16354,16 +16385,24 @@ function crmOutreachFollowupCopy(id){
   crmOutreachCopiedFor = "fu:"+id;
   renderAll();
 }
-function crmOutreachMarkFollowup(id){
-  var c = crmOutreachContact(id);
-  if(!c || !c.outreach) return;
+function crmOutreachFollowupIsDue(c){
+  var d = crmOutreachFollowupDue(c);
+  return !!d && d<=todayStr();
+}
+function crmOutreachRecordFollowup(c){
   var today = todayStr();
   if(!c.outreach.followups) c.outreach.followups = [];
   c.outreach.followups.push(today);
   var n = c.outreach.followups.length;
-  var via = crmOutreachLastVia[id] || c.outreach.via;
+  var via = crmOutreachLastVia[c.id] || c.outreach.via;
   c.lastContact = today;
-  c.notes = (c.notes ? c.notes+"\n" : "")+today+" — follow-up "+n+" (dzień "+CRM_OUTREACH_FOLLOWUP_DAYS[n-1]+", "+(via==="ig"?"Instagram":"Facebook")+")";
+  c.notes = (c.notes ? c.notes+"\n" : "")+today+" — follow-up "+n+" (dzień "+CRM_OUTREACH_FOLLOWUP_DAYS[n-1]+", "+(via==="ig"?"Instagram":"Facebook")+", "+crmOutreachFollowName(n-1)+")";
+}
+function crmOutreachMarkFollowup(id){
+  var c = crmOutreachContact(id);
+  if(!c || !c.outreach) return;
+  crmOutreachRecordFollowup(c);
+  if(crmT4AFollowCycleDue(c)) crmT4ARecordFollowup(c); // ta sama wiadomość = też follow-up tool4arts
   if(crmOutreachCopiedFor==="fu:"+id) crmOutreachCopiedFor = null;
   save(); renderAll();
 }
@@ -16371,7 +16410,12 @@ function crmOutreachUndoFollowup(id){
   var c = crmOutreachContact(id);
   if(!c || !c.outreach || !c.outreach.followups || !c.outreach.followups.length) return;
   var n = c.outreach.followups.length;
-  c.outreach.followups.pop();
+  var popped = c.outreach.followups.pop();
+  var tfu = c.t4a2Followups || [];
+  if(tfu.length && tfu[tfu.length-1]===popped){
+    c.t4a2Followups = tfu.slice(0, -1);
+    c.t4a2SentAt = c.t4a2Followups.length ? c.t4a2Followups[c.t4a2Followups.length-1] : (c.t4a2FirstAt || c.t4a2SentAt);
+  }
   var lines = (c.notes||"").split("\n");
   if(/ — follow-up \d+ \(dzień/.test(lines[lines.length-1]||"") && lines[lines.length-1].indexOf("follow-up "+n+" ")>=0){ lines.pop(); c.notes = lines.join("\n"); }
   c.lastContact = c.outreach.followups.length ? c.outreach.followups[c.outreach.followups.length-1] : c.outreach.sentAt;
@@ -16388,10 +16432,12 @@ function crmOutreachSetFollowTemplate(i, val){
   crmOutreachMeta().followTemplates[i] = val;
   save();
 }
-function crmOutreachResetFollowTemplate(i){
-  if(!confirm('Przywrócić domyślną treść follow-upu z dnia '+CRM_OUTREACH_FOLLOWUP_DAYS[i]+'? Twoja wersja zostanie nadpisana.')) return;
-  crmOutreachMeta().followTemplates[i] = CRM_OUTREACH_FOLLOWUP_DEFAULT_TEMPLATES[i];
-  save(); renderAll();
+function crmOutreachSetFollowName(i, val){
+  crmOutreachMeta().followNames[i] = val;
+  save();
+}
+function crmOutreachFollowName(i){
+  return crmOutreachMeta().followNames[i] || ("Follow-up "+(i+1));
 }
 function crmOutreachFollowupState(c){
   var n = (c.outreach.followups||[]).length;
@@ -16411,7 +16457,8 @@ function crmOutreachFollowupRow(c){
   var msg = crmOutreachFollowupMessage(c);
   var html = '<div class="taskitem" style="align-items:flex-start; flex-direction:column; gap:6px; padding:12px 4px">';
   html += '<div style="display:flex; justify-content:space-between; width:100%; align-items:center; gap:10px; flex-wrap:wrap">'+
-    '<div><b style="color:#fff">'+escapeHtml(c.name||"")+'</b> <span class="tag" style="background:#342c1f; color:#cf9b4a">Follow-up '+(n+1)+'/3 · dzień '+CRM_OUTREACH_FOLLOWUP_DAYS[n]+'</span> '+dueLabel+
+    '<div><b style="color:#fff">'+escapeHtml(c.name||"")+'</b> <span class="tag" style="background:#342c1f; color:#cf9b4a">'+escapeHtml(crmOutreachFollowName(n))+' ('+(n+1)+'/3)</span> '+dueLabel+
+    (crmT4AFollowCycleDue(c) ? ' <span class="tag" style="background:#1c2732; color:#7fa9c9" title="Ta sama szkoła czeka też na follow-up tool4arts — kliknięcie „Wysłany follow-up” zalicza oba">+ tool4arts</span>' : '')+
     ' <span style="color:var(--muted); font-size:11.5px">'+escapeHtml(place)+(c.category?" · "+escapeHtml(c.category):"")+' · pierwsza wiadomość '+fmtDate(c.outreach.sentAt)+' ('+(c.outreach.via==="ig"?"IG":"FB")+')</span></div>'+
     '<button class="linklike" onclick="openCrmModal(\''+id+'\')">Edytuj</button></div>';
   html += '<div style="width:100%; font-size:13px; color:var(--muted-light); white-space:pre-wrap; background:rgba(255,255,255,.03); border-radius:8px; padding:8px 10px">'+(msg.trim() ? escapeHtml(msg) : '<i style="color:var(--muted)">Treść tego follow-upu jest pusta — uzupełnij ją w zakładce 📨 Outreach, na dole strony.</i>')+'</div>';
@@ -16422,7 +16469,7 @@ function crmOutreachFollowupRow(c){
   if(crmOutreachCopiedFor==="fu:"+id) html += '<span style="font-size:12px; color:#63b58a">Skopiowano — wklej w wiadomości (Cmd+V)</span>';
   html += '</div>';
   html += '<div class="row" style="gap:6px; flex-wrap:wrap">'+
-    '<button class="btn small secondary" onclick="crmOutreachMarkFollowup(\''+id+'\')">✓ Wysłany follow-up '+(n+1)+'</button>'+
+    '<button class="btn small secondary" onclick="crmOutreachMarkFollowup(\''+id+'\')">✓ Wysłany: '+escapeHtml(crmOutreachFollowName(n))+'</button>'+
     '<button class="btn small secondary" onclick="crmOutreachReplied(\''+id+'\')" title="Ustawia status „W rozmowie” — szkoła znika z follow-upów">💬 Odpisali</button>'+
     '</div>';
   html += '</div>';
@@ -16626,14 +16673,14 @@ function renderCrmOutreach(){
   o.templates.forEach(function(t, i){
     if(i===CRM_OUTREACH_ROTATION) html += '<div style="font-size:13px; color:var(--muted-light); margin:16px 0 10px; padding-top:12px; border-top:1px solid rgba(255,255,255,.08)">Wiadomości o tool4arts — nie rotują się same, wybierasz je ręcznie przy szkole, z którą jeszcze nie rozmawiałeś o tool4arts.</div>';
     html += '<div class="field"><div class="row" style="gap:8px; align-items:center; margin-bottom:6px">'+
-      '<input type="text" value="'+escapeHtml(t.name||"")+'" style="max-width:220px" onchange="crmOutreachSetTemplate('+i+',\'name\', this.value); renderAll()">'+
-      '<button class="linklike" onclick="crmOutreachResetTemplate('+i+')">przywróć domyślną</button></div>'+
+      '<input type="text" value="'+escapeHtml(t.name||"")+'" style="max-width:220px" onchange="crmOutreachSetTemplate('+i+',\'name\', this.value); renderAll()"></div>'+
       '<textarea rows="4"'+(i>=CRM_OUTREACH_ROTATION?' placeholder="Wpisz tu wiadomość o tool4arts…"':'')+' onchange="crmOutreachSetTemplate('+i+',\'text\', this.value); renderAll()">'+escapeHtml(t.text||"")+'</textarea></div>';
   });
   html += '<div style="font-size:13px; color:var(--muted-light); margin:16px 0 10px; padding-top:12px; border-top:1px solid rgba(255,255,255,.08)">Follow-upy — przypomnienie w Priorytetach po 3, 7 i 14 dniach od pierwszej wiadomości, dopóki szkoła ma status „Brak odpowiedzi”.</div>';
   o.followTemplates.forEach(function(t, i){
-    html += '<div class="field"><div class="row" style="gap:8px; align-items:center; margin-bottom:6px"><b style="font-size:13px">Follow-up '+(i+1)+' — dzień '+CRM_OUTREACH_FOLLOWUP_DAYS[i]+'</b>'+
-      '<button class="linklike" onclick="crmOutreachResetFollowTemplate('+i+')">przywróć domyślną</button></div>'+
+    html += '<div class="field"><div class="row" style="gap:8px; align-items:center; margin-bottom:6px">'+
+      '<input type="text" value="'+escapeHtml(o.followNames[i]||"")+'" style="max-width:220px" onchange="crmOutreachSetFollowName('+i+', this.value); renderAll()">'+
+      '<span style="font-size:12px; color:var(--muted)">wysyłany '+CRM_OUTREACH_FOLLOWUP_DAYS[i]+'. dnia</span></div>'+
       '<textarea rows="3" onchange="crmOutreachSetFollowTemplate('+i+', this.value); renderAll()">'+escapeHtml(t||"")+'</textarea></div>';
   });
   html += '</div>';
@@ -17179,7 +17226,7 @@ function crmT4AFollowRow(c){
     '</div>'+
     '<div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-top:2px">'+
       '<div>'+links+'</div>'+
-      '<button class="btn small" onclick="crmT4ASendFollowToday(\''+c.id+'\')">'+(c.t4a2SentAt?"Wysłano follow-up dziś":"Wysłano dziś")+'</button>'+
+      '<button class="btn small" onclick="crmT4ASendFollowToday(\''+c.id+'\')">'+(c.t4a2SentAt && !c.t4a2Stage ? "Wysłano follow-up "+((c.t4a2Followups||[]).length+1)+"/3 dziś" : (c.t4a2SentAt?"Wysłano follow-up dziś":"Wysłano dziś"))+'</button>'+
     '</div>'+
     '<div class="row" style="gap:8px; flex-wrap:wrap; margin-top:2px">'+
       outcomeBtn("follow30","Follow 30 dni")+
@@ -17240,7 +17287,8 @@ function renderCrmPriorytety(){
     return '<div class="card"><div class="empty">Brak kontaktów. Przejdź do zakładki "Import", aby wczytać bazę, albo dodaj kontakt ręcznie przyciskiem "+ Nowy kontakt".</div></div>';
   }
   var b = crmPriorityBuckets();
-  var t4aDue = crmT4AFollowDueContacts();
+  // szkoła, która czeka też na follow-up z Outreachu, pokazuje się tylko tam (z oznaczeniem „+ tool4arts”)
+  var t4aDue = crmT4AFollowDueContacts().filter(function(c){ return !crmOutreachFollowupIsDue(c); });
   var html = renderCrmBriefing();
   html += '<div class="card" style="margin-bottom:16px; border-color:var(--accent)">'+
     '<h3>🎯 Dziś FOLLOW-UP tool4arts ('+t4aDue.length+')</h3>'+
