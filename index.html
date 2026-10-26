@@ -16417,8 +16417,8 @@ function crmOutreachFollowupRow(c){
     ' <span style="color:var(--muted); font-size:11.5px">'+escapeHtml(place)+(c.category?" · "+escapeHtml(c.category):"")+' · pierwsza wiadomość '+fmtDate(c.outreach.sentAt)+' ('+(c.outreach.via==="ig"?"IG":"FB")+')</span></div>'+
     '<button class="linklike" onclick="openCrmModal(\''+id+'\')">Edytuj</button></div>';
   html += '<div class="row" style="gap:6px; flex-wrap:wrap; align-items:center">';
-  if(igUrl) html += '<a class="btn small" href="'+escapeHtml(igUrl)+'" target="_blank" rel="noopener" onclick="crmOutreachLastVia[\''+id+'\']=\'ig\'">📷 Otwórz Instagram</a>';
-  if(fbUrl) html += '<a class="btn small" href="'+escapeHtml(fbUrl)+'" target="_blank" rel="noopener" onclick="crmOutreachLastVia[\''+id+'\']=\'fb\'">👍 Otwórz Facebook</a>';
+  if(igUrl) html += '<a class="btn small" style="text-decoration:none" href="'+escapeHtml(igUrl)+'" target="_blank" rel="noopener" onclick="crmOutreachLastVia[\''+id+'\']=\'ig\'">📷 Otwórz Instagram</a>';
+  if(fbUrl) html += '<a class="btn small" style="text-decoration:none" href="'+escapeHtml(fbUrl)+'" target="_blank" rel="noopener" onclick="crmOutreachLastVia[\''+id+'\']=\'fb\'">👍 Otwórz Facebook</a>';
   html += '<button class="btn small secondary" onclick="crmOutreachMarkFollowup(\''+id+'\')">✓ Napisałem follow-up</button>'+
     '<button class="btn small secondary" onclick="crmOutreachReplied(\''+id+'\')" title="Ustawia status „W rozmowie” — szkoła znika z follow-upów">💬 Odpisali</button>'+
     '</div>';
