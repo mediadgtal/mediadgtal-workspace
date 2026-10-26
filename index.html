@@ -16434,6 +16434,7 @@ function crmOutreachFollowupRow(c){
 
 // Wszystkie szkoły, do których poszła pierwsza wiadomość — rozwijane pod jednym przyciskiem (2026-10-26)
 var crmOutreachHistOpen = false;
+var crmOutreachTplOpen = false;
 var crmOutreachHistQ = "";
 var crmOutreachHistSort = "sent_desc";
 var crmOutreachHistStatus = "";
@@ -16590,7 +16591,7 @@ function renderCrmOutreach(){
         rows += '<button class="linklike" style="margin-left:6px" onclick="crmOutreachCopy(\''+id+'\')">📋 Kopiuj</button>';
         if(crmOutreachCopiedFor===id) rows += '<span style="font-size:12px; color:#63b58a">Skopiowano — wklej w wiadomości (Cmd+V)</span>';
         rows += '</div>';
-        rows += '<div style="margin-top:8px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; background:rgba(255,255,255,.03); border-radius:8px; padding:8px 10px">'+(crmOutreachTplEmpty(tpl) ? '<i style="color:var(--muted)">Ta wiadomość jest jeszcze pusta — wpisz jej treść na dole strony, w sekcji „Treść wiadomości”.</i>' : escapeHtml(crmOutreachMessage(c, tpl)))+'</div>';
+        rows += '<div style="margin-top:8px; font-size:13px; color:var(--muted-light); white-space:pre-wrap; background:rgba(255,255,255,.03); border-radius:8px; padding:8px 10px">'+(crmOutreachTplEmpty(tpl) ? '<i style="color:var(--muted)">Ta wiadomość jest jeszcze pusta — wpisz jej treść na dole strony — rozwiń „✏️ Treść wiadomości”.</i>' : escapeHtml(crmOutreachMessage(c, tpl)))+'</div>';
         rows += '<div class="row" style="gap:6px; margin-top:10px; flex-wrap:wrap">';
         if(igUrl) rows += '<button class="btn small secondary" onclick="crmOutreachMarkSent(\''+id+'\',\'ig\')">✓ Wysłane z IG</button>';
         if(fbUrl) rows += '<button class="btn small secondary" onclick="crmOutreachMarkSent(\''+id+'\',\'fb\')">✓ Wysłane z FB</button>';
@@ -16624,8 +16625,12 @@ function renderCrmOutreach(){
   }
 
   // --- szablony
-  html += '<div class="card"><h3>✏️ Treść wiadomości</h3>';
-  html += '<p style="font-size:13px; color:var(--muted-light); margin:0 0 12px">Zmiany zapisują się same po kliknięciu poza polem. Możesz wstawić: <code>{nazwa}</code> — nazwa szkoły, <code>{miasto}</code>, <code>{osoba}</code> — osoba kontaktowa (jeśli jest w bazie).</p>';
+  // rozwijane pod jednym przyciskiem, tak jak lista szkół, do których napisał (2026-10-26)
+  html += '<div class="card">';
+  html += '<button class="btn secondary" style="width:100%; justify-content:space-between; display:flex" onclick="crmOutreachTplOpen=!crmOutreachTplOpen; renderAll()">'+
+    '<span>✏️ Treść wiadomości ('+o.templates.length+')</span><span>'+(crmOutreachTplOpen?"▲":"▼")+'</span></button>';
+  if(!crmOutreachTplOpen){ html += '</div>'; return html; }
+  html += '<p style="font-size:13px; color:var(--muted-light); margin:12px 0 12px">Zmiany zapisują się same po kliknięciu poza polem. Możesz wstawić: <code>{nazwa}</code> — nazwa szkoły, <code>{miasto}</code>, <code>{osoba}</code> — osoba kontaktowa (jeśli jest w bazie).</p>';
   o.templates.forEach(function(t, i){
     if(i===CRM_OUTREACH_ROTATION) html += '<div style="font-size:13px; color:var(--muted-light); margin:16px 0 10px; padding-top:12px; border-top:1px solid rgba(255,255,255,.08)">Wiadomości o tool4arts — nie rotują się same, wybierasz je ręcznie przy szkole, z którą jeszcze nie rozmawiałeś o tool4arts.</div>';
     html += '<div class="field"><div class="row" style="gap:8px; align-items:center; margin-bottom:6px">'+
