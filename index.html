@@ -17051,12 +17051,14 @@ function crmDaysSince(c){
   if(isNaN(d)) return Infinity;
   return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
+var CRM_FOLLOWUP_GAP_DAYS = 3;
 function crmPriorityBuckets(){
   var buckets = {followup:[], nowe:[]};
   crmActiveContacts().forEach(function(c){
     if(c.status==="klient" || c.status==="odrzucili") return;
     if(!c.status){ buckets.nowe.push(c); return; }
-    if(c.status==="w_rozmowie"){ buckets.followup.push(c); return; }
+    // po „Skontaktowano dziś” rozmowa znika z listy i wraca dopiero po CRM_FOLLOWUP_GAP_DAYS dniach ciszy
+    if(c.status==="w_rozmowie"){ if(crmDaysSince(c)>=CRM_FOLLOWUP_GAP_DAYS) buckets.followup.push(c); return; }
   });
   buckets.nowe.sort(function(a,b){ return (a.importedAt||"").localeCompare(b.importedAt||"") || a.name.localeCompare(b.name); });
   buckets.followup.sort(function(a,b){ return crmDaysSince(b) - crmDaysSince(a); });
@@ -17254,11 +17256,11 @@ function renderCrmPriorytety(){
     (outFu.length ? outFu.map(crmOutreachFollowupRow).join("") : '<div class="empty">Brak follow-upów outreach na dziś.</div>')+
     '</div>';
   var sections = [
-    {label:"Follow-upy (marketing)", list:b.followup, empty:"Brak rozmów czekających na follow-up."}
+    {label:"Follow-upy (marketing)", hint:"rozmowy „W rozmowie” bez kontaktu od "+CRM_FOLLOWUP_GAP_DAYS+"+ dni", list:b.followup, empty:"Brak rozmów czekających na follow-up."}
   ];
   sections.forEach(function(s){
     html += '<div class="card" style="margin-bottom:16px">'+
-      '<h3>'+s.label+' ('+s.list.length+')</h3>'+
+      '<h3>'+s.label+' ('+s.list.length+')'+(s.hint ? ' <span style="font-size:11px; font-weight:400; color:var(--muted)">— '+s.hint+'</span>' : '')+'</h3>'+
       (s.list.length ? s.list.map(crmPriorityRow).join("") : '<div class="empty">'+s.empty+'</div>')+
       '</div>';
   });
