@@ -16222,28 +16222,27 @@ function crmOutreachShuffle(list){
 function crmOutreachContact(id){
   return state.crmContacts.filter(function(x){ return x.id===id; })[0];
 }
-// Pominięte z dzisiejszej listy, za które jeszcze nie dobrano nowych szkół
-function crmOutreachSkippedToRefill(){
+// Ile szkół brakuje do dziennej liczby — pominięte i usunięte z CRM nie liczą się do listy (2026-10-28: wcześniej liczyło tylko „Pomiń”, usunięte przepadały)
+function crmOutreachShortfall(){
   var o = crmOutreachMeta();
-  if(o.queue.date!==todayStr()) return [];
-  return o.queue.ids.filter(function(id){
+  if(o.queue.date!==todayStr()) return 0;
+  var valid = o.queue.ids.filter(function(id){
     var c = crmOutreachContact(id);
-    return c && !c.deletedAt && c.outreach && c.outreach.skippedAt && o.queue.refilledFor.indexOf(id)<0;
-  });
+    return c && !c.deletedAt && !(c.outreach && c.outreach.skippedAt);
+  }).length;
+  return Math.max(0, o.count - valid);
 }
 function crmOutreachRefill(){
   var o = crmOutreachMeta();
-  var skipped = crmOutreachSkippedToRefill();
-  if(!skipped.length) return;
+  var need = crmOutreachShortfall();
+  if(!need) return;
   var inQueue = {};
   o.queue.ids.forEach(function(id){ inQueue[id] = true; });
-  var picked = crmOutreachShuffle(crmOutreachCandidates(o.category).filter(function(c){ return !inQueue[c.id]; })).slice(0, skipped.length).map(function(c){ return c.id; });
+  var picked = crmOutreachShuffle(crmOutreachCandidates(o.category).filter(function(c){ return !inQueue[c.id]; })).slice(0, need).map(function(c){ return c.id; });
   if(!picked.length){ alert("Brak kolejnych szkół do wybrania w tej kategorii."); return; }
   var start = o.queue.ids.length;
   picked.forEach(function(id, i){ o.tplPick[id] = (start+i) % CRM_OUTREACH_ROTATION; });
   o.queue.ids = o.queue.ids.concat(picked);
-  // za każdą dobraną szkołę "zużyj" jedną pominiętą (jeśli kandydatów było mniej, reszta zostaje do dobrania)
-  o.queue.refilledFor = o.queue.refilledFor.concat(skipped.slice(0, picked.length));
   save(); renderAll();
 }
 function crmOutreachTplIndex(id){
@@ -16558,7 +16557,7 @@ function renderCrmOutreach(){
 
   // --- lista
   if(queueIds.length){
-    var sentToday = 0;
+    var sentToday = 0, activeToday = 0; // activeToday bez pominiętych i usuniętych
     var rows = '';
     queueIds.forEach(function(id){
       var c = state.crmContacts.filter(function(x){ return x.id===id; })[0];
@@ -16566,6 +16565,7 @@ function renderCrmOutreach(){
       var done = c.outreach && c.outreach.sentAt;
       var skipped = c.outreach && c.outreach.skippedAt;
       if(done) sentToday++;
+      if(!skipped) activeToday++;
       var igUrl = crmUrl(c.ig,"ig"), fbUrl = crmUrl(c.fb,"fb");
       var tpl = crmOutreachTplIndex(id);
       var place = [c.city, crmVoivodeship(c)].filter(Boolean).join(", ");
@@ -16601,10 +16601,10 @@ function renderCrmOutreach(){
       }
       rows += '</div>';
     });
-    var toRefill = crmOutreachSkippedToRefill().length;
+    var toRefill = crmOutreachShortfall();
     html += '<div class="row" style="gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 10px">';
-    html += '<div style="font-size:13px; color:var(--muted-light)">Postęp: <b style="color:#fff">'+sentToday+' / '+queueIds.length+'</b> wysłanych z dzisiejszej listy</div>';
-    if(toRefill) html += '<button class="btn small" onclick="crmOutreachRefill()" title="Dobiera nowe szkoły w miejsce tych, które kliknąłeś „Pomiń”">➕ Dobierz kolejne za pominięte ('+toRefill+')</button>';
+    html += '<div style="font-size:13px; color:var(--muted-light)">Postęp: <b style="color:#fff">'+sentToday+' / '+activeToday+'</b> wysłanych z dzisiejszej listy</div>';
+    if(toRefill) html += '<button class="btn small" onclick="crmOutreachRefill()" title="Dobiera nowe szkoły w miejsce pominiętych i usuniętych, do dziennej liczby '+o.count+'">➕ Dobierz brakujące do '+o.count+' ('+toRefill+')</button>';
     html += '</div>';
     html += rows;
   } else {
