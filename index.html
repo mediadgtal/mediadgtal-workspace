@@ -596,6 +596,18 @@ var CEO_SLEEPING = true;
 // Droga uśpiona na prośbę Damiana (2026-10-21) — nie korzysta z niej, dane były nieaktualne. Dane w
 // state.droga i backup do Sheets zostają nietknięte. Ustaw na false (i przywróć grupę "Główne" w TABS), żeby obudzić.
 var DROGA_SLEEPING = true;
+// Auto Audyt i Agent AI uśpione na prośbę Damiana (2026-11-23). Kod i dane zostają nietknięte.
+// Ustaw na false i przywróć grupę "Narzędzia" w TABS, żeby obudzić.
+var AUDYT_SLEEPING = true;
+var AGENT_SLEEPING = true;
+function sleepingCard(name){
+  setTopActions('');
+  return '<div class="card" style="text-align:center; padding:48px 24px">'+
+    '<div style="font-size:40px; margin-bottom:12px">💤</div>'+
+    '<h3 style="margin:0 0 8px">Zakładka '+name+' jest uśpiona</h3>'+
+    '<p style="color:var(--muted-light); max-width:420px; margin:0 auto">Wstrzymana na Twoją prośbę — dane zostały zachowane. Napisz „obudź zakładkę '+name+'", żeby ją przywrócić.</p>'+
+    '</div>';
+}
 var NAV_GROUPS = ["Główne","Social Media","Narzędzia","System","Uśpione"];
 var TABS = [
   {id:"dashboard", label:"Pulpit", group:"Główne"},
@@ -609,10 +621,10 @@ var TABS = [
   {id:"facebook", label:"Facebook", group:"Social Media"},
   {id:"nawyki", label:"Nawyki", group:"Narzędzia"},
   {id:"klienci", label:"Klienci", group:"Narzędzia"},
-  {id:"audyt", label:"Auto Audyt", group:"Narzędzia"},
+  {id:"audyt", label:"Auto Audyt", group:"Uśpione"},
   {id:"crm", label:"Baza kontaktów", group:"Narzędzia"},
   {id:"clientops", label:"Obsługa Klientów", group:"Narzędzia"},
-  {id:"agent", label:"Agent AI", group:"Narzędzia"},
+  {id:"agent", label:"Agent AI", group:"Uśpione"},
   {id:"statystyki", label:"Statystyki", group:"Narzędzia"}
 ];
 var TAB_ICON_SVG = {
@@ -2840,7 +2852,7 @@ function renderNav(){
     if(!groupTabs.length) return;
     html += '<div class="nav-group-label">'+g+'</div>';
     groupTabs.forEach(function(t){
-      var dormant = (t.id==="ceo" && CEO_SLEEPING) || (t.id==="droga" && DROGA_SLEEPING);
+      var dormant = (t.id==="ceo" && CEO_SLEEPING) || (t.id==="droga" && DROGA_SLEEPING) || (t.id==="audyt" && AUDYT_SLEEPING) || (t.id==="agent" && AGENT_SLEEPING);
       html += '<button class="navitem'+(currentTab===t.id?" active":"")+(dormant?" navitem-dormant":"")+'" onclick="switchTab(\''+t.id+'\')">'+
         '<span class="ico">'+(dormant?"💤":(TAB_ICON_SVG[t.id]||""))+'</span><span>'+t.label+(dormant?' <span style="opacity:.6; font-size:11px">(uśpiona)</span>':'')+'</span></button>';
     });
@@ -11249,6 +11261,7 @@ function auditStatusTag(rec){
   return '<span class="tag" style="background:#20302a; color:#63b58a">Gotowy</span>';
 }
 function renderAudyt(el){
+  if(AUDYT_SLEEPING){ el.innerHTML = sleepingCard("Auto Audyt"); return; }
   var hasKey = !!localStorage.getItem("mdgtal_anthropic_key");
   var html = '<div class="card">'+
     '<h3 style="margin-bottom:8px">Nowy audyt</h3>'+
@@ -13398,6 +13411,7 @@ function ceoAssignParagonPoint(key){
 var AGENT_STATUS_LABEL = {nowe:"Nowe", wtoku:"W realizacji", gotowe:"Gotowe"};
 var AGENT_STATUS_NEXT = {nowe:"wtoku", wtoku:"gotowe", gotowe:"nowe"};
 function renderAgentAI(el){
+  if(AGENT_SLEEPING){ el.innerHTML = sleepingCard("Agent AI"); return; }
   setTopActions('');
   var html = '<div class="stub-note">Wpisz czego potrzebujesz (np. "przygotuj 5 postów na przyszły tydzień dla MediaDGtal") i wyślij zlecenie. Odbieram je w sesjach Claude Code — piszę teksty (hooki, opisy, CTA), generuję grafiki w Twojej Canvie do przejrzenia/edycji, a po Twojej akceptacji wrzucam gotowe posty do zakładki Szkic albo Zaplanowane. Publikację na platformach robisz Ty sam.</div>';
 
